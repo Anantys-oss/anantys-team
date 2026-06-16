@@ -1,13 +1,13 @@
 {
-  "name": "generic-skills",
+  "name": "anantys-oss",
   "owner": {
-    "name": "Anantys"
+    "name": "Anantys-OSS"
   },
   "plugins": [
     {
       "name": "anantys-team-agents",
       "version": "0.1.0",
-      "description": "Turn Claude into a specialized mini-team of roles: a Frontend Designer (browser-driven design loop) and a Growth/Ops analyst (pilots SaaS dashboards for SEO/acquisition audits). Vendor-neutral, project-agnostic.",
+      "description": "Turn Claude into a specialized mini-team of roles: 4 skills (/anantys.design, /anantys.ops, /anantys.build, /anantys.debug) and 2 review agents (anantys.code-auditor, anantys.spec-tester). Vendor-neutral, project-agnostic.",
       "category": "development",
       "source": "./plugins/anantys-team-agents"
     }

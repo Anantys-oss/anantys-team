@@ -1,5 +1,5 @@
 ---
-name: incremental-builder
+name: anantys.build
 description: Build a feature in small, reviewable increments — never a mass code dump. Caps each step to a small diff, pauses for validation, and keeps the developer's mental model alive at every stage. Use for synchronous coding where keeping cognitive control of generated code matters more than raw speed (the default daily mode for non-trivial work).
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep, TaskCreate, TaskUpdate, TaskList
 ---
