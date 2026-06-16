@@ -1,0 +1,5 @@
+{
+  "name": "anantys-team-agents",
+  "version": "0.1.0",
+  "description": "Turn Claude into a specialized mini-team of roles: a Frontend Designer (browser-driven design loop) and a Growth/Ops analyst (pilots SaaS dashboards for SEO/acquisition audits). Vendor-neutral, project-agnostic."
+}
