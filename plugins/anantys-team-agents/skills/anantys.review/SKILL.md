@@ -26,12 +26,13 @@ The user names the branch to review (a branch name, a PR number/URL, or "the cur
 
 ## Review workflow
 
-### Step A — Bring the branch up to date with base
+### Step A — Check out the branch locally, then bring it up to date with base
+**You MUST actually check out the PR branch into the working tree.** Do not review by diffing remote refs (`git diff origin/<base>...origin/<branch>`) — the human reads the diff in their editor, which requires the files to be checked out locally on the branch. Enter the branch first, every time:
 ```bash
-git checkout <branch>
+git checkout <branch>          # MANDATORY — be on the branch locally
 git merge <base> --no-edit
 ```
-If conflicts arise, resolve them (the **base wins** on conflicts — the branch adapts to the base, not the reverse), then commit the resolution. If conflicts are non-trivial, surface them to the user rather than guessing.
+Confirm you are on the branch (`git branch --show-current`) before assessing. If conflicts arise, resolve them (the **base wins** on conflicts — the branch adapts to the base, not the reverse), then commit the resolution. If conflicts are non-trivial, surface them to the user rather than guessing.
 
 ### Step B — Identify the PR
 `gh pr view <branch> --json number,state,author,url,isDraft,title` (fallback: skip if no `gh`). Show PR number, author, state, URL up front — context before verdict.
@@ -73,6 +74,7 @@ Then **wait for the user's decision.** Do not act on Merge/Close until they conf
 
 ## Rules
 
+- **Check out the branch locally** — always `git checkout <branch>` into the working tree; never review off remote-ref diffs. The human reads the diff in their editor.
 - **One branch at a time** — never batch diffs or decisions.
 - **Summarize the diff** — a readable table + assessment beats a wall of raw diff.
 - **Base wins on conflicts** — the branch adapts to the base.
