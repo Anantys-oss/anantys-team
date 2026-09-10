@@ -1,6 +1,6 @@
 ---
 name: anantys.qa
-description: Run a browser-driven QA campaign against a spec-driven feature. Derives an executable test plan from a completed spec-kit tasks.md, executes it in a real browser recording PASS/FAIL/BLOCKED per assertion, accumulates operator adjudications so a defect is never re-filed twice, and emits a copy-pasteable fix brief for the dev agent. Environment specifics live in a project-local .anantys/qa.md, never in the skill. Use to QA a finished spec-kit epic before release.
+description: Run a browser-driven QA campaign against a completed feature. Derives an executable test plan from a spec-kit tasks.md, a freeform feature brief (--brief), or a set of tracker issues (--from linear:SKU-…), executes it in a real browser recording PASS/FAIL/BLOCKED per assertion, accumulates operator adjudications so a defect is never re-filed twice, and emits a copy-pasteable fix brief for the dev agent. Environment specifics live in a project-local .anantys/qa.md, never in the skill. Use to QA a finished feature — however it was built — before release.
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep, Task, TaskCreate, TaskUpdate, TaskList
 ---
 
@@ -21,7 +21,7 @@ Invoked as `/anantys.qa <action> [args]`. If no action is given, infer it: no `.
 | Action | What it does |
 |---|---|
 | `init` | Interview the operator and write `.anantys/qa.md` — the project's environment contract |
-| `testplan` | Derive `qa-plan.md` from the feature's `tasks.md` + `spec.md` |
+| `testplan` | Derive `qa-plan.md` from the feature source: a spec-kit dir, a `--brief <file.md>`, or `--from linear:<SKU-…>` |
 | `run` | Execute the plan in a browser, recording results and appending to `qa-runs.md` |
 | `retest` | Re-run only what is unresolved plus the regression-risk cases around each fix |
 | `note` | Record an operator adjudication into the plan so it is never re-filed |
@@ -32,14 +32,44 @@ Invoked as `/anantys.qa <action> [args]`. If no action is given, infer it: no `.
 
 ## Locating the feature
 
-Every action except `init` needs a **feature directory** — a spec-kit folder holding `tasks.md`
-(and usually `spec.md`, `plan.md`).
+`testplan` needs a **feature source** — where the requirements (each with a stable id), *what
+shipped*, and *what did not* come from. Every other action needs the **feature directory** — where
+the campaign artifacts (`qa-plan.md`, `qa-runs.md`, `qa-report.md`) live. A source is one of three
+kinds; all resolve to a single feature directory, so everything after `testplan` is identical no
+matter how the plan was derived.
 
-1. If the user named one (`/anantys.qa testplan 206-subscribe-funnel`), use it.
-2. Else read `specs_dir` from `.anantys/qa.md` (default: `specs/`), list its subdirectories, and take the one on the current git branch's name if it matches; otherwise ask.
-3. Never guess between two candidates. Ask.
+1. **spec-kit dir** (default) — a folder holding `tasks.md` (and usually `spec.md`, `plan.md`). The
+   folder IS the feature directory; artifacts are written beside `tasks.md`.
+   - Named: `/anantys.qa testplan 206-subscribe-funnel`.
+   - Else read `specs_dir` from `.anantys/qa.md` (default `specs/`), list its subdirectories, and
+     take the one matching the current git branch's name; otherwise ask.
+2. **`--brief <file.md>`** — a single markdown brief you wrote by hand (`templates/feature-brief.md`),
+   carrying **Requirements** (each with a stable id), a **What shipped** summary, and a **Not
+   shipped / known gaps** section. The universal, dependency-free path for any feature NOT built
+   with spec-kit — a bot-loop feature, a hotfix, a design doc. `testplan` **copies** the brief to
+   `.anantys/qa/<slug>/brief.md` — it never edits the operator's original — and that
+   `.anantys/qa/<slug>/` directory is the feature directory.
+3. **`--from linear:SKU-12,SKU-13,…`** — a convenience adapter that *produces* the same brief:
+   fetch the named tracker issues and their linked PRs using the session's tracker access (the
+   Linear MCP tools if present, else `gh` for the GitHub issues/PRs that carry the `Linear: SKU-n`
+   backlink), distil issue descriptions → **Requirements**, merged PRs → **What shipped**, and the
+   issues' not-done / deferred notes → **Not shipped / known gaps**. Write the assembled brief to
+   `.anantys/qa/<slug>/brief.md` and **confirm it with the operator before proceeding** — never
+   invent requirements; if the session has no tracker access, say so and ask for a `--brief`. From
+   there it is identical to `--brief`.
 
-All artifacts are written **inside that directory**, beside `tasks.md`:
+**The `<slug>`** is a stable kebab-case name, so a re-run reuses the same directory instead of
+orphaning its plan and run history: for `--brief`, the brief's title heading (else the file's
+basename); for `--from linear:`, the primary SKU (e.g. `sku-231`). State the slug you chose, and
+reuse it verbatim on every later action.
+
+Never guess between two candidate sources. Ask.
+
+**Every action after `testplan` resolves the feature directory the same way:** a spec-kit dir is
+itself; a brief- or linear-derived campaign lives under `.anantys/qa/<slug>/`. Locate it by the
+named slug, else the `.anantys/qa/` subdirectory matching the current git branch, else the sole one
+present — never guess between two, ask. All artifacts are written **inside the feature directory**,
+beside its source (`tasks.md` or `brief.md`):
 
 - `qa-plan.md` — the campaign (regenerated by `testplan`, annotated by `note`)
 - `qa-runs.md` — the run log: one section per run, plus the closed-defect history
@@ -67,25 +97,36 @@ known environment drift that must not be filed as a defect.
 Confirm the file back to the operator before writing. `.anantys/qa.md` is committed — so it must
 contain **no secrets**, only the commands that retrieve them.
 
-## `testplan` — derive the campaign from `tasks.md`
+## `testplan` — derive the campaign from the feature source
 
-Read, in this order: `spec.md` (the requirements each case will cite), `tasks.md` (what was
-actually built), then `plan.md` / `data-model.md` / `contracts/` for anything the other two left
-implicit.
+Resolve the source (see "Locating the feature"), then read it for the two roles — the
+**requirements** (what each assertion cites) and **what shipped** (what was actually built):
 
-**Exclude the final Polish phase.** Spec-kit's last phase is optional hardening (docs, cleanup,
-perf); its tasks are not user-observable behaviour and QA-ing them wastes a run. Exclude any
-trailing phase titled Polish / Polishing / Cleanup / Documentation. If the last phase is ambiguous,
-say which one you dropped and why — do not silently truncate.
+- **spec-kit dir:** read, in this order, `spec.md` (the requirements), `tasks.md` (what was built),
+  then `plan.md` / `data-model.md` / `contracts/` for anything left implicit. **Exclude the final
+  Polish phase** — spec-kit's last phase is optional hardening (docs, cleanup, perf), not
+  user-observable, and QA-ing it wastes a run; drop any trailing phase titled Polish / Polishing /
+  Cleanup / Documentation. If the last phase is ambiguous, say which one you dropped and why — do
+  not silently truncate.
+- **`--brief` / `--from linear:`:** read the copied brief at `.anantys/qa/<slug>/brief.md`. Its
+  **Requirements** section is the requirements role (the ids assertions cite); its **What shipped**
+  section is the `tasks.md` role; and its **Not shipped / known gaps** section is load-bearing —
+  each item there is a case that is `BLOCKED`-by-construction (a backend half not deployed, a step a
+  browser cannot reach), **not a FAIL**. Route every such item into the plan's §4 (Known gaps) and
+  mark the assertions it covers `BLOCKED` with that reason, exactly as an adjudication would —
+  skipping it makes the plan FAIL the very gaps it was told to expect, which is the case this whole
+  section exists to prevent. There is no Polish phase to drop. If a requirement carries no stable
+  id, assign one (`R1`, `R2`, …) and write it back into the **copy** (never the operator's original)
+  — ids are referenced by runs, notes and reports forever.
 
-Then transform tasks into scenarios:
+Then transform into scenarios (identical for every source):
 
-- **Group by user journey, not by task.** Tasks are implementation-ordered; a campaign must be
-  journey-ordered, because that is the only order a browser can actually walk. A dozen tasks
-  across backend, frontend and jobs usually collapse into one scenario.
-- **Write assertions against the spec's requirement, not the task's implementation.** Cite the
-  requirement id (`FR-030`, `US4`) on each assertion. An assertion that restates the diff can
-  only confirm what the model already did.
+- **Group by user journey, not by task.** Requirements are written by concern; a campaign must be
+  journey-ordered, because that is the only order a browser can actually walk. A dozen items across
+  backend, frontend and jobs usually collapse into one scenario.
+- **Write assertions against the requirement, not the implementation.** Cite the requirement id
+  (`FR-030`, `US4`, or the brief's `R-` ids) on each assertion. An assertion that restates the diff
+  can only confirm what the model already did.
 - **Prioritise the money/legal/data paths.** Anything touching payment, consent, or overwriting
   existing user data goes in the blocker list.
 - **Mark what a browser agent cannot do** — CAPTCHA, emailed codes, real payment credentials,
