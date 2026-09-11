@@ -11,6 +11,11 @@ It is a **runnable campaign, not a reading list**: worked top to bottom, one ass
 Derived from [`tasks.md`](./tasks.md) (what is built) and [`spec.md`](./spec.md) (what each case
 cites). Environment: [`.anantys/qa.md`](../../.anantys/qa.md). Runs: [`qa-runs.md`](./qa-runs.md).
 
+**Under test:** <branch/commit> — <environment>. A `--from pr:` campaign records the head branch it
+was derived from here, and `run` verifies the environment is actually serving it before walking a
+single scenario — a plan built from an unmerged PR, run against a stack serving `main`, reports
+green having verified nothing. Omit this line for a merged / already-deployed feature.
+
 **How to use.** Preflight first — stop if it fails. Reset. Then walk §2 in order. Each scenario
 states its **precondition**, its **steps**, and what to **assert**. Record PASS/FAIL/BLOCKED
 **per assertion**, never one verdict per scenario. A case you could not run is `BLOCKED`.

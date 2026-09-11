@@ -144,6 +144,11 @@ Write `qa-plan.md` following `templates/qa-plan.md`. Every assertion gets a stab
 (`A1`, `B5`, …) — ids are referenced by runs, notes and reports forever, so **never renumber
 them**. On a regeneration, keep existing ids and their adjudication annotations; append new ones.
 
+If the source carries an **under-test precondition** — a `--from pr:` head branch, or a brief's
+`_Under test:_` line — copy it into the plan header as `**Under test:** <branch/commit> —
+<environment>`. `run` reads `qa-plan.md`, never the brief, so a precondition that lives only in the
+brief is never enforced: a PR-derived campaign would run green against a stack serving `main`.
+
 Show the operator the scenario list and the blocker list before writing.
 
 ### `--from pr:` — assembling the brief from pull requests
@@ -173,13 +178,16 @@ unavailable or the PR is not accessible, say so and ask for a `--brief` instead.
 
 ## `run` — execute the campaign
 
-Preconditions: `.anantys/qa.md` exists, `qa-plan.md` exists.
+Preconditions: `.anantys/qa.md` exists, `qa-plan.md` exists — and, if `qa-plan.md` carries an
+`**Under test:**` line, the environment is serving that branch/commit (verified in step 1).
 
 1. **Preflight.** Run every check in `.anantys/qa.md`. On failure, **stop and tell the operator** —
    do not start services yourself, and do not "work around" a failed preflight. A campaign run on
-   a half-up stack produces confident nonsense. If the plan's source carries an *under test*
-   precondition (a PR's head branch), verify the environment is serving that code first — the same
-   nonsense, harder to notice.
+   a half-up stack produces confident nonsense. **Then read the `**Under test:**` line in
+   `qa-plan.md`:** if it names a branch/commit, verify the environment is actually serving that code
+   before walking a single scenario — a plan derived from an unmerged PR, run against a stack
+   serving `main`, reports green having verified nothing. The line is absent for a merged/deployed
+   feature, and then there is nothing extra to check.
 2. **Reset.** Apply the reset procedure. Confirm the reset actually took effect (a stale auth
    cookie or leftover cache silently invalidates every assertion that follows) — verify by
    observing the app, not by trusting the command's exit code.
