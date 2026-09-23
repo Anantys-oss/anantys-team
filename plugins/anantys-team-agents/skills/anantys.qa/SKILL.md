@@ -1,6 +1,6 @@
 ---
 name: anantys.qa
-description: Run a browser-driven QA campaign against a completed feature. Derives an executable test plan from a spec-kit tasks.md, a freeform feature brief (--brief), or a set of tracker issues (--from linear:SKU-…), executes it in a real browser recording PASS/FAIL/BLOCKED per assertion, accumulates operator adjudications so a defect is never re-filed twice, and emits a copy-pasteable fix brief for the dev agent. Environment specifics live in a project-local .anantys/qa.md, never in the skill. Use to QA a finished feature — however it was built — before release.
+description: Run a browser-driven QA campaign against a completed feature. Derives an executable test plan from a spec-kit tasks.md, a freeform feature brief (--brief), or a set of tracker issues (--from linear:SKU-…), executes it in a real browser — against a local dev stack or a deployed environment (staging / a preview), selected with --env — recording PASS/FAIL/BLOCKED per assertion, accumulates operator adjudications so a defect is never re-filed twice, and emits a copy-pasteable fix brief for the dev agent. Environment specifics live in a project-local .anantys/qa.md, never in the skill. Use to QA a finished feature — however it was built — before release.
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep, Task, TaskCreate, TaskUpdate, TaskList
 ---
 
@@ -22,8 +22,8 @@ Invoked as `/anantys.qa <action> [args]`. If no action is given, infer it: no `.
 |---|---|
 | `init` | Interview the operator and write `.anantys/qa.md` — the project's environment contract |
 | `testplan` | Derive `qa-plan.md` from the feature source: a spec-kit dir, a `--brief <file.md>`, or `--from linear:<SKU-…>` |
-| `run` | Execute the plan in a browser, recording results and appending to `qa-runs.md` |
-| `retest` | Re-run only what is unresolved plus the regression-risk cases around each fix |
+| `run` | Execute the plan in a browser — `--env <name>` targets a deployed environment (staging / preview); default is the local one — recording results and appending to `qa-runs.md` |
+| `retest` | Re-run only what is unresolved plus the regression-risk cases around each fix (`--env <name>` as for `run`) |
 | `note` | Record an operator adjudication into the plan so it is never re-filed |
 | `report` | Emit `qa-report.md` — a fix brief to paste into a dev session |
 | `status` | Summarize coverage and remaining blockers without running anything |
@@ -139,16 +139,39 @@ them**. On a regeneration, keep existing ids and their adjudication annotations;
 
 Show the operator the scenario list and the blocker list before writing.
 
+## Environments — `local` vs `shared` (staging / preview / prod)
+
+`.anantys/qa.md` may declare **more than one environment**, so the same campaign can run against a
+local dev stack *or* a deployed one. Each environment is one of two **kinds**:
+
+- **`local`** — the developer's own stack (Docker, a dev server). It is **resettable** and driven by
+  the project's local browser tooling (a screenshot script, a headless runner). This is the default.
+- **`shared`** — a deployed, persistent environment reached over the network: **staging**, a PR
+  **preview**, or **production**. It is **NEVER reset** — it may hold real data and other people rely
+  on it — so a test subject is created **additively** (a new record; a new PR → a real run), and it
+  is driven through the **operator's already-signed-in browser session**: the agent reuses that
+  session, and never signs in, never resets, never runs a destructive command against it.
+
+Select one with `--env <name>` on `run` / `retest` (`/anantys.qa run --env staging`); with none, use
+the environment marked **default** (the local one). Every surface URL, preflight check, reset step,
+credential and drift note then comes from **that** environment's block in `.anantys/qa.md`. Record
+the environment name in the `qa-runs.md` run header, since an assertion can pass on one and fail on
+another. Testing a shipped feature on `staging` is often easier than reproducing its data locally —
+but the `shared` rules above are not optional, because the blast radius of a reset or a stray write
+there is real data, not a fixture.
+
 ## `run` — execute the campaign
 
 Preconditions: `.anantys/qa.md` exists, `qa-plan.md` exists.
 
-1. **Preflight.** Run every check in `.anantys/qa.md`. On failure, **stop and tell the operator** —
-   do not start services yourself, and do not "work around" a failed preflight. A campaign run on
-   a half-up stack produces confident nonsense.
-2. **Reset.** Apply the reset procedure. Confirm the reset actually took effect (a stale auth
-   cookie or leftover cache silently invalidates every assertion that follows) — verify by
-   observing the app, not by trusting the command's exit code.
+1. **Preflight.** Run every check for the selected environment in `.anantys/qa.md`. On failure,
+   **stop and tell the operator** — do not start services yourself, and do not "work around" a failed
+   preflight. A campaign run on a half-up stack produces confident nonsense.
+2. **Reset — `local` only.** On a `local` environment, apply its reset procedure and confirm it took
+   effect (a stale auth cookie or leftover cache silently invalidates every assertion that follows) —
+   verify by observing the app, not by trusting the command's exit code. On a **`shared`**
+   environment there is **NO reset**: never reset staging / preview / prod — reuse the operator's
+   session and create any needed test data additively (see Environments).
 3. **Walk the scenarios in order**, in a real browser. Per scenario: establish the precondition,
    perform the steps, then evaluate each assertion **individually**.
 4. **Post a one-line result after each scenario.** The operator is watching; a campaign that
@@ -238,6 +261,9 @@ defects, and the never-observed gaps. One short table, then the single sentence 
 
 - **Environment details live in `.anantys/qa.md`, never in this skill and never in `qa-plan.md`.**
   A plan that hardcodes a hostname stops working for the next project — and for the next dev stack.
+- **Never reset — or write destructively to — a `shared` environment** (staging, a preview, prod).
+  It is persistent and may hold real data; create test subjects additively and drive it through the
+  operator's existing browser session. Reset and local browser tooling are for a `local` env only.
 - **Never start, restart or repair the stack.** A failed preflight stops the campaign and goes back
   to the operator.
 - **Never modify product code.** You observe and report; fixing is a separate session, which is
