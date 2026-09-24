@@ -24,6 +24,16 @@ single `local` environment named `local`, marked default — it keeps working un
 > **No secrets.** Record the *command* that retrieves a credential, never the credential.
 > This file is committed.
 
+> **No ambient targets.** Every destructive command — anything in a Reset block — must name the
+> host / database / namespace it acts on **literally, in this file**. A command that resolves its
+> target from the surrounding environment (`$DATABASE_URL`, a dotenv, the current `kubectl`
+> context, an AWS profile, `docker compose` in whatever directory the shell is in) is not a
+> `local` command: it is a command that runs wherever the shell happens to point. Selecting
+> `--env local` chooses which *block* to read; it does nothing to the command inside it. If the
+> project's only reset path is ambient (`make db-reset`), record a **target probe** beside it and
+> the rule is: probe, compare to the declared target, abort on mismatch. Never reset on a probe
+> that fails or returns something unexpected.
+
 ---
 
 ```markdown
@@ -66,8 +76,20 @@ plan's `**Under test:**` line; with no probe it must ask the operator and stop, 
 the local checkout — a local branch says nothing about what a remote stack runs.
 
 ### Reset — how to get a fresh test subject
+
+Target: `<the host / database / namespace this block is allowed to touch — e.g. localhost:5432/app_dev>`
+
 ```bash
-<command to delete / recreate the test account or fixture>
+<probe that prints the target the reset command will actually resolve — e.g.
+`psql "$DATABASE_URL" -tAc 'select current_setting(''listen_addresses'')||inet_server_port()'`,
+`kubectl config current-context`, `docker compose config --format json | jq -r '.name'`>
+```
+Run the probe first, every time. If its output is not the declared Target, **stop** — do not reset,
+and tell the operator their shell is pointed elsewhere. Same if the probe errors or prints nothing.
+
+```bash
+<command to delete / recreate the test account or fixture — prefer the form that names the target
+explicitly (`psql -h localhost -d app_dev …`) over the form that reads it from the environment>
 ```
 Client-side state to clear between runs: storage keys `<keys>`, cookies `<names>`, session
 `<how to genuinely sign out — note if the obvious way leaves a cookie alive>`.
@@ -120,6 +142,10 @@ Per environment, never shared with `local`: staging lags `main` between deploys,
 
 ### Reset — NONE
 Shared, persistent environment — **never reset it** and never run a destructive command against it.
+This block being empty is not the protection: the protection is that no `local` Reset command can
+resolve to this environment's host. Check that when `init` writes both blocks — if the `local`
+reset would hit `<this host>` under any dotenv or context the operator might have loaded, fix the
+`local` block, not this sentence.
 Create test data **additively** (a new record; a new PR → a real run). Drive it through the
 operator's already-signed-in browser session.
 
