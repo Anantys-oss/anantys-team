@@ -7,11 +7,14 @@ of the feature under test.
 It declares **one or more environments**. `run --env <name>` / `retest --env <name>` picks one; with
 none, the environment marked **default** (a `local`) is used. Each is one **kind**:
 
-- **`local`** — the developer's own stack. **Resettable**; driven by the project's local browser
-  tooling. Has a Reset block.
+- **`local`** — the developer's own stack. **Resettable**. Has a Reset block.
 - **`shared`** — a deployed env (staging / preview / prod). **Never reset**; test data is created
   additively; driven through the operator's already-signed-in browser. Has **no** Reset block — an
-  explicit "Reset: NONE" instead.
+  explicit "Reset: NONE" instead. Says whether it is production (`Production: yes | no`); on
+  production, scenarios that charge a card, record consent or notify a real person are BLOCKED.
+
+Every environment says **what drives the browser** in its `Driven by:` line — the operator's
+connected browser, or a named local command. A `shared` env is always the operator's browser.
 
 A file with **no** `## Environment:` blocks (the flat layout an earlier `init` wrote) is read as a
 single `local` environment named `local`, marked default — it keeps working unchanged. Re-run
@@ -31,10 +34,13 @@ Environments below. `run --env <name>` selects one; default is the `local` marke
 
 ## Environment: local (`kind: local`, default)
 
+Driven by: <the operator's connected browser | `<local command — screenshot script / headless runner>`>
+
 ### Surfaces
 | What | URL |
 |---|---|
 | <app> | <url> |
+| <marketing / secondary front> | <url> |
 | <backend / API> | <url> |
 
 ⚠️ Note any URL that *looks* right but is wrong (a closed port, a hostname that 404s). A stale URL
@@ -67,15 +73,20 @@ How to identify the test subject (ids, and how to find them when data is encrypt
 ### Credentials
 - <account>: `<identifier>` — secret: **ask the operator**, never stored here
 - OAuth: the operator's account. Ask for any emailed code; never read a mailbox
+- Payment sandbox: `<test card / token>`
 
 ### Agent limits — steps a browser agent cannot perform
 - <signup CAPTCHA> → hand the tab to the operator, resume after
+- <viewports below the browser's clamp> → needs device emulation
 - <emailed verification code> → operator relays the code
 
 ### Known drift — never file these as defects
 - <e.g. an endpoint not deployed locally> — <why, and what a *real* failure would look like instead>
 
 ## Environment: staging (`kind: shared`)
+
+Driven by: the operator's connected browser (their signed-in session)
+Production: no
 
 ### Surfaces
 | What | URL |

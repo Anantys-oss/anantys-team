@@ -12,7 +12,7 @@ like a teammate would:
 | 📈 **Growth / Ops Analyst** | skill `/anantys.ops` | **Ops loop** | Drives the browser across live pages and SaaS dashboards (Search Console, Analytics, SERP) to produce a quantified, prioritized SEO/acquisition report with trend deltas. |
 | 🐞 **Runtime Debugger** | skill `/anantys.debug` | **Ralf loop** | Reproduces a bug live, reads runtime signals (console, network, logs), fixes, and re-proves by observation — never by a plausible diff. |
 | 🔀 **PR Reviewer** | skill `/anantys.review` | **Decision-ready review** | Cleanly reviews one agent-pushed PR branch: rebases on its base, summarizes only its own changes, assesses value/risk, and recommends Merge / Close / Skip / Audit — then waits for the human. |
-| 🧭 **QA Campaign Runner** | skill `/anantys.qa` | **Campaign loop** | Turns a finished spec-kit `tasks.md` into an executable browser campaign, runs it recording PASS/FAIL/BLOCKED **per assertion**, accumulates operator rulings so a non-defect is never re-filed, and emits a fix brief for a fresh dev session. |
+| 🧭 **QA Campaign Runner** | skill `/anantys.qa` | **Campaign loop** | Turns a finished feature — a spec-kit `tasks.md`, a feature brief, or tracker issues — into an executable browser campaign, runs it against a local dev stack or a deployed env (`--env staging`) recording PASS/FAIL/BLOCKED **per assertion**, accumulates operator rulings so a non-defect is never re-filed, and emits a fix brief for a fresh dev session. |
 | 🔍 **Code Auditor** | agent `anantys.code-auditor` | **Adversarial review** | Runs in a fresh context after a large LLM-generated change and reports what it *omitted* — implicit contracts, edge cases, violated conventions the brief never spelled out. Restores cognitive control over mass-generated code. |
 | 🧪 **Spec Tester** | agent `anantys.spec-tester` | **Spec-first testing** | Writes tests from the spec, deliberately *not* from the implementation, so they can fail against existing code — instead of just confirming what the model already wrote. |
 
@@ -46,9 +46,11 @@ Then invoke a skill directly:
 /anantys.ops     audit example.com, hub /blog, target "best running shoes" "trail shoes 2026"
 /anantys.debug   the cart total is wrong on the checkout page — here's the repro
 /anantys.review  review the branch agent/123-add-export — is it safe to merge?
-/anantys.qa      init                     # one-off: describe your dev environment
+/anantys.qa      init                     # one-off: describe your environments (local, staging…)
 /anantys.qa      testplan 206-checkout    # derive the campaign from specs/206-checkout/tasks.md
-/anantys.qa      run                      # walk it in a real browser
+/anantys.qa      testplan --brief feat.md # …or from a hand-written brief (non-spec-kit features)
+/anantys.qa      run                      # walk it in a real browser, on the local env
+/anantys.qa      run --env staging        # …or on a deployed env — never reset, additive only
 /anantys.qa      report                   # fix brief to paste into a dev session
 ```
 

@@ -95,13 +95,17 @@ Then ask the operator only what you could not infer, in one batch:
   (staging, a PR preview). Give each a name and a `kind:` (`local` / `shared`, see Environments),
   and mark exactly one `local` as **default**.
 - **Per environment:** the real base URLs (a dev stack behind a reverse proxy is rarely on
-  `localhost:<port>`), the preflight checks whose failure would waste a whole campaign, test
-  credentials, and any known drift that must not be filed as a defect.
-- **`local` only:** the reset procedure for a fresh test subject.
+  `localhost:<port>`), **what drives the browser** (`Driven by:` — the operator's connected
+  browser, or a named local command such as a screenshot script or headless runner), the preflight
+  checks whose failure would waste a whole campaign, test credentials, and any known drift that
+  must not be filed as a defect.
+- **`local` only:** the reset procedure for a fresh test subject, and a payment sandbox instrument
+  (test card / token) if any journey touches money — without one, every checkout case is BLOCKED.
 - **`shared` only:** how the operator's signed-in browser session is made available to you, whether
   a real record exhibiting the behaviour under test exists there (a shared env has no fixtures), and
-  how deploy lag shows up (a fix merged but not yet deployed). A `shared` block is always written
-  with `Reset — NONE`, never a reset command — do not ask for one.
+  how deploy lag shows up (a fix merged but not yet deployed), and **whether it is production**
+  (`Production: yes | no`). A `shared` block is always written with `Reset — NONE`, never a reset
+  command — do not ask for one.
 
 Write only the environments the operator named, with real values — never copy a template block
 full of `<placeholders>` into the contract. Re-running `init` on an existing file adds or updates
@@ -157,13 +161,25 @@ Show the operator the scenario list and the blocker list before writing.
 `.anantys/qa.md` may declare **more than one environment**, so the same campaign can run against a
 local dev stack *or* a deployed one. Each environment is one of two **kinds**:
 
-- **`local`** — the developer's own stack (Docker, a dev server). It is **resettable** and driven by
-  the project's local browser tooling (a screenshot script, a headless runner). This is the default.
+- **`local`** — the developer's own stack (Docker, a dev server). It is **resettable**. This is the
+  default.
 - **`shared`** — a deployed, persistent environment reached over the network: **staging**, a PR
   **preview**, or **production**. It is **NEVER reset** — it may hold real data and other people rely
   on it — so a test subject is created **additively** (a new record; a new PR → a real run), and it
   is driven through the **operator's already-signed-in browser session**: the agent reuses that
   session, and never signs in, never resets, never runs a destructive command against it.
+
+**How each environment is driven is read from its `Driven by:` line**, never assumed: the
+operator's connected browser (e.g. Claude-in-Chrome), or a named local command. A `shared` env is
+always driven by the operator's connected browser. An environment with no `Driven by:` line — a
+legacy file included — is driven by the operator's connected browser.
+
+**Production is a `shared` env with `Production: yes`**, and gets two extra guards:
+
+- **Never run on production:** any scenario that charges a real card, records a real consent, or
+  sends a notification (email, SMS, push) to a real person. Those assertions are `BLOCKED` on
+  production **by construction** — reason "unsafe on production" — never walked.
+- The pre-write confirmation below is mandatory (it applies to every `shared` env).
 
 Select one with `--env <name>` on `run` / `retest` (`/anantys.qa run --env staging`); with none, use
 the environment marked **default** (the local one). Every surface URL, preflight check, reset step,
@@ -196,12 +212,17 @@ Preconditions: `.anantys/qa.md` exists, `qa-plan.md` exists.
 1. **Preflight.** Run every check for the selected environment in `.anantys/qa.md`. On failure,
    **stop and tell the operator** — do not start services yourself, and do not "work around" a failed
    preflight. A campaign run on a half-up stack produces confident nonsense.
+   **On a `shared` env, confirm the target before anything is written:** echo the environment name,
+   its base URL, whether it is production, and the scenarios that will create data there — then
+   wait for the operator's explicit go. No go, no run.
 2. **Reset — `local` only.** On a `local` environment, apply its reset procedure and confirm it took
    effect (a stale auth cookie or leftover cache silently invalidates every assertion that follows) —
    verify by observing the app, not by trusting the command's exit code. On a **`shared`**
    environment there is **NO reset**: never reset staging / preview / prod — reuse the operator's
    session and create any needed test data additively (see Environments).
-3. **Walk the scenarios in order**, in a real browser. Per scenario: establish the precondition,
+3. **Walk the scenarios in order**, in a real browser driven as the environment's `Driven by:`
+   line says (see Environments). On production, skip the unsafe scenario classes and record them
+   `BLOCKED`. Per scenario: establish the precondition,
    perform the steps, then evaluate each assertion **individually**.
 4. **Post a one-line result after each scenario.** The operator is watching; a campaign that
    reports only at the end is one where a bad reset costs you the whole run.
@@ -294,7 +315,8 @@ defects, and the never-observed gaps. One short table, then the single sentence 
   A plan that hardcodes a hostname stops working for the next project — and for the next dev stack.
 - **Never reset — or write destructively to — a `shared` environment** (staging, a preview, prod).
   It is persistent and may hold real data; create test subjects additively and drive it through the
-  operator's existing browser session. Reset and local browser tooling are for a `local` env only.
+  operator's existing browser session, after they confirm the target. Reset is for a `local` env
+  only; on production, never charge, record consent for, or notify a real person.
 - **Never start, restart or repair the stack.** A failed preflight stops the campaign and goes back
   to the operator.
 - **Never modify product code.** You observe and report; fixing is a separate session, which is
