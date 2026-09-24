@@ -185,15 +185,16 @@ Write `qa-plan.md` following `templates/qa-plan.md`. Every assertion gets a stab
 them**. On a regeneration, keep existing ids and their adjudication annotations; append new ones.
 
 If the source carries an **under-test precondition** — a `--from pr:` head branch, or a brief's
-`_Under test:_` line — copy it into the plan header as `**Under test:** <branch/commit> —
-<environment>`. `run` reads `qa-plan.md`, never the brief, so a precondition that lives only in the
+`_Under test:_` line — copy it into the plan header as `**Under test:** <branch> @ <head commit> —
+<environment>` (plus `pr: <ref>` for a PR source). Record the head **commit**, not only the branch:
+once the PR merges, `run` can only recognise the shipped code by commit ancestry (step 1). `run` reads `qa-plan.md`, never the brief, so a precondition that lives only in the
 brief is never enforced: a PR-derived campaign would run green against a stack serving `main`.
 
 Show the operator the scenario list and the blocker list before writing.
 
 ### `--from pr:` — assembling the brief from pull requests
 
-Per PR, read `gh pr view <ref> --json title,body,state,mergedAt,headRefName,closingIssuesReferences,comments,reviews`
+Per PR, read `gh pr view <ref> --json title,body,state,mergedAt,headRefName,headRefOid,mergeCommit,closingIssuesReferences,comments,reviews`
 and `gh pr diff <ref> --name-only`. Several PRs assemble into **one** brief. Four rules make the
 result a QA source rather than a diff summary:
 
@@ -316,8 +317,15 @@ operator's go before any write.
    is actually serving that code before walking a single scenario — a plan derived from an unmerged
    PR, run against a stack serving `main`, reports green having verified nothing. How to verify it:
    - If the selected environment's block defines a **build identity** check, run it and compare its
-     output to the plan's branch/commit. On a mismatch, **stop** and tell the operator what is
-     deployed. Never borrow another environment's probe — staging lags `main` between deploys.
+     output to the plan's branch/commit. Never borrow another environment's probe — staging lags
+     `main` between deploys. The environment **serves the code under test** when the deployed
+     commit is the plan's head commit, **or contains it** — the PR has since merged and deployed:
+     after a `git fetch`, `git merge-base --is-ancestor <head commit> <deployed commit>`, or, for a
+     squash / rebase merge, the same test on the PR's merge commit (`gh pr view <ref> --json
+     mergeCommit`). Record a match found this way as **satisfied by merge** (`<merge commit> in
+     <deployed commit>`) in the run section, and leave the plan's line as it is. Otherwise — a
+     different commit, a merged PR not yet deployed, or a probe that names only a branch such as
+     `main` — **stop** and tell the operator what is deployed.
    - If it does not, **ask the operator which build that environment is serving and stop until they
      answer** — never infer it from the local checkout: `git branch --show-current` describes your
      working copy, not a remote dev stack or a deployed env.
@@ -399,7 +407,9 @@ the reason, in the form future runs will read:
 ```
 
 An annotation with **no** `env:` (written before environments existed) is scoped to the default
-environment only.
+environment only — except a **REMOVED** strike-through, which is a product decision and reads as
+`env: all`. Scoping it to the default env would re-file the dropped behaviour as a defect on every
+other environment.
 
 Two rules make these annotations durable:
 
