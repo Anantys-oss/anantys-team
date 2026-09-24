@@ -123,9 +123,10 @@ Rules for `current.md`: always overwrite the whole file (it is a snapshot; the j
 ## Rules
 
 - **Read-only on the codebase.** Modify NO application/code files. The only files you write are the journal entry and `current.md` under the workspace.
+- **Read-only is not the same as write-safe.** Those two files are durable and usually committed, and every number in them was read out of the operator's *live signed-in* Google session. What belongs in a report is the **aggregate** — clicks, impressions, CTR, position, a slug, a query. What never does: the account email or avatar, the property/account/view ids in a dashboard URL, anything after `?` in a Search Console or GA4 link, an auth or consent token, a `document.cookie` / `localStorage` value, or a raw user identifier from an Analytics row. Link a dashboard by **name**, not by pasted URL. Redaction costs this report nothing — a metric is the number, never the session that fetched it.
 - **Be specific** — never "improve content"; say exactly what to add/change.
 - **Quantify everything** with real numbers from the dashboards; include trend deltas when prior audits exist.
 - **Prioritize by impact** toward the stated traffic goal — compute the gap (e.g. "+60 daily visitors needed — where do they come from?").
 - If a service requires login and you can't access data, note it clearly and proceed with what's available. Never invent metrics.
-- Take screenshots at each phase to document the audit trail.
+- Take screenshots at each phase to document the audit trail — but a screenshot of a signed-in dashboard is the one artifact that leaks without being quoted. It carries the URL bar, the account chip and every other tab. Keep them in the conversation as evidence; **never write an image file into the workspace**, and transcribe the numbers you need into the report rather than embedding the frame they came from.
 - If the user provided extra queries/focus areas in $ARGUMENTS, fold them into the relevant phases.
