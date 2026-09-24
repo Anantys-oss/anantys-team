@@ -32,6 +32,17 @@ A stale URL costs a whole run, and it is the single most common thing this file 
 | P1 | <service> up | `<command>` returns <expected> | Ask the operator to start the stack. Never start it yourself |
 | P2 | … | … | … |
 
+**Build identity — how this stack reports the code it is serving:**
+
+```bash
+<command or URL that returns the branch/commit actually deployed — a /version or /healthz
+endpoint, a deployed-SHA banner, `docker inspect <container>`, a `git -C <deploy path> rev-parse`>
+```
+
+Leave this blank only if the project genuinely has no way to tell. `run` needs it to enforce a
+plan's `**Under test:**` line; with no probe it must ask the operator and stop, never infer from
+the local checkout — a local branch says nothing about what a remote stack runs.
+
 ⚠️ Call out the check whose *silent* failure is indistinguishable from slowness — e.g. a missing
 webhook forwarder, an unseeded reference table. That is the one that wastes a campaign, because
 nothing errors; the product just waits forever or quietly returns an empty state.

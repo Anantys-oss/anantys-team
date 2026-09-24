@@ -65,15 +65,23 @@ matter how the plan was derived.
 **The `<slug>`** is a stable kebab-case name, so a re-run reuses the same directory instead of
 orphaning its plan and run history: for `--brief`, the brief's title heading (else the file's
 basename); for `--from linear:`, the primary SKU (e.g. `sku-231`); for `--from pr:`, the head
-branch of the first PR (or the operator-confirmed name). State the slug you chose, and reuse it
-verbatim on every later action.
+branch of the first PR (or the operator-confirmed name).
+
+**Normalize it, always, the same way:** lowercase, then every run of non-alphanumeric characters —
+`/` included — becomes a single `-`, trimmed at both ends (`team/qa-pr-source` →
+`team-qa-pr-source`, `SKU-231` → `sku-231`). A slug is one path segment: `.anantys/qa/<slug>/` is
+never nested. An un-normalized slashed branch would write the campaign to a directory the discovery
+rule below cannot find, orphaning the plan and its run history. State the slug you chose, and reuse
+it verbatim on every later action.
 
 Never guess between two candidate sources. Ask.
 
 **Every action after `testplan` resolves the feature directory the same way:** a spec-kit dir is
 itself; a brief-, linear- or PR-derived campaign lives under `.anantys/qa/<slug>/`. Locate it by the
-named slug, else the `.anantys/qa/` subdirectory matching the current git branch, else the sole one
-present — never guess between two, ask; **never** fall back to `specs_dir` or a `specs/<branch>/`
+named slug; else list `.anantys/qa/*/qa-plan.md` and take the one whose directory name equals the
+**normalized** current git branch (same rule as above — `team/qa-pr-source` matches
+`.anantys/qa/team-qa-pr-source/`); else the sole plan present — never guess between two, ask;
+**never** fall back to `specs_dir` or a `specs/<branch>/`
 match for a non-spec-kit campaign — a spec dir sharing the PR's branch name is a different, stale
 campaign. All artifacts are written **inside the feature directory**, beside its source (`tasks.md`
 or `brief.md`):
@@ -98,8 +106,10 @@ legwork first so the questions are few and precise:
 
 Then ask the operator only what you could not infer, in one batch: the real base URLs (a dev stack
 behind a reverse proxy is rarely on `localhost:<port>`), the preflight checks whose failure would
-waste a whole campaign, the reset procedure for a fresh test subject, test credentials, and any
-known environment drift that must not be filed as a defect.
+waste a whole campaign, **how this stack reports the code it is serving** (a `/version` or
+`/healthz` endpoint, a deployed-SHA banner, a `docker inspect` — the build-identity check `run`
+uses to enforce a plan's `**Under test:**` line), the reset procedure for a fresh test subject,
+test credentials, and any known environment drift that must not be filed as a defect.
 
 Confirm the file back to the operator before writing. `.anantys/qa.md` is committed — so it must
 contain **no secrets**, only the commands that retrieve them.
@@ -183,11 +193,19 @@ Preconditions: `.anantys/qa.md` exists, `qa-plan.md` exists — and, if `qa-plan
 
 1. **Preflight.** Run every check in `.anantys/qa.md`. On failure, **stop and tell the operator** —
    do not start services yourself, and do not "work around" a failed preflight. A campaign run on
-   a half-up stack produces confident nonsense. **Then read the `**Under test:**` line in
-   `qa-plan.md`:** if it names a branch/commit, verify the environment is actually serving that code
+   a half-up stack produces confident nonsense. Then read the plan's **Under test** line in
+   `qa-plan.md`. If it names a branch/commit, verify the environment is actually serving that code
    before walking a single scenario — a plan derived from an unmerged PR, run against a stack
-   serving `main`, reports green having verified nothing. The line is absent for a merged/deployed
-   feature, and then there is nothing extra to check.
+   serving `main`, reports green having verified nothing. How to verify it:
+   - If `.anantys/qa.md` defines a **build identity** check, run it and compare its output to the
+     plan's branch/commit. On a mismatch, **stop** and tell the operator what is deployed.
+   - If it does not, **ask the operator which build the stack is serving and stop until they
+     answer** — never infer it from the local checkout: `git branch --show-current` describes your
+     working copy, not a remote dev stack.
+   - Record the observed branch/commit in the `qa-runs.md` run section, beside `Subject:`, so a
+     later reader can tell which build a green run was green against.
+
+   The line is absent for a merged/deployed feature, and then there is nothing extra to check.
 2. **Reset.** Apply the reset procedure. Confirm the reset actually took effect (a stale auth
    cookie or leftover cache silently invalidates every assertion that follows) — verify by
    observing the app, not by trusting the command's exit code.

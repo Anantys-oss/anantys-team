@@ -91,7 +91,8 @@ recognises a re-occurrence instead of re-diagnosing it from scratch.
 
 ## Run <n> — <date> — `run` | `retest`
 
-Subject: <account/fixture id>. Path walked: <one line>.
+Subject: <account/fixture id>. Build observed: <branch/commit the stack was serving, from the
+build-identity check — omit only when the plan has no **Under test:** line>. Path walked: <one line>.
 
 | ID | Result | Evidence |
 |----|--------|----------|
