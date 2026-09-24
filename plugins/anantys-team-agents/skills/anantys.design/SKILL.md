@@ -64,6 +64,16 @@ For **each** task, in order:
    - Take a `screenshot` of the affected region.
 6. **If not resolved, iterate** (back to step 2) — do NOT mark the task done. The screenshot + computed value are the only acceptable proof. A plausible-looking diff is not proof.
 7. **Mark `completed`** only when the screenshot/computed value confirms it.
+8. **Or mark it `blocked`** — the loop's third exit, and a real one. A task that can only be
+   `completed` or `in_progress` has no way out except calling an unproven fix done, which is exactly
+   the rule this skill is built on. Stop and mark `blocked` when **either**:
+   - **Three attempts rejected by the screenshot / computed value** with nothing new learned — you
+     are no longer diagnosing, and a fourth CSS guess is not a diagnosis.
+   - **The fix is structural** — the markup, the component boundary or the design token itself is
+     wrong, and no inline override reaches it. That is a deliberate deferral, not a stuck loop.
+
+   Revert that task's edits before moving to the next one. A `blocked` task that leaves three dead
+   overrides in the stylesheet hands the next person a worse page than it found.
 
 ### 5. Global audit pass
 
@@ -102,6 +112,11 @@ End with a verification table — one row per TODO, with the proof:
 |---|-------|-------------------------------|--------|
 ```
 
+`Status` is `completed` or `blocked` — never `in_progress`. For a `blocked` row, the Proof column
+carries what the last attempt *actually rendered* and why it was rejected, plus what the fix needs
+(a markup change, a token, a decision). Report it as loudly as a completed one: an unfixed issue the
+reader knows about is worth more than a green table that quietly dropped it.
+
 List the source files touched. Note anything deliberately left as-is (with reasoning) and any structural change deferred as too risky for an inline pass.
 
 ## Rules
@@ -110,6 +125,9 @@ List the source files touched. Note anything deliberately left as-is (with reaso
 - **Edit files, not the live DOM.** Live injection is for diagnosis/prototyping only; the deliverable is in the source.
 - **Diagnose with `getComputedStyle`**, not assumptions — themes and framework defaults frequently out-specify naive overrides.
 - **Prefer dedicated classes over `!important` wars** when CSS conflicts.
+- **`blocked` is a valid ending for a task** — three rejected attempts, or a structural fix an
+  inline pass cannot reach. Revert that task's edits and say what it needs. Never buy a `completed`
+  by lowering what counts as proof.
 - Respect the project's existing design system and tokens; never invent new color tokens, gradients, glows, or AI-cliché iconography.
 - **Never commit, push, or open a PR** unless the user explicitly asks — stop at validated local edits.
 - Report what the screenshot actually shows, not what you expect.

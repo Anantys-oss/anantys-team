@@ -39,6 +39,25 @@ This is a **Ralf loop** — the model's limit is rarely the model; it's the feed
 - Observe the same signal you captured in step 1: the console error is gone, the network call returns 200, the log shows the right value, the test passes, the screenshot is correct.
 - **Not resolved? Iterate** — back to step 2 with the new signal. Do NOT mark fixed on a plausible diff. Wrong hypotheses are normal; an unverified "fix" is not allowed.
 
+### 4b. Stop when the loop stops learning
+
+Iteration is bounded, and **UNRESOLVED is a result** — the third verdict alongside fixed and
+still-iterating. Without it, a loop with no exit has only one pressure valve left: relaxing what
+counts as proof. That is the one rule this skill cannot afford to lose.
+
+Declare UNRESOLVED and hand back when **either** holds:
+
+- **Three consecutive hypotheses rejected by observation** with no new signal — you are guessing, not
+  narrowing. A fourth guess against the same evidence is a lottery ticket.
+- **The next hypothesis needs something you don't have** — a permission, a service you must not
+  start, a repro that only happens in an environment you cannot drive, a code path behind a flag you
+  cannot set. Name it; do not work around it.
+
+Handing back is not failure — it is the honest version of the same evidence trail. Report the
+rejected hypotheses and *what observation killed each one*; that is the expensive part and the next
+agent (or the human) should not pay for it twice. Leave the tree at baseline, exactly as a rejected
+hypothesis is left: an UNRESOLVED handoff that also ships four dead edits is worse than no attempt.
+
 ### 5. Guard against regressions
 
 - Once observed-fixed, add or point to a test that would have caught it (or note why one isn't feasible).
@@ -55,7 +74,11 @@ End with the evidence trail:
 | Root cause | <file:line — why it failed> |
 | Fix | <files changed, one-line intent> |
 | Re-proof (after) | <console clean / 200 / right value / test green> |
+| Verdict | FIXED (observed) — or UNRESOLVED, + what is missing to go further |
 ```
+
+An UNRESOLVED report keeps the same table: the Repro row still holds, Root cause says how far you
+got, Fix is empty, and Re-proof lists each hypothesis with the observation that rejected it.
 
 ## Rules
 
@@ -63,4 +86,6 @@ End with the evidence trail:
 - **Reproduce before fixing**; if you can't see it fail, you can't confirm it's fixed.
 - **Root cause over symptom** — read the runtime state, don't pattern-match.
 - One hypothesis per iteration; wrong ones are expected, unverified ones are not.
+- **UNRESOLVED is a result, not a failure** — three rejected hypotheses with no new signal, or a
+  blocker you must not work around, ends the loop. Never buy an exit by lowering the bar for proof.
 - **Never commit, push, or open a PR** unless the user explicitly asks — stop at the verified local fix.
