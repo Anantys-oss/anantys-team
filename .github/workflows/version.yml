@@ -1,0 +1,14 @@
+name: version
+
+on:
+  pull_request:
+
+jobs:
+  check-version-bump:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # the check compares against the merge-base
+      - run: python3 scripts/test_check_version_bump.py
+      - run: python3 scripts/check_version_bump.py
