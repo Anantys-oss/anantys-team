@@ -1,7 +1,7 @@
 ---
 name: anantys.debug
 description: Debug by observing the running app, not by guessing — a tight reproduce → inspect runtime (browser console, network, logs) → fix → re-prove loop. The proof is the observed behavior, never a plausible-looking diff. Use to diagnose and fix a bug where you can exercise the app live (a "Ralf loop").
-allowed-tools: mcp__claude-in-chrome__tabs_context_mcp, mcp__claude-in-chrome__tabs_create_mcp, mcp__claude-in-chrome__navigate, mcp__claude-in-chrome__computer, mcp__claude-in-chrome__read_page, mcp__claude-in-chrome__javascript_tool, mcp__claude-in-chrome__read_console_messages, Read, Write, Edit, Bash, Glob, Grep, TaskCreate, TaskUpdate, TaskList
+allowed-tools: mcp__claude-in-chrome__tabs_context_mcp, mcp__claude-in-chrome__tabs_create_mcp, mcp__claude-in-chrome__navigate, mcp__claude-in-chrome__computer, mcp__claude-in-chrome__read_page, mcp__claude-in-chrome__javascript_tool, mcp__claude-in-chrome__read_console_messages, Read, Write, Edit, Bash, Glob, Grep, Task, TaskCreate, TaskUpdate, TaskList
 ---
 
 ## Mission
@@ -39,9 +39,23 @@ This is a **Ralf loop** — the model's limit is rarely the model; it's the feed
 - Observe the same signal you captured in step 1: the console error is gone, the network call returns 200, the log shows the right value, the test passes, the screenshot is correct.
 - **Not resolved? Iterate** — back to step 2 with the new signal. Do NOT mark fixed on a plausible diff. Wrong hypotheses are normal; an unverified "fix" is not allowed.
 
-### 5. Guard against regressions
+### 5. Guard against regressions — hand the test to a fresh context
 
-- Once observed-fixed, add or point to a test that would have caught it (or note why one isn't feasible).
+You just wrote the fix. A regression test you write now is scored against **your own
+hypothesis**: it encodes what your diff does, passes by construction, and would not have
+caught the bug. Dispatch the **`anantys.spec-tester`** agent instead and give it the defect
+spec from step 3 — the observable, its expected value, the value the bug produced, and the
+repro — as the source of truth. It may read the code for seams; it must not read your diff
+to decide what "correct" is:
+
+> Regression test for `<observable>`. Spec: after `<repro>`, `<observable>` MUST be
+> `<expected>`. The defect produced `<observed>`. Derive the assertion from the expected
+> value, not from the current implementation.
+
+Fold its result into your report. If no test is reachable (behavior only observable in the
+browser, no seam to inject at), say so plainly and point to the manual repro — never a
+test you wrote to confirm yourself.
+
 - Quickly check adjacent paths the fix could affect.
 
 ## Report
@@ -55,6 +69,7 @@ End with the evidence trail:
 | Root cause | <file:line — why it failed> |
 | Fix | <files changed, one-line intent> |
 | Re-proof (after) | <console clean / 200 / right value / test green> |
+| Regression guard | <spec-tester's test + result, or why none is reachable> |
 ```
 
 ## Rules
@@ -63,4 +78,6 @@ End with the evidence trail:
 - **Reproduce before fixing**; if you can't see it fail, you can't confirm it's fixed.
 - **Root cause over symptom** — read the runtime state, don't pattern-match.
 - One hypothesis per iteration; wrong ones are expected, unverified ones are not.
+- **You don't write your own regression test** — the context that produced the fix cannot
+  independently test it. Hand the defect spec to `anantys.spec-tester`.
 - **Never commit, push, or open a PR** unless the user explicitly asks — stop at the verified local fix.

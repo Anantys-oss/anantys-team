@@ -53,7 +53,7 @@ Read the actual diff, but **present it as a digestible summary, not a raw dump**
 Go beyond "it compiles." Check, and report concisely:
 - **What it does** — 1-2 sentences.
 - **Correctness & scope** — does the diff actually do what the PR claims? Anything out of scope / unrelated?
-- **Tests** — is the new behavior tested? Run the relevant tests if quick; report results honestly.
+- **Tests** — is the new behavior tested? Run the relevant tests if quick; report results honestly. Remember *who wrote them*: a green suite authored by the same agent that authored the code is a **change detector** — it asserts what the code does, not what it should do, so it cannot fail. When the PR claims to implement a spec/ticket and the change is sensitive, dispatch the `anantys.spec-tester` agent with **that spec, not the diff** (fresh context) and report whether its independently-derived tests pass. A failure there is the review's most valuable signal.
 - **Conventions & safety** — matches the codebase's patterns? Any security/data-integrity/migration concern?
 - **Blind spots** — for a large or sensitive change, dispatch the `anantys.code-auditor` agent (fresh context) to surface what the agent *omitted* (implicit contracts, edge cases), and fold its findings in.
 
