@@ -361,10 +361,9 @@ operator's go before any write.
    never overwrite prior runs. Prior runs are how a later reader recognises a re-occurrence.
 6. Update the per-assertion status in `qa-plan.md` **for the selected environment only**, and only
    for the assertions this run walked; then refresh that environment's progress table.
-7. **Finish as the run mode says** — autonomous: write `qa-report.md` as `report` does;
-   interactive: you only reach this step if the walk met no new DEFECT, so say so, and rewrite
-   `qa-report.md` if a known defect was re-observed. Either way, end the reply with the progress
-   table.
+7. **Finish:** write `qa-report.md` as `report` does — every run, both modes, so a defect this run
+   saw PASS drops out of the brief. Interactive: you only reach this step if the walk met no new
+   DEFECT, so say so. End the reply with the progress table.
 
 ### Judging rules
 
@@ -454,8 +453,8 @@ Tell the operator the file is ready to paste into a dev session. Do not open iss
 ## `status`
 
 For the selected environment (`--env <name>`, else the most recent run's — say which), read
-`qa-plan.md` + `qa-runs.md` and report, without running anything: counts of
-PASS / FAIL / BLOCKED / not-yet-run, the blocker list with each blocker's status, the open
+`qa-plan.md` + `qa-runs.md` and report, without running anything: the progress table
+(PASS / DEFECT / BLOCKED / Not run), the blocker list with each blocker's status, the open
 defects, and the never-observed gaps. One short table, then the single sentence that answers
 "can this ship?".
 
@@ -484,7 +483,8 @@ they are computed from `qa-plan.md`, never estimated.
 | 0% (0) | 0% (0) | 0% (0) | 0% (0) | 100% (<N>) |
 ```
 
-**Done** = has a result on this environment (PASS, DEFECT or BLOCKED). The identities hold for the
+**DEFECT** counts the assertions whose status on this environment is FAIL; a PASS-with-note counts
+as PASS. **Done** = has a result on this environment (PASS, DEFECT or BLOCKED). The identities hold for the
 **counts** — Done = PASS + DEFECT + BLOCKED, Done + Not run = N — never for the rounded
 percentages, so never adjust a count to make the percentages add up. Round each percentage to a
 whole number on its own; show a non-zero value below 1% as `<1%` (never `0%`) and a value above
