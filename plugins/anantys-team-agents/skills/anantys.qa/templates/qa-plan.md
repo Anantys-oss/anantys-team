@@ -26,8 +26,8 @@ scenario. A case you could not run is `BLOCKED`.
 Phases covered: <n> of <m> from `tasks.md`. **Excluded: Phase <k> (Polish)** — optional hardening,
 not user-observable.
 
-**Progress — `<env>` · <N> assertions** (one table per environment that has results; refreshed by
-every `run` / `retest` / `note`)
+**Progress — `<env>` · <N> assertions** (the default environment's from `plan`, plus one per
+environment that has results — who writes and refreshes each: SKILL.md, "Progress table")
 
 | ✅ Done | 🟢 PASS | 🔴 DEFECT | 🟠 BLOCKED | ⚪ Not run |
 |---|---|---|---|---|

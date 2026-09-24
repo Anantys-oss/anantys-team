@@ -296,12 +296,19 @@ preflight — one `AskUserQuestion`, both options described. Reuse that answer f
 question and overrides the remembered answer for that call. Never pick a mode yourself.
 
 - **Autonomous** — walk the **whole** plan without stopping on a defect. Record every DEFECT as it
-  is found, and at the end write `qa-report.md` (as `report` does) covering all of them.
-- **Interactive** — stop at the **first DEFECT** and hand off: close the run (steps 5–6 below —
-  run section appended, plan statuses updated, the unwalked assertions left `not run`), write
-  `qa-report.md` for that defect, and **print the fix brief in full in your reply**, so the operator
-  can paste it into a dev session straight from the console. Then stop and wait; the next step is a
-  fix and a `retest`.
+  is found, and at the end write `qa-report.md` exactly as `report` does.
+- **Interactive** — stop at the **first new DEFECT** and hand off: close the run (steps 5–6 below),
+  write `qa-report.md` exactly as `report` does with the stopping defect listed first, and **print
+  that defect's fix brief in full in your reply**, so the operator can paste it into a dev session
+  straight from the console. Then stop and wait; the next step is a fix and a `retest`.
+  A **new** DEFECT is one that was not already an open defect on this environment before the run.
+  A known defect that still fails is recorded, stays in `qa-report.md`, and does not stop the walk —
+  otherwise a `retest` would halt on the first unfixed case before reaching its regression-risk set.
+
+Either way, `qa-report.md` covers **every open defect on the environment** — never only this run's.
+A report rewritten with one defect silently drops the others from the brief the operator hands on.
+An assertion the run did not walk **keeps its previous status** on this environment; stopping early
+never resets a result to `not run`.
 
 A **DEFECT** is an assertion that FAILs after the adjudication check (Judging rules) — a
 PASS-with-note is not one. A `BLOCKED` result never stops an interactive run: record it and walk on.
@@ -346,17 +353,18 @@ operator's go before any write.
    line says (see Environments). On production, skip the unsafe scenario classes and record them
    `BLOCKED`. Per scenario: establish the precondition,
    perform the steps, then evaluate each assertion **individually**. In **interactive** mode the
-   first DEFECT ends the walk: finish that assertion's evidence, do steps 5–6, then hand off (see
-   Run mode).
+   first *new* DEFECT ends the walk: finish that assertion's evidence, do steps 5–6, then hand off
+   (see Run mode).
 4. **Post a one-line result after each scenario.** The operator is watching; a campaign that
    reports only at the end is one where a bad reset costs you the whole run.
 5. **Append a run section to `qa-runs.md`**, its header naming the environment and the mode —
    never overwrite prior runs. Prior runs are how a later reader recognises a re-occurrence.
-6. Update the per-assertion status in `qa-plan.md` **for the selected environment only**, and
-   refresh its progress table.
-7. **Finish as the run mode says** — autonomous: write `qa-report.md` with every DEFECT of the run;
-   interactive: you only reach this step if the plan was walked with no DEFECT, so say so. Either
-   way, end the reply with the progress table.
+6. Update the per-assertion status in `qa-plan.md` **for the selected environment only**, and only
+   for the assertions this run walked; then refresh that environment's progress table.
+7. **Finish as the run mode says** — autonomous: write `qa-report.md` as `report` does;
+   interactive: you only reach this step if the walk met no new DEFECT, so say so, and rewrite
+   `qa-report.md` if a known defect was re-observed. Either way, end the reply with the progress
+   table.
 
 ### Judging rules
 
@@ -421,6 +429,9 @@ Two rules make these annotations durable:
 An assertion the product deliberately dropped is struck through and marked REMOVED — keep the line,
 so its absence is never re-reported as a defect.
 
+After any ruling, refresh **every** progress table in `qa-plan.md` — a REMOVED assertion leaves N
+for all environments (see "Progress table").
+
 ## `report` — the fix brief
 
 Select the environment first (`--env <name>`, else the most recent run's — see Environments) and
@@ -452,10 +463,18 @@ defects, and the never-observed gaps. One short table, then the single sentence 
 
 ## Progress table
 
-Every action but `init` ends its reply with this table, for the selected environment (`plan`: the
-default one), and `qa-plan.md` carries the same table under its header. Percentages are of the
-plan's **total assertions** — REMOVED ones excluded — each with its count; they are computed from
-`qa-plan.md`, never estimated.
+Every action but `init` ends its reply with this table, and `qa-plan.md` keeps the same tables
+under its header. Which tables, and who writes them:
+
+- `plan` writes the **default** environment's table (all Not run), and keeps any existing ones —
+  recomputed, since a regeneration can change N.
+- `run` / `retest` add or refresh the **selected** environment's table.
+- `note` refreshes **every** table: a REMOVED assertion changes N for all of them. `note --env all`
+  prints them all; `note --env <name>` prints that environment's.
+- `status` / `report` print the selected environment's table; they write nothing to the plan.
+
+Percentages are of the plan's **total assertions** — REMOVED ones excluded — each with its count;
+they are computed from `qa-plan.md`, never estimated.
 
 ```markdown
 **Progress — `<env>` · <N> assertions**
@@ -465,9 +484,11 @@ plan's **total assertions** — REMOVED ones excluded — each with its count; t
 | 0% (0) | 0% (0) | 0% (0) | 0% (0) | 100% (<N>) |
 ```
 
-**Done** = has a result on this environment (PASS, DEFECT or BLOCKED), so Done = PASS + DEFECT +
-BLOCKED and Done + Not run = 100%. Round each to a whole percent; state a non-zero value below 1%
-as `<1%`, never `0%`.
+**Done** = has a result on this environment (PASS, DEFECT or BLOCKED). The identities hold for the
+**counts** — Done = PASS + DEFECT + BLOCKED, Done + Not run = N — never for the rounded
+percentages, so never adjust a count to make the percentages add up. Round each percentage to a
+whole number on its own; show a non-zero value below 1% as `<1%` (never `0%`) and a value above
+99% but short of 100% as `>99%` (never `100%`).
 
 ---
 
