@@ -1,6 +1,6 @@
 # QA campaign template — `qa-plan.md`
 
-Written by `/anantys.qa testplan` into the feature's spec-kit directory, beside `tasks.md`.
+Written by `/anantys.qa plan` into the feature's spec-kit directory, beside `tasks.md`.
 It is a **runnable campaign, not a reading list**: worked top to bottom, one assertion at a time.
 
 ---
@@ -11,14 +11,17 @@ It is a **runnable campaign, not a reading list**: worked top to bottom, one ass
 Derived from [`tasks.md`](./tasks.md) (what is built) and [`spec.md`](./spec.md) (what each case
 cites). Environment: [`.anantys/qa.md`](../../.anantys/qa.md). Runs: [`qa-runs.md`](./qa-runs.md).
 
-**Under test:** <branch/commit> — <environment>. A `--from pr:` campaign records the head branch it
-was derived from here, and `run` verifies the environment is actually serving it before walking a
-single scenario — a plan built from an unmerged PR, run against a stack serving `main`, reports
-green having verified nothing. Omit this line for a merged / already-deployed feature.
+**Under test:** <branch> @ <head commit> — <environment> (pr: <ref>). A `--from pr:` campaign
+records the head branch and commit it was derived from here, and `run` verifies the environment is
+actually serving that code before walking a single scenario — a plan built from an unmerged PR, run
+against a stack serving `main`, reports green having verified nothing. Once the PR has merged and
+deployed, a deployed commit that contains it satisfies the line; there is no need to edit it. Omit
+it for a feature that was already merged and deployed when the plan was written.
 
-**How to use.** Preflight first — stop if it fails. Reset. Then walk §2 in order. Each scenario
-states its **precondition**, its **steps**, and what to **assert**. Record PASS/FAIL/BLOCKED
-**per assertion**, never one verdict per scenario. A case you could not run is `BLOCKED`.
+**How to use.** Preflight first — stop if it fails. Reset (a `local` env only — never a `shared`
+one). Then walk §2 in order. Each scenario states its **precondition**, its **steps**, and what to
+**assert**. Record PASS/FAIL/BLOCKED **per assertion and per environment**, never one verdict per
+scenario. A case you could not run is `BLOCKED`.
 
 Phases covered: <n> of <m> from `tasks.md`. **Excluded: Phase <k> (Polish)** — optional hardening,
 not user-observable.
@@ -42,12 +45,16 @@ not user-observable.
 
 **Assert**
 
-- [ ] A1 <observable outcome> (FR-0xx).
-- [ ] A2 <observable outcome> (FR-0yy).
-      ⚠️ *Adjudicated <date> (operator): <ruling + reason>. Only <narrowed condition> is a real
-      A2 failure.*
-- [ ] ~~A3 <dropped behaviour>~~ — **REMOVED from the product** (<date>, operator). Do not report
-      its absence as a defect.
+- [ ] A1 <observable outcome> (FR-0xx). — `local`: PASS · `staging`: not run
+- [ ] A2 <observable outcome> (FR-0yy). — `local`: FAIL · `staging`: not run
+      ⚠️ *Adjudicated <date> (operator, env: `<name>` | `all`): <ruling + reason>. Only <narrowed
+      condition> is a real A2 failure.*
+- [ ] ~~A3 <dropped behaviour>~~ — **REMOVED from the product** (<date>, operator, env:
+      `all`). Do not report its absence as a defect.
+
+The per-environment suffix (`` `<env>`: PASS | FAIL | BLOCKED | not run ``) is the authoritative
+result, required on every assertion that has run on any environment; a run rewrites only its own
+environment's entry. The checkbox is checked only when **every** declared environment is PASS.
 
 ### B — <journey name>
 
@@ -70,9 +77,9 @@ Everything else is a defect to file, not a blocker.
 
 ## 5. Report format
 
-| ID | Scenario | Result | Evidence |
-|----|----------|--------|----------|
-| A1 | <short> | PASS | <what was observed — exact copy, URL, screenshot> |
+| ID | Scenario | Env | Result | Evidence |
+|----|----------|-----|--------|----------|
+| A1 | <short> | `local` | PASS | <what was observed — exact copy, URL, screenshot> |
 
 For each FAIL: what you saw, what the case expected, the URL, and the console/network error.
 ```
@@ -87,12 +94,14 @@ recognises a re-occurrence instead of re-diagnosing it from scratch.
 ```markdown
 # Run log — <feature>
 
-> **Status as of run <n>:** <open blockers, or "no open defects">.
+> **Status as of run <n>, per environment:** `local`: <open blockers, or "no open defects"> ·
+> `staging`: <…>. A result on one environment says nothing about another.
 
-## Run <n> — <date> — `run` | `retest`
+## Run <n> — <date> — `run` | `retest` — env: `<name>`
 
-Subject: <account/fixture id>. Build observed: <branch/commit the stack was serving, from the
-build-identity check — omit only when the plan has no **Under test:** line>. Path walked: <one line>.
+Environment: `<name>` (`local` | `shared`). Subject: <account/fixture id>. Build observed:
+<branch/commit the env was serving, from its build-identity check — omit only when the plan has no
+**Under test:** line>. Path walked: <one line>.
 
 | ID | Result | Evidence |
 |----|--------|----------|

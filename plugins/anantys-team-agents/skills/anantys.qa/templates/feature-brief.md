@@ -1,12 +1,12 @@
-# Feature brief — the `--brief` / `--from linear:` / `--from pr:` source for `/anantys.qa testplan`
+# Feature brief — the `--brief` / `--from linear:` / `--from pr:` source for `/anantys.qa plan`
 
-The universal, non-spec-kit input to `testplan`. It plays the two roles a spec-kit dir plays —
+The universal, non-spec-kit input to `plan`. It plays the two roles a spec-kit dir plays —
 **requirements** (what each assertion cites) and **what shipped** (what was actually built) — in
 one file. Write it by hand for a feature built any way (a bot-loop epic, a hotfix, a design doc),
 or let `--from linear:SKU-…` / `--from pr:<url>` assemble one for you to confirm.
 
 > Same discipline as spec-kit: assertions cite **requirement ids**, never the diff. Give every
-> requirement a stable id here; `testplan` will assign `R1`, `R2`, … to any that lack one and write
+> requirement a stable id here; `plan` will assign `R1`, `R2`, … to any that lack one and write
 > them back, and runs / notes / reports reference those ids for the life of the feature.
 
 ---
@@ -16,7 +16,7 @@ or let `--from linear:SKU-…` / `--from pr:<url>` assemble one for you to confi
 
 _Source: <hand-written | linear:SKU-… | pr:owner/repo#42>. Assembled <YYYY-MM-DD>._
 
-_Under test: <the branch/commit the campaign must run against, and the environment serving it>._
+_Under test: <the branch and head commit the campaign must run against, and the environment serving it>._
 A brief assembled from an unmerged PR is worthless if the stack is serving `main` — state the
 precondition here so a run stops instead of QA-ing the wrong code.
 

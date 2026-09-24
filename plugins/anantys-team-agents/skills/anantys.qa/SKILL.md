@@ -1,6 +1,6 @@
 ---
 name: anantys.qa
-description: Run a browser-driven QA campaign against a completed feature. Derives an executable test plan from a spec-kit tasks.md, a freeform feature brief (--brief), a set of tracker issues (--from linear:SKU-…), or one or more GitHub pull requests (--from pr:<url>), executes it in a real browser recording PASS/FAIL/BLOCKED per assertion, accumulates operator adjudications so a defect is never re-filed twice, and emits a copy-pasteable fix brief for the dev agent. Environment specifics live in a project-local .anantys/qa.md, never in the skill. Use to QA a finished feature — however it was built — before release.
+description: Run a browser-driven QA campaign against a completed feature. Derives an executable test plan from a spec-kit tasks.md, a freeform feature brief (--brief), a set of tracker issues (--from linear:SKU-…), or one or more GitHub pull requests (--from pr:<url>), executes it in a real browser — against a local dev stack or a deployed environment (staging / a preview), selected with --env — recording PASS/FAIL/BLOCKED per assertion, accumulates operator adjudications so a defect is never re-filed twice, and emits a copy-pasteable fix brief for the dev agent. Environment specifics live in a project-local .anantys/qa.md, never in the skill. Use to QA a finished feature — however it was built — before release.
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep, Task, TaskCreate, TaskUpdate, TaskList
 ---
 
@@ -16,37 +16,39 @@ Three properties make this useful rather than ceremonial:
 
 ## Actions
 
-Invoked as `/anantys.qa <action> [args]`. If no action is given, infer it: no `.anantys/qa.md` → `init`; no `qa-plan.md` → `testplan`; otherwise → `status`.
+Invoked as `/anantys.qa <action> [args]`. If no action is given, infer it: no `.anantys/qa.md` → `init`; no `qa-plan.md` → `plan`; otherwise → `status`.
 
 | Action | What it does |
 |---|---|
 | `init` | Interview the operator and write `.anantys/qa.md` — the project's environment contract |
-| `testplan` | Derive `qa-plan.md` from the feature source: a spec-kit dir, a `--brief <file.md>`, `--from linear:<SKU-…>`, or `--from pr:<url>` |
-| `run` | Execute the plan in a browser, recording results and appending to `qa-runs.md` |
-| `retest` | Re-run only what is unresolved plus the regression-risk cases around each fix |
-| `note` | Record an operator adjudication into the plan so it is never re-filed |
-| `report` | Emit `qa-report.md` — a fix brief to paste into a dev session |
-| `status` | Summarize coverage and remaining blockers without running anything |
+| `plan` | Derive `qa-plan.md` from the feature source: a spec-kit dir, a `--brief <file.md>`, `--from linear:<SKU-…>`, or `--from pr:<url>` |
+| `run` | Execute the plan in a browser — `--env <name>` targets a deployed environment (staging / preview); default is the environment marked default — recording results and appending to `qa-runs.md` |
+| `retest` | Re-run only what is unresolved plus the regression-risk cases around each fix (`--env <name>` as for `run`) |
+| `note` | Record an operator adjudication into the plan so it is never re-filed — scoped to one environment (`--env <name>`) or to `--env all` |
+| `report` | Emit `qa-report.md` — a fix brief to paste into a dev session (`--env <name>`; default: the last run's environment) |
+| `status` | Summarize coverage and remaining blockers without running anything (`--env` as for `report`) |
+
+`testplan` — the action's former name — is still accepted as an alias of `plan`.
 
 ---
 
 ## Locating the feature
 
-`testplan` needs a **feature source** — where the requirements (each with a stable id), *what
+`plan` needs a **feature source** — where the requirements (each with a stable id), *what
 shipped*, and *what did not* come from. Every other action needs the **feature directory** — where
 the campaign artifacts (`qa-plan.md`, `qa-runs.md`, `qa-report.md`) live. A source is one of four
-kinds; all resolve to a single feature directory, so everything after `testplan` is identical no
+kinds; all resolve to a single feature directory, so everything after `plan` is identical no
 matter how the plan was derived.
 
 1. **spec-kit dir** (default) — a folder holding `tasks.md` (and usually `spec.md`, `plan.md`). The
    folder IS the feature directory; artifacts are written beside `tasks.md`.
-   - Named: `/anantys.qa testplan 206-subscribe-funnel`.
+   - Named: `/anantys.qa plan 206-subscribe-funnel`.
    - Else read `specs_dir` from `.anantys/qa.md` (default `specs/`), list its subdirectories, and
      take the one matching the current git branch's name; otherwise ask.
 2. **`--brief <file.md>`** — a single markdown brief you wrote by hand (`templates/feature-brief.md`),
    carrying **Requirements** (each with a stable id), a **What shipped** summary, and a **Not
    shipped / known gaps** section. The universal, dependency-free path for any feature NOT built
-   with spec-kit — a bot-loop feature, a hotfix, a design doc. `testplan` **copies** the brief to
+   with spec-kit — a bot-loop feature, a hotfix, a design doc. `plan` **copies** the brief to
    `.anantys/qa/<slug>/brief.md` — it never edits the operator's original — and that
    `.anantys/qa/<slug>/` directory is the feature directory.
 3. **`--from linear:SKU-12,SKU-13,…`** — a convenience adapter that *produces* the same brief:
@@ -76,7 +78,7 @@ it verbatim on every later action.
 
 Never guess between two candidate sources. Ask.
 
-**Every action after `testplan` resolves the feature directory the same way:** a spec-kit dir is
+**Every action after `plan` resolves the feature directory the same way:** a spec-kit dir is
 itself; a brief-, linear- or PR-derived campaign lives under `.anantys/qa/<slug>/`. Locate it by the
 named slug; else list `.anantys/qa/*/qa-plan.md` and take the one whose directory name equals the
 **normalized** current git branch (same rule as above — `team/qa-pr-source` matches
@@ -86,7 +88,7 @@ match for a non-spec-kit campaign — a spec dir sharing the PR's branch name is
 campaign. All artifacts are written **inside the feature directory**, beside its source (`tasks.md`
 or `brief.md`):
 
-- `qa-plan.md` — the campaign (regenerated by `testplan`, annotated by `note`)
+- `qa-plan.md` — the campaign (regenerated by `plan`, annotated by `note`)
 - `qa-runs.md` — the run log: one section per run, plus the closed-defect history
 - `qa-report.md` — the fix brief for the dev agent (overwritten by `report`)
 
@@ -104,17 +106,43 @@ legwork first so the questions are few and precise:
 - Detect running services: `docker ps`, and probe likely dev hostnames.
 - **Never read `.env` values into the transcript.** Reference *how* to obtain a secret (`grep -oE 'X=.*' .env`), never the secret itself.
 
-Then ask the operator only what you could not infer, in one batch: the real base URLs (a dev stack
-behind a reverse proxy is rarely on `localhost:<port>`), the preflight checks whose failure would
-waste a whole campaign, **how this stack reports the code it is serving** (a `/version` or
-`/healthz` endpoint, a deployed-SHA banner, a `docker inspect` — the build-identity check `run`
-uses to enforce a plan's `**Under test:**` line), the reset procedure for a fresh test subject,
-test credentials, and any known environment drift that must not be filed as a defect.
+Then ask the operator only what you could not infer, in one batch:
+
+- **Which environments exist** — the local stack, and any deployed ones worth testing against
+  (staging, a PR preview). Give each a name and a `kind:` (`local` / `shared`, see Environments),
+  and mark exactly one as **default** — the `local` one when there is one; a project with no local
+  stack marks a `shared` env default instead.
+- **Per environment:** the real base URLs (a dev stack behind a reverse proxy is rarely on
+  `localhost:<port>`), **what drives the browser** (`Driven by:` — the operator's connected
+  browser, or a named local command such as a screenshot script or headless runner), the preflight
+  checks whose failure would waste a whole campaign, **how that environment reports the code it is
+  serving** (a `/version` or `/healthz` endpoint, a deployed-SHA banner, a `docker inspect` — the
+  build-identity check `run` uses to enforce a plan's `**Under test:**` line; it is per environment,
+  since staging lags `main` between deploys), test credentials, and any known drift that must not
+  be filed as a defect.
+- **`local` only:** the reset procedure for a fresh test subject, and a payment sandbox instrument
+  (test card / token) if any journey touches money — without one, every checkout case is BLOCKED.
+- **`shared` only:** how the operator's signed-in browser session is made available to you, whether
+  a real record exhibiting the behaviour under test exists there (a shared env has no fixtures), and
+  how deploy lag shows up (a fix merged but not yet deployed), and **whether it is production**
+  (`Production: yes | no`). A `shared` block is always written with `Reset — NONE`, never a reset
+  command — do not ask for one.
+
+Write only the environments the operator named, with real values — never copy a template block
+full of `<placeholders>` into the contract. Re-running `init` on an existing file adds or updates
+environment blocks and leaves the others untouched.
+
+**Re-running `init` on a flat file migrates it first.** If the existing `.anantys/qa.md` has no
+`## Environment:` blocks (the legacy layout, see Environments), rewrite its flat `## Surfaces` /
+`## Preflight` / `## Reset` / `## Credentials` / … sections as one
+`## Environment: local (kind: local, default)` block **before** adding any new one, and show the
+converted file in the confirmation below. Appending a `shared` block to a flat file leaves the local
+sections read by nothing and no environment marked default — the local campaign stops resolving.
 
 Confirm the file back to the operator before writing. `.anantys/qa.md` is committed — so it must
 contain **no secrets**, only the commands that retrieve them.
 
-## `testplan` — derive the campaign from the feature source
+## `plan` — derive the campaign from the feature source
 
 Resolve the source (see "Locating the feature"), then read it for the two roles — the
 **requirements** (what each assertion cites) and **what shipped** (what was actually built):
@@ -155,15 +183,16 @@ Write `qa-plan.md` following `templates/qa-plan.md`. Every assertion gets a stab
 them**. On a regeneration, keep existing ids and their adjudication annotations; append new ones.
 
 If the source carries an **under-test precondition** — a `--from pr:` head branch, or a brief's
-`_Under test:_` line — copy it into the plan header as `**Under test:** <branch/commit> —
-<environment>`. `run` reads `qa-plan.md`, never the brief, so a precondition that lives only in the
+`_Under test:_` line — copy it into the plan header as `**Under test:** <branch> @ <head commit> —
+<environment>` (plus `pr: <ref>` for a PR source). Record the head **commit**, not only the branch:
+once the PR merges, `run` can only recognise the shipped code by commit ancestry (step 1). `run` reads `qa-plan.md`, never the brief, so a precondition that lives only in the
 brief is never enforced: a PR-derived campaign would run green against a stack serving `main`.
 
 Show the operator the scenario list and the blocker list before writing.
 
 ### `--from pr:` — assembling the brief from pull requests
 
-Per PR, read `gh pr view <ref> --json title,body,state,mergedAt,headRefName,closingIssuesReferences,comments,reviews`
+Per PR, read `gh pr view <ref> --json title,body,state,mergedAt,headRefName,headRefOid,mergeCommit,closingIssuesReferences,comments,reviews`
 and `gh pr diff <ref> --name-only`. Several PRs assemble into **one** brief. Four rules make the
 result a QA source rather than a diff summary:
 
@@ -186,36 +215,118 @@ Write the assembled brief to `.anantys/qa/<slug>/brief.md` and **confirm it with
 before proceeding** — the requirements list especially. From there it is a `--brief`. If `gh` is
 unavailable or the PR is not accessible, say so and ask for a `--brief` instead.
 
+## Environments — `local` vs `shared` (staging / preview / prod)
+
+`.anantys/qa.md` may declare **more than one environment**, so the same campaign can run against a
+local dev stack *or* a deployed one. Each environment is one of two **kinds**:
+
+- **`local`** — the developer's own stack (Docker, a dev server). It is **resettable**. Normally the
+  default.
+- **`shared`** — a deployed, persistent environment reached over the network: **staging**, a PR
+  **preview**, or **production**. It is **NEVER reset** — it may hold real data and other people rely
+  on it — so a test subject is created **additively** (a new record; a new PR → a real run), and it
+  is driven through the **operator's already-signed-in browser session**: the agent reuses that
+  session, and never signs in, never resets, never runs a destructive command against it.
+
+**How each environment is driven is read from its `Driven by:` line**, never assumed: the
+operator's connected browser (e.g. Claude-in-Chrome), or a named local command. A `shared` env is
+always driven by the operator's connected browser. An environment with no `Driven by:` line — a
+legacy file included — is driven by the operator's connected browser.
+
+**Production is a `shared` env with `Production: yes`**, and gets two extra guards:
+
+- **Never run on production:** any scenario that charges a real card, records a real consent, or
+  sends a notification (email, SMS, push) to a real person. Those assertions are `BLOCKED` on
+  production **by construction** — reason "unsafe on production" — never walked.
+- The pre-write confirmation below is mandatory (it applies to every `shared` env).
+
+Select one with `--env <name>` on any action that reads or writes results — `run`, `retest`,
+`note`, `status`, `report` (`/anantys.qa run --env staging`). With none:
+
+- `run` / `retest` use the environment marked **default**, whatever its kind — normally the `local`
+  one. A contract with no `local` environment must mark a `shared` one default; a bare `run` then
+  targets it, pre-write confirmation included.
+- `status` / `report` / `note` use **the environment of the most recent run** in `qa-runs.md` (the
+  default if there is none) — so `run --env staging` followed by a bare `report` reports staging.
+  **A run header that names no environment** (a `qa-runs.md` written before environments existed)
+  **is a run on the default environment.**
+
+Always state which environment was selected, and how. Every surface URL, preflight check,
+build-identity check, reset step, credential and drift note then comes from **that** environment's
+block in `.anantys/qa.md`.
+
+**A `.anantys/qa.md` with no `## Environment:` blocks** (written by an earlier `init`: flat
+`## Surfaces` / `## Preflight` / `## Reset` / `## Credentials` sections) **is a single `local`
+environment named `local`, and it is the default** — run it exactly as before, reset included.
+`--env <other>` against such a file is an error: stop and tell the operator to re-run `init`, which
+migrates the file before declaring the new environment (see `init`). Never guess an environment's
+kind; an env whose kind you cannot establish is not run.
+
+**Results are per environment**, since an assertion can pass on one and fail on another (a fix
+deployed to staging but not the local stack, or the reverse):
+
+- Every `qa-runs.md` run header names its environment (`templates/qa-plan.md`).
+- The per-assertion status in `qa-plan.md` is recorded **per environment** (`local: FAIL ·
+  staging: PASS`) — the suffix is the authoritative record, required on every assertion that has
+  run anywhere; the checkbox is checked only when every declared environment is PASS. A run
+  updates only the selected environment's status, never another's.
+- `retest`, `status` and `report` read only the results recorded for the selected environment and
+  say which environment they describe. `status` and `report` also name every other environment
+  that has results, so a defect recorded elsewhere is never silently out of view.
+- **Adjudications are scoped too** (see `note`): most are drift rulings, and drift is
+  per-environment. A ruling applies only to its own environment, or to all of them when scoped
+  `all`.
+
+Testing a shipped feature on `staging` is often easier than reproducing its data locally —
+but the `shared` rules above are not optional, because the blast radius of a reset or a stray write
+there is real data, not a fixture.
+
 ## `run` — execute the campaign
 
 Preconditions: `.anantys/qa.md` exists, `qa-plan.md` exists — and, if `qa-plan.md` carries an
 `**Under test:**` line, the environment is serving that branch/commit (verified in step 1).
 
-1. **Preflight.** Run every check in `.anantys/qa.md`. On failure, **stop and tell the operator** —
-   do not start services yourself, and do not "work around" a failed preflight. A campaign run on
-   a half-up stack produces confident nonsense. Then read the plan's **Under test** line in
-   `qa-plan.md`. If it names a branch/commit, verify the environment is actually serving that code
-   before walking a single scenario — a plan derived from an unmerged PR, run against a stack
-   serving `main`, reports green having verified nothing. How to verify it:
-   - If `.anantys/qa.md` defines a **build identity** check, run it and compare its output to the
-     plan's branch/commit. On a mismatch, **stop** and tell the operator what is deployed.
-   - If it does not, **ask the operator which build the stack is serving and stop until they
+1. **Preflight.** Run every check for the selected environment in `.anantys/qa.md`. On failure,
+   **stop and tell the operator** — do not start services yourself, and do not "work around" a failed
+   preflight. A campaign run on a half-up stack produces confident nonsense. Then read the plan's
+   **Under test** line in `qa-plan.md`. If it names a branch/commit, verify the selected environment
+   is actually serving that code before walking a single scenario — a plan derived from an unmerged
+   PR, run against a stack serving `main`, reports green having verified nothing. How to verify it:
+   - If the selected environment's block defines a **build identity** check, run it and compare its
+     output to the plan's branch/commit. Never borrow another environment's probe — staging lags
+     `main` between deploys. The environment **serves the code under test** when the deployed
+     commit is the plan's head commit, **or contains it** — the PR has since merged and deployed:
+     after a `git fetch`, `git merge-base --is-ancestor <head commit> <deployed commit>`, or, for a
+     squash / rebase merge, the same test on the PR's merge commit (`gh pr view <ref> --json
+     mergeCommit`). Record a match found this way as **satisfied by merge** (`<merge commit> in
+     <deployed commit>`) in the run section, and leave the plan's line as it is. Otherwise — a
+     different commit, a merged PR not yet deployed, or a probe that names only a branch such as
+     `main` — **stop** and tell the operator what is deployed.
+   - If it does not, **ask the operator which build that environment is serving and stop until they
      answer** — never infer it from the local checkout: `git branch --show-current` describes your
-     working copy, not a remote dev stack.
+     working copy, not a remote dev stack or a deployed env.
    - Record the observed branch/commit in the `qa-runs.md` run section, beside `Subject:`, so a
      later reader can tell which build a green run was green against.
 
    The line is absent for a merged/deployed feature, and then there is nothing extra to check.
-2. **Reset.** Apply the reset procedure. Confirm the reset actually took effect (a stale auth
-   cookie or leftover cache silently invalidates every assertion that follows) — verify by
-   observing the app, not by trusting the command's exit code.
-3. **Walk the scenarios in order**, in a real browser. Per scenario: establish the precondition,
+
+   **On a `shared` env, confirm the target before anything is written:** echo the environment name,
+   its base URL, the build it serves, whether it is production, and the scenarios that will create
+   data there — then wait for the operator's explicit go. No go, no run.
+2. **Reset — `local` only.** On a `local` environment, apply its reset procedure and confirm it took
+   effect (a stale auth cookie or leftover cache silently invalidates every assertion that follows) —
+   verify by observing the app, not by trusting the command's exit code. On a **`shared`**
+   environment there is **NO reset**: never reset staging / preview / prod — reuse the operator's
+   session and create any needed test data additively (see Environments).
+3. **Walk the scenarios in order**, in a real browser driven as the environment's `Driven by:`
+   line says (see Environments). On production, skip the unsafe scenario classes and record them
+   `BLOCKED`. Per scenario: establish the precondition,
    perform the steps, then evaluate each assertion **individually**.
 4. **Post a one-line result after each scenario.** The operator is watching; a campaign that
    reports only at the end is one where a bad reset costs you the whole run.
-5. **Append a run section to `qa-runs.md`** — never overwrite prior runs. Prior runs are how a
-   later reader recognises a re-occurrence.
-6. Update the per-assertion status in `qa-plan.md`.
+5. **Append a run section to `qa-runs.md`**, its header naming the environment — never overwrite
+   prior runs. Prior runs are how a later reader recognises a re-occurrence.
+6. Update the per-assertion status in `qa-plan.md` **for the selected environment only**.
 
 ### Judging rules
 
@@ -227,35 +338,48 @@ Preconditions: `.anantys/qa.md` exists, `qa-plan.md` exists — and, if `qa-plan
   not a defect.
 - **Screenshot anything visual**, and capture the URL plus any console/network error on every FAIL.
 - **Never infer a PASS from a screen you did not reach.**
-- Check every FAIL against the adjudication annotations in `qa-plan.md` before filing it. If it is
-  already ruled intended or a known drift, record it as PASS-with-note and move on.
+- Check every FAIL against the adjudication annotations in `qa-plan.md` **scoped to this environment
+  or to `all`** before filing it. If it is already ruled intended or a known drift there, record it
+  as PASS-with-note and move on. A ruling scoped to another environment never passes a FAIL here —
+  file it, and mention the other env's ruling in the evidence so the operator can extend it.
 
 ## `retest` — the second pass after a fix
 
 A full re-run after a fix pass is expensive and mostly re-confirms green. Instead:
 
-1. Take from `qa-runs.md` every assertion that is FAIL or BLOCKED.
+1. Take from `qa-runs.md` every assertion whose latest result **on the selected environment** is
+   FAIL or BLOCKED — a result recorded on another environment neither adds nor removes a case.
 2. Add the **regression-risk set** around each fix — the assertions the fix could plausibly have
    broken, especially the ones an *over-fix* would break. A guard added to stop a wrong behaviour
    very often also suppresses the right one; assert the right one explicitly.
-3. Add any assertion the operator flagged in `note`.
-4. Run that subset with the same rules as `run`, append a run section marked `retest`.
+3. Add any assertion the operator flagged in `note` for this environment or for `all`.
+4. Run that subset with the same rules as `run`, append a run section marked `retest` with its
+   environment.
 
 State the subset before running it, and say plainly what you are **not** re-testing.
 
 ## `note` — record an operator adjudication
 
-`/anantys.qa note A4 known dev-env price drift, do not file`
+`/anantys.qa note A4 --env local known dev-env price drift, do not file`
 
-Append the ruling as an annotation on that assertion in `qa-plan.md`, with the date and the
-reason, in the form future runs will read:
+Every ruling has an **environment scope**: `--env <name>` for a ruling true of one environment (any
+drift), `--env all` for a product decision true everywhere (intended behaviour, a REMOVED
+assertion). With no `--env`, scope it to the most recent run's environment and say so — never
+default to `all`; widening a ruling is the operator's call.
+
+Append the ruling as an annotation on that assertion in `qa-plan.md`, with the date, the scope and
+the reason, in the form future runs will read:
 
 ```markdown
 - [ ] A4 Checkout is priced for the selected plan and period (FR-012).
-      ⚠️ *Adjudicated 2026-08-03 (operator): the grid/checkout price gap on the dev stack is a
-      sandbox key drift, not a product defect. Only a mismatch in **plan or period** is a real
-      A4 failure.*
+      ⚠️ *Adjudicated 2026-08-03 (operator, env: `local`): the grid/checkout price gap is a sandbox
+      key drift, not a product defect. Only a mismatch in **plan or period** is a real A4 failure.*
 ```
+
+An annotation with **no** `env:` (written before environments existed) is scoped to the default
+environment only — except a **REMOVED** strike-through, which is a product decision and reads as
+`env: all`. Scoping it to the default env would re-file the dropped behaviour as a defect on every
+other environment.
 
 Two rules make these annotations durable:
 
@@ -269,8 +393,9 @@ so its absence is never re-reported as a defect.
 
 ## `report` — the fix brief
 
-Write `qa-report.md` addressed to a **dev agent in a fresh session** that has the spec context but
-not yours. For each open defect:
+Select the environment first (`--env <name>`, else the most recent run's — see Environments) and
+name it at the top of the report. Write `qa-report.md` addressed to a **dev agent in a fresh
+session** that has the spec context but not yours. For each open defect:
 
 - **Assertion id and what the spec requires** (with its requirement id).
 - **What you observed** — exact copy, URL, console/network error.
@@ -287,7 +412,8 @@ Tell the operator the file is ready to paste into a dev session. Do not open iss
 
 ## `status`
 
-Read `qa-plan.md` + `qa-runs.md` and report, without running anything: counts of
+For the selected environment (`--env <name>`, else the most recent run's — say which), read
+`qa-plan.md` + `qa-runs.md` and report, without running anything: counts of
 PASS / FAIL / BLOCKED / not-yet-run, the blocker list with each blocker's status, the open
 defects, and the never-observed gaps. One short table, then the single sentence that answers
 "can this ship?".
@@ -298,6 +424,10 @@ defects, and the never-observed gaps. One short table, then the single sentence 
 
 - **Environment details live in `.anantys/qa.md`, never in this skill and never in `qa-plan.md`.**
   A plan that hardcodes a hostname stops working for the next project — and for the next dev stack.
+- **Never reset — or write destructively to — a `shared` environment** (staging, a preview, prod).
+  It is persistent and may hold real data; create test subjects additively and drive it through the
+  operator's existing browser session, after they confirm the target. Reset is for a `local` env
+  only; on production, never charge, record consent for, or notify a real person.
 - **Never start, restart or repair the stack.** A failed preflight stops the campaign and goes back
   to the operator.
 - **Never modify product code.** You observe and report; fixing is a separate session, which is
