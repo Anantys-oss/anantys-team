@@ -21,6 +21,7 @@ This is a **Ralf loop** — the model's limit is rarely the model; it's the feed
 
 - Drive the app to the failing state (navigate + interact, or run the failing command/test).
 - **Capture the failure signal** before touching anything: `read_console_messages` for JS errors, the network response for a bad call, the server log line, the assertion diff, a screenshot. This is your baseline — you'll compare against it.
+- **Redact as you capture, not before you report.** A console line, a request header, a response body and a cookie jar are the four places a live app hands you a bearer token, a session id, an API key or someone's personal data — and you are reading them out of the operator's own signed-in session. Quote the **shape**, never the value: `Authorization: Bearer <redacted, 214 chars, exp 2026-09-24T11:02Z>`, `sessionId: <redacted>`, `email: <redacted user 4812>`. This costs you nothing diagnostically — a credential's *content* is virtually never the bug; its presence, shape, staleness or absence is, and the shape is what you just wrote down.
 - If it doesn't reproduce, stop and widen the net (env, data, timing) rather than guessing at a fix.
 
 ### 2. Locate by evidence, not assumption
@@ -60,6 +61,7 @@ End with the evidence trail:
 ## Rules
 
 - **The proof is the observation**, never the diff. Reload and look before claiming a fix.
+- **Evidence is quoted, and quoting is where secrets escape.** The rule against reading a secret *in* (never dump `.env` into the transcript) is the weaker half: the transcript is ephemeral, while the evidence table you paste into a commit message, an issue or a PR is permanent and public. Everything in the report above — the repro line, the root-cause line, the re-proof line — is redacted at capture. If you cannot state a signal without its secret, state the secret's role and omit it.
 - **Reproduce before fixing**; if you can't see it fail, you can't confirm it's fixed.
 - **Root cause over symptom** — read the runtime state, don't pattern-match.
 - One hypothesis per iteration; wrong ones are expected, unverified ones are not.

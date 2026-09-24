@@ -438,7 +438,11 @@ name it at the top of the report. Write `qa-report.md` addressed to a **dev agen
 session** that has the spec context but not yours. For each open defect:
 
 - **Assertion id and what the spec requires** (with its requirement id).
-- **What you observed** — exact copy, URL, console/network error.
+- **What you observed** — exact copy, URL, console/network error. *Exact* means faithful, not verbatim:
+  redact every credential, session id, auth header, cookie and real person's data out of the quote as
+  you write it, leaving the shape (`Bearer <redacted>`, `user <redacted 4812>`). On a `shared` env you
+  are quoting the operator's live session and, on production, real customers' records — and this file
+  is written to be pasted into a *different* session, which is a second hop the operator never reviews.
 - **Minimal repro** — the shortest path from a clean state.
 - **Blast radius** — money / legal / data / journey / cosmetic. Lead with the money and legal ones.
 - **What a fix must not break** — the assertions currently passing that the obvious fix would
@@ -504,6 +508,12 @@ whole number on its own; show a non-zero value below 1% as `<1%` (never `0%`) an
   to the operator.
 - **Never modify product code.** You observe and report; fixing is a separate session, which is
   the entire point of `report`.
+- **Redact on the way out, not just on the way in.** "Never read `.env` values into the transcript"
+  guards the weaker channel — the transcript is ephemeral and the operator sees it. `qa-plan.md`,
+  `qa-runs.md` and `qa-report.md` are committed, and their evidence is copied from a browser that is
+  signed in as somebody. Every quoted signal is redacted as it is recorded: auth headers, cookies,
+  session and account ids, anything after `?` in a URL that carries one, and any real person's data
+  seen on a `shared` env. The assertion is what failed, never who was logged in when it did.
 - **Assertion ids are permanent.** Never renumber. Runs, notes and reports reference them for the
   life of the feature.
 - **Append runs, never overwrite them.** The history is what stops a fixed defect from being
