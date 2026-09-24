@@ -13,6 +13,10 @@ none, the environment marked **default** (a `local`) is used. Each is one **kind
   additively; driven through the operator's already-signed-in browser. Has **no** Reset block — an
   explicit "Reset: NONE" instead.
 
+A file with **no** `## Environment:` blocks (the flat layout an earlier `init` wrote) is read as a
+single `local` environment named `local`, marked default — it keeps working unchanged. Re-run
+`init` to add a `shared` one.
+
 > **No secrets.** Record the *command* that retrieves a credential, never the credential.
 > This file is committed.
 

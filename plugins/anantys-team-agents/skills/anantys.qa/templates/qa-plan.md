@@ -11,9 +11,10 @@ It is a **runnable campaign, not a reading list**: worked top to bottom, one ass
 Derived from [`tasks.md`](./tasks.md) (what is built) and [`spec.md`](./spec.md) (what each case
 cites). Environment: [`.anantys/qa.md`](../../.anantys/qa.md). Runs: [`qa-runs.md`](./qa-runs.md).
 
-**How to use.** Preflight first — stop if it fails. Reset. Then walk §2 in order. Each scenario
-states its **precondition**, its **steps**, and what to **assert**. Record PASS/FAIL/BLOCKED
-**per assertion**, never one verdict per scenario. A case you could not run is `BLOCKED`.
+**How to use.** Preflight first — stop if it fails. Reset (a `local` env only — never a `shared`
+one). Then walk §2 in order. Each scenario states its **precondition**, its **steps**, and what to
+**assert**. Record PASS/FAIL/BLOCKED **per assertion and per environment**, never one verdict per
+scenario. A case you could not run is `BLOCKED`.
 
 Phases covered: <n> of <m> from `tasks.md`. **Excluded: Phase <k> (Polish)** — optional hardening,
 not user-observable.
@@ -37,7 +38,7 @@ not user-observable.
 
 **Assert**
 
-- [ ] A1 <observable outcome> (FR-0xx).
+- [ ] A1 <observable outcome> (FR-0xx). — `local`: PASS · `staging`: not run
 - [ ] A2 <observable outcome> (FR-0yy).
       ⚠️ *Adjudicated <date> (operator): <ruling + reason>. Only <narrowed condition> is a real
       A2 failure.*
@@ -65,9 +66,9 @@ Everything else is a defect to file, not a blocker.
 
 ## 5. Report format
 
-| ID | Scenario | Result | Evidence |
-|----|----------|--------|----------|
-| A1 | <short> | PASS | <what was observed — exact copy, URL, screenshot> |
+| ID | Scenario | Env | Result | Evidence |
+|----|----------|-----|--------|----------|
+| A1 | <short> | `local` | PASS | <what was observed — exact copy, URL, screenshot> |
 
 For each FAIL: what you saw, what the case expected, the URL, and the console/network error.
 ```
@@ -82,11 +83,12 @@ recognises a re-occurrence instead of re-diagnosing it from scratch.
 ```markdown
 # Run log — <feature>
 
-> **Status as of run <n>:** <open blockers, or "no open defects">.
+> **Status as of run <n>, per environment:** `local`: <open blockers, or "no open defects"> ·
+> `staging`: <…>. A result on one environment says nothing about another.
 
-## Run <n> — <date> — `run` | `retest`
+## Run <n> — <date> — `run` | `retest` — env: `<name>`
 
-Subject: <account/fixture id>. Path walked: <one line>.
+Environment: `<name>` (`local` | `shared`). Subject: <account/fixture id>. Path walked: <one line>.
 
 | ID | Result | Evidence |
 |----|--------|----------|

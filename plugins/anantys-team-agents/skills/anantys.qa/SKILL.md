@@ -89,10 +89,23 @@ legwork first so the questions are few and precise:
 - Detect running services: `docker ps`, and probe likely dev hostnames.
 - **Never read `.env` values into the transcript.** Reference *how* to obtain a secret (`grep -oE 'X=.*' .env`), never the secret itself.
 
-Then ask the operator only what you could not infer, in one batch: the real base URLs (a dev stack
-behind a reverse proxy is rarely on `localhost:<port>`), the preflight checks whose failure would
-waste a whole campaign, the reset procedure for a fresh test subject, test credentials, and any
-known environment drift that must not be filed as a defect.
+Then ask the operator only what you could not infer, in one batch:
+
+- **Which environments exist** — the local stack, and any deployed ones worth testing against
+  (staging, a PR preview). Give each a name and a `kind:` (`local` / `shared`, see Environments),
+  and mark exactly one `local` as **default**.
+- **Per environment:** the real base URLs (a dev stack behind a reverse proxy is rarely on
+  `localhost:<port>`), the preflight checks whose failure would waste a whole campaign, test
+  credentials, and any known drift that must not be filed as a defect.
+- **`local` only:** the reset procedure for a fresh test subject.
+- **`shared` only:** how the operator's signed-in browser session is made available to you, whether
+  a real record exhibiting the behaviour under test exists there (a shared env has no fixtures), and
+  how deploy lag shows up (a fix merged but not yet deployed). A `shared` block is always written
+  with `Reset — NONE`, never a reset command — do not ask for one.
+
+Write only the environments the operator named, with real values — never copy a template block
+full of `<placeholders>` into the contract. Re-running `init` on an existing file adds or updates
+environment blocks and leaves the others untouched.
 
 Confirm the file back to the operator before writing. `.anantys/qa.md` is committed — so it must
 contain **no secrets**, only the commands that retrieve them.
@@ -154,9 +167,25 @@ local dev stack *or* a deployed one. Each environment is one of two **kinds**:
 
 Select one with `--env <name>` on `run` / `retest` (`/anantys.qa run --env staging`); with none, use
 the environment marked **default** (the local one). Every surface URL, preflight check, reset step,
-credential and drift note then comes from **that** environment's block in `.anantys/qa.md`. Record
-the environment name in the `qa-runs.md` run header, since an assertion can pass on one and fail on
-another. Testing a shipped feature on `staging` is often easier than reproducing its data locally —
+credential and drift note then comes from **that** environment's block in `.anantys/qa.md`.
+
+**A `.anantys/qa.md` with no `## Environment:` blocks** (written by an earlier `init`: flat
+`## Surfaces` / `## Preflight` / `## Reset` / `## Credentials` sections) **is a single `local`
+environment named `local`, and it is the default** — run it exactly as before, reset included.
+`--env <other>` against such a file is an error: stop and tell the operator to re-run `init` to
+declare the environment. Never guess an environment's kind; an env whose kind you cannot establish
+is not run.
+
+**Results are per environment**, since an assertion can pass on one and fail on another (a fix
+deployed to staging but not the local stack, or the reverse):
+
+- Every `qa-runs.md` run header names its environment (`templates/qa-plan.md`).
+- The per-assertion status in `qa-plan.md` is recorded **per environment** (`local: FAIL ·
+  staging: PASS`); a run updates only the selected environment's status, never another's.
+- `retest`, `status` and `report` read only the results recorded for the selected environment
+  (the default when no `--env` is given), and say which environment they describe.
+
+Testing a shipped feature on `staging` is often easier than reproducing its data locally —
 but the `shared` rules above are not optional, because the blast radius of a reset or a stray write
 there is real data, not a fixture.
 
@@ -176,9 +205,9 @@ Preconditions: `.anantys/qa.md` exists, `qa-plan.md` exists.
    perform the steps, then evaluate each assertion **individually**.
 4. **Post a one-line result after each scenario.** The operator is watching; a campaign that
    reports only at the end is one where a bad reset costs you the whole run.
-5. **Append a run section to `qa-runs.md`** — never overwrite prior runs. Prior runs are how a
-   later reader recognises a re-occurrence.
-6. Update the per-assertion status in `qa-plan.md`.
+5. **Append a run section to `qa-runs.md`**, its header naming the environment — never overwrite
+   prior runs. Prior runs are how a later reader recognises a re-occurrence.
+6. Update the per-assertion status in `qa-plan.md` **for the selected environment only**.
 
 ### Judging rules
 
@@ -197,12 +226,14 @@ Preconditions: `.anantys/qa.md` exists, `qa-plan.md` exists.
 
 A full re-run after a fix pass is expensive and mostly re-confirms green. Instead:
 
-1. Take from `qa-runs.md` every assertion that is FAIL or BLOCKED.
+1. Take from `qa-runs.md` every assertion whose latest result **on the selected environment** is
+   FAIL or BLOCKED — a result recorded on another environment neither adds nor removes a case.
 2. Add the **regression-risk set** around each fix — the assertions the fix could plausibly have
    broken, especially the ones an *over-fix* would break. A guard added to stop a wrong behaviour
    very often also suppresses the right one; assert the right one explicitly.
 3. Add any assertion the operator flagged in `note`.
-4. Run that subset with the same rules as `run`, append a run section marked `retest`.
+4. Run that subset with the same rules as `run`, append a run section marked `retest` with its
+   environment.
 
 State the subset before running it, and say plainly what you are **not** re-testing.
 
