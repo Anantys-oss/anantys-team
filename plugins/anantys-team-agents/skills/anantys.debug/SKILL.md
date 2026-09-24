@@ -14,6 +14,7 @@ This is a **Ralf loop** — the model's limit is rarely the model; it's the feed
 
 1. **A way to exercise the app live.** For web bugs, call `mcp__claude-in-chrome__tabs_context_mcp` first; if the browser tools aren't available, STOP and say so. For non-browser bugs, confirm you can run the failing path (a command, a test, a request) and read its output/logs.
 2. **A concrete repro.** Get the exact steps, URL, input, or failing test from the user. If you can't reproduce it, say so and gather more signal — never "fix" a bug you haven't seen fail.
+3. **A recorded baseline of the working tree.** Run `git status --porcelain` and keep the result. Everything dirty at that moment belongs to the human, not to you: you never revert it, never stage it, never describe it as part of your fix. If the tree is already dirty, say which files are pre-existing before you touch anything — after your first edit, nothing can tell the two apart.
 
 ## Workflow
 
@@ -37,7 +38,8 @@ This is a **Ralf loop** — the model's limit is rarely the model; it's the feed
 
 - **Reload / re-run the exact repro path.** A normal reload re-fetches your changes.
 - Observe the same signal you captured in step 1: the console error is gone, the network call returns 200, the log shows the right value, the test passes, the screenshot is correct.
-- **Not resolved? Iterate** — back to step 2 with the new signal. Do NOT mark fixed on a plausible diff. Wrong hypotheses are normal; an unverified "fix" is not allowed.
+- **Not resolved? Revert, then iterate.** `git checkout -- <the files you edited in step 3>` (baseline files excluded — see preconditions) *before* returning to step 2 with the new signal. A rejected hypothesis that stays in the tree is no longer a hypothesis; it is an unexplained change riding along with the real fix, and the next re-proof measures the pile rather than the one edit. "One hypothesis at a time" is a rule about what is *present* in the tree, not only about what you add to it.
+- Do NOT mark fixed on a plausible diff. Wrong hypotheses are normal; an unverified "fix" is not allowed.
 
 ### 5. Guard against regressions
 
@@ -57,10 +59,13 @@ End with the evidence trail:
 | Re-proof (after) | <console clean / 200 / right value / test green> |
 ```
 
+Then hand off the tree explicitly. List **the files you own** — `git status --porcelain` now, minus the baseline you recorded before starting — so the human can stage exactly that set and nothing else. If any of your edits could not be reverted cleanly, or a dead attempt survived, say so here by name. You leave uncommitted work behind on purpose; an unlabelled dirty tree is not a deliverable, it is a puzzle.
+
 ## Rules
 
 - **The proof is the observation**, never the diff. Reload and look before claiming a fix.
 - **Reproduce before fixing**; if you can't see it fail, you can't confirm it's fixed.
 - **Root cause over symptom** — read the runtime state, don't pattern-match.
-- One hypothesis per iteration; wrong ones are expected, unverified ones are not.
-- **Never commit, push, or open a PR** unless the user explicitly asks — stop at the verified local fix.
+- One hypothesis per iteration; wrong ones are expected, unverified ones are not. **Revert a rejected hypothesis before trying the next** — the tree holds one live hypothesis, never a stack of them.
+- **Own your diff.** You may only revert, stage, or report files you yourself edited after the recorded baseline. The human's pre-existing dirty state is untouchable.
+- **Never commit, push, or open a PR** unless the user explicitly asks — stop at the verified local fix, and name the files that fix consists of.

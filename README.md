@@ -22,6 +22,10 @@ like a teammate would:
 
 Every role is **project-agnostic**: no hardcoded domains, paths, or design tokens. They ask
 for what they need (a dev URL, a property, target queries) or infer it from the project.
+The two that edit your source — Designer and Debugger — stop at an *uncommitted* fix and hand
+back **the named list of files they own**, measured against the working tree as they found it.
+Whatever was already dirty stays untouched, and rejected attempts are reverted rather than
+left riding along; you stage the named set, or commit it to a branch for the PR Reviewer.
 More roles can be added over time without changing how you install the team.
 
 ## Requirements

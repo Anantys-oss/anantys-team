@@ -21,6 +21,7 @@ The user typically provides a page/URL and a list of design issues to fix.
 1. **A browser MUST be available.** Call `mcp__claude-in-chrome__tabs_context_mcp` first. If the browser tools are not loaded/available in this session, STOP and tell the user this skill requires a connected browser (e.g. the Claude-in-Chrome extension) — do not proceed blind.
 2. **A dev URL MUST be provided** (e.g. `https://dev.example.com/some/page`). This is the surface that renders your local working-tree changes. If the user did not give one, ask for it. Do not validate against production or guess a URL.
 3. Confirm the dev URL actually serves your local file edits (CSS/template/component changes appear after a reload). If edits don't show up, surface it — do not keep editing into the void.
+4. **Record the working-tree baseline.** Run `git status --porcelain` and keep the result. Everything dirty at that moment is the human's: never revert it, never stage it, never count it as one of your fixes. If the tree starts dirty, name those files now — once your first edit lands, nothing distinguishes them from yours.
 
 ## Workflow
 
@@ -62,8 +63,8 @@ For **each** task, in order:
 5. **Prove resolution**:
    - Re-read the relevant computed style with `javascript_tool` (`getComputedStyle`) to confirm the exact value changed.
    - Take a `screenshot` of the affected region.
-6. **If not resolved, iterate** (back to step 2) — do NOT mark the task done. The screenshot + computed value are the only acceptable proof. A plausible-looking diff is not proof.
-7. **Mark `completed`** only when the screenshot/computed value confirms it.
+6. **If not resolved, revert then iterate** — `git checkout -- <the files you edited in step 3>` before going back to step 2, and do NOT mark the task done. A specificity war generates several plausible overrides; the ones that lost belong in no one's stylesheet. Leave them in and the *next* task's screenshot is proof about a tree you no longer understand. The screenshot + computed value are the only acceptable proof, and they only prove something about a tree whose contents you can name.
+7. **Mark `completed`** only when the screenshot/computed value confirms it — and note, per task, which source files that task's accepted fix touched. A task is not a fix; the file list is.
 
 ### 5. Global audit pass
 
@@ -102,7 +103,7 @@ End with a verification table — one row per TODO, with the proof:
 |---|-------|-------------------------------|--------|
 ```
 
-List the source files touched. Note anything deliberately left as-is (with reasoning) and any structural change deferred as too risky for an inline pass.
+List the source files touched — specifically **the files you own**: `git status --porcelain` now, minus the baseline you recorded in pre-flight. That set is the deliverable the human stages; anything you cannot account for in it, say so by name. Note anything deliberately left as-is (with reasoning) and any structural change deferred as too risky for an inline pass.
 
 ## Rules
 
@@ -111,5 +112,6 @@ List the source files touched. Note anything deliberately left as-is (with reaso
 - **Diagnose with `getComputedStyle`**, not assumptions — themes and framework defaults frequently out-specify naive overrides.
 - **Prefer dedicated classes over `!important` wars** when CSS conflicts.
 - Respect the project's existing design system and tokens; never invent new color tokens, gradients, glows, or AI-cliché iconography.
-- **Never commit, push, or open a PR** unless the user explicitly asks — stop at validated local edits.
+- **Own your diff.** Revert a rejected override before trying the next one; only ever revert, stage, or report files you edited after the recorded baseline. The human's pre-existing dirty state is untouchable.
+- **Never commit, push, or open a PR** unless the user explicitly asks — stop at validated local edits, and name the files those edits consist of.
 - Report what the screenshot actually shows, not what you expect.
