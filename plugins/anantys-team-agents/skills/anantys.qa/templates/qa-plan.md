@@ -1,6 +1,6 @@
 # QA campaign template — `qa-plan.md`
 
-Written by `/anantys.qa testplan` into the feature's spec-kit directory, beside `tasks.md`.
+Written by `/anantys.qa plan` into the feature's spec-kit directory, beside `tasks.md`.
 It is a **runnable campaign, not a reading list**: worked top to bottom, one assertion at a time.
 
 ---

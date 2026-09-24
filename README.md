@@ -47,9 +47,9 @@ Then invoke a skill directly:
 /anantys.debug   the cart total is wrong on the checkout page — here's the repro
 /anantys.review  review the branch agent/123-add-export — is it safe to merge?
 /anantys.qa      init                     # one-off: describe your environments (local, staging…)
-/anantys.qa      testplan 206-checkout    # derive the campaign from specs/206-checkout/tasks.md
-/anantys.qa      testplan --from pr:42    # …or from a PR that's ready on GitHub
-/anantys.qa      testplan --brief feat.md # …or from a hand-written feature brief
+/anantys.qa      plan 206-checkout        # derive the campaign from specs/206-checkout/tasks.md
+/anantys.qa      plan --from pr:42        # …or from a PR that's ready on GitHub
+/anantys.qa      plan --brief feat.md     # …or from a hand-written feature brief
 /anantys.qa      run                      # walk it in a real browser, on the local env
 /anantys.qa      run --env staging        # …or on a deployed env — never reset, additive only
 /anantys.qa      report                   # fix brief to paste into a dev session
