@@ -24,6 +24,13 @@ scenario. A case you could not run is `BLOCKED`.
 Phases covered: <n> of <m> from `tasks.md`. **Excluded: Phase <k> (Polish)** — optional hardening,
 not user-observable.
 
+**Progress — `<env>` · <N> assertions** (one table per environment that has results; refreshed by
+every `run` / `retest` / `note`)
+
+| ✅ Done | 🟢 PASS | 🔴 DEFECT | 🟠 BLOCKED | ⚪ Not run |
+|---|---|---|---|---|
+| 0% (0) | 0% (0) | 0% (0) | 0% (0) | 100% (<N>) |
+
 ---
 
 ## 1. Scope
@@ -95,7 +102,7 @@ recognises a re-occurrence instead of re-diagnosing it from scratch.
 > **Status as of run <n>, per environment:** `local`: <open blockers, or "no open defects"> ·
 > `staging`: <…>. A result on one environment says nothing about another.
 
-## Run <n> — <date> — `run` | `retest` — env: `<name>`
+## Run <n> — <date> — `run` | `retest` — env: `<name>` — mode: autonomous | interactive
 
 Environment: `<name>` (`local` | `shared`). Subject: <account/fixture id>. Build observed:
 <branch/commit the env was serving, from its build-identity check — omit only when the plan has no
