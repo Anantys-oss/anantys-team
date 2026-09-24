@@ -16,7 +16,7 @@ or let `--from linear:SKU-…` / `--from pr:<url>` assemble one for you to confi
 
 _Source: <hand-written | linear:SKU-… | pr:owner/repo#42>. Assembled <YYYY-MM-DD>._
 
-_Under test: <the branch/commit the campaign must run against, and the environment serving it>._
+_Under test: <the branch and head commit the campaign must run against, and the environment serving it>._
 A brief assembled from an unmerged PR is worthless if the stack is serving `main` — state the
 precondition here so a run stops instead of QA-ing the wrong code.
 
