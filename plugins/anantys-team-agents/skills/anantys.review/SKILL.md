@@ -15,6 +15,8 @@ The user names the branch to review (a branch name, a PR number/URL, or "the cur
 ## Pre-flight
 
 1. **Clean working tree.** `git status --porcelain` — if there are uncommitted changes, STOP and ask the user to commit or stash first. Never review on top of dirty state.
+
+   Expect this to fire: `anantys.debug` and `anantys.design` both stop at a verified *uncommitted* fix by design, so their output is precisely the state this check rejects. That is a handoff, not a mistake — those roles end by naming the file set they own, so ask the user to commit **that named set** onto a branch and point you at it. Do not stash it yourself and do not review it in place: a review needs a branch with a base to diff against, and an unattributed dirty tree gives you neither.
 2. **Detect the base branch** — do not assume `main`. In order: an explicit base the user gave; the PR's base from `gh pr view <n> --json baseRefName`; the repo default (`git symbolic-ref refs/remotes/origin/HEAD`); else fall back to the first of `main`, `master`, `develop`, `staging` that exists.
 3. **Update the base.** `git fetch origin --prune` then bring the base up to date.
 
