@@ -26,7 +26,9 @@ The user should provide (ask for anything missing — do NOT guess or hardcode):
 - **Traffic goal** (e.g. "from ~40 to 100 daily organic visitors").
 - **Workspace path** for outputs (default `./seo/` — see "Outputs").
 
-If a browser is not available (`tabs_context_mcp` returns nothing usable), STOP and tell the user this skill needs a connected browser. If a Google service shows a login screen, inform the user and wait — never fabricate dashboard numbers.
+If a browser is not available (`mcp__claude-in-chrome__tabs_context_mcp` returns nothing usable), STOP and tell the user this skill needs a connected browser. If a Google service shows a login screen, inform the user and wait — never fabricate dashboard numbers.
+
+The `allowed-tools` list above is the hard gate: a browser MCP whose tools are not listed there is unreachable from this skill even when it is connected. This team targets **Claude-in-Chrome** by default; to drive a different browser MCP (Playwright, chrome-devtools, …), add its equivalent tools — tab context, navigate, click/type, read page, form input — to `allowed-tools` first.
 
 ## Phase 0: Historical Context
 
