@@ -40,10 +40,10 @@ not user-observable.
 
 - [ ] A1 <observable outcome> (FR-0xx). — `local`: PASS · `staging`: not run
 - [ ] A2 <observable outcome> (FR-0yy).
-      ⚠️ *Adjudicated <date> (operator): <ruling + reason>. Only <narrowed condition> is a real
-      A2 failure.*
-- [ ] ~~A3 <dropped behaviour>~~ — **REMOVED from the product** (<date>, operator). Do not report
-      its absence as a defect.
+      ⚠️ *Adjudicated <date> (operator, env: `<name>` | `all`): <ruling + reason>. Only <narrowed
+      condition> is a real A2 failure.*
+- [ ] ~~A3 <dropped behaviour>~~ — **REMOVED from the product** (<date>, operator, env:
+      `all`). Do not report its absence as a defect.
 
 ### B — <journey name>
 

@@ -24,9 +24,9 @@ Invoked as `/anantys.qa <action> [args]`. If no action is given, infer it: no `.
 | `testplan` | Derive `qa-plan.md` from the feature source: a spec-kit dir, a `--brief <file.md>`, or `--from linear:<SKU-…>` |
 | `run` | Execute the plan in a browser — `--env <name>` targets a deployed environment (staging / preview); default is the local one — recording results and appending to `qa-runs.md` |
 | `retest` | Re-run only what is unresolved plus the regression-risk cases around each fix (`--env <name>` as for `run`) |
-| `note` | Record an operator adjudication into the plan so it is never re-filed |
-| `report` | Emit `qa-report.md` — a fix brief to paste into a dev session |
-| `status` | Summarize coverage and remaining blockers without running anything |
+| `note` | Record an operator adjudication into the plan so it is never re-filed — scoped to one environment (`--env <name>`) or to `--env all` |
+| `report` | Emit `qa-report.md` — a fix brief to paste into a dev session (`--env <name>`; default: the last run's environment) |
+| `status` | Summarize coverage and remaining blockers without running anything (`--env` as for `report`) |
 
 ---
 
@@ -181,8 +181,14 @@ legacy file included — is driven by the operator's connected browser.
   production **by construction** — reason "unsafe on production" — never walked.
 - The pre-write confirmation below is mandatory (it applies to every `shared` env).
 
-Select one with `--env <name>` on `run` / `retest` (`/anantys.qa run --env staging`); with none, use
-the environment marked **default** (the local one). Every surface URL, preflight check, reset step,
+Select one with `--env <name>` on any action that reads or writes results — `run`, `retest`,
+`note`, `status`, `report` (`/anantys.qa run --env staging`). With none:
+
+- `run` / `retest` use the environment marked **default** (the local one);
+- `status` / `report` / `note` use **the environment of the most recent run** in `qa-runs.md` (the
+  default if there is none) — so `run --env staging` followed by a bare `report` reports staging.
+
+Always state which environment was selected, and how. Every surface URL, preflight check, reset step,
 credential and drift note then comes from **that** environment's block in `.anantys/qa.md`.
 
 **A `.anantys/qa.md` with no `## Environment:` blocks** (written by an earlier `init`: flat
@@ -198,8 +204,12 @@ deployed to staging but not the local stack, or the reverse):
 - Every `qa-runs.md` run header names its environment (`templates/qa-plan.md`).
 - The per-assertion status in `qa-plan.md` is recorded **per environment** (`local: FAIL ·
   staging: PASS`); a run updates only the selected environment's status, never another's.
-- `retest`, `status` and `report` read only the results recorded for the selected environment
-  (the default when no `--env` is given), and say which environment they describe.
+- `retest`, `status` and `report` read only the results recorded for the selected environment and
+  say which environment they describe. `status` and `report` also name every other environment
+  that has results, so a defect recorded elsewhere is never silently out of view.
+- **Adjudications are scoped too** (see `note`): most are drift rulings, and drift is
+  per-environment. A ruling applies only to its own environment, or to all of them when scoped
+  `all`.
 
 Testing a shipped feature on `staging` is often easier than reproducing its data locally —
 but the `shared` rules above are not optional, because the blast radius of a reset or a stray write
@@ -240,8 +250,10 @@ Preconditions: `.anantys/qa.md` exists, `qa-plan.md` exists.
   not a defect.
 - **Screenshot anything visual**, and capture the URL plus any console/network error on every FAIL.
 - **Never infer a PASS from a screen you did not reach.**
-- Check every FAIL against the adjudication annotations in `qa-plan.md` before filing it. If it is
-  already ruled intended or a known drift, record it as PASS-with-note and move on.
+- Check every FAIL against the adjudication annotations in `qa-plan.md` **scoped to this environment
+  or to `all`** before filing it. If it is already ruled intended or a known drift there, record it
+  as PASS-with-note and move on. A ruling scoped to another environment never passes a FAIL here —
+  file it, and mention the other env's ruling in the evidence so the operator can extend it.
 
 ## `retest` — the second pass after a fix
 
@@ -252,7 +264,7 @@ A full re-run after a fix pass is expensive and mostly re-confirms green. Instea
 2. Add the **regression-risk set** around each fix — the assertions the fix could plausibly have
    broken, especially the ones an *over-fix* would break. A guard added to stop a wrong behaviour
    very often also suppresses the right one; assert the right one explicitly.
-3. Add any assertion the operator flagged in `note`.
+3. Add any assertion the operator flagged in `note` for this environment or for `all`.
 4. Run that subset with the same rules as `run`, append a run section marked `retest` with its
    environment.
 
@@ -260,17 +272,24 @@ State the subset before running it, and say plainly what you are **not** re-test
 
 ## `note` — record an operator adjudication
 
-`/anantys.qa note A4 known dev-env price drift, do not file`
+`/anantys.qa note A4 --env local known dev-env price drift, do not file`
 
-Append the ruling as an annotation on that assertion in `qa-plan.md`, with the date and the
-reason, in the form future runs will read:
+Every ruling has an **environment scope**: `--env <name>` for a ruling true of one environment (any
+drift), `--env all` for a product decision true everywhere (intended behaviour, a REMOVED
+assertion). With no `--env`, scope it to the most recent run's environment and say so — never
+default to `all`; widening a ruling is the operator's call.
+
+Append the ruling as an annotation on that assertion in `qa-plan.md`, with the date, the scope and
+the reason, in the form future runs will read:
 
 ```markdown
 - [ ] A4 Checkout is priced for the selected plan and period (FR-012).
-      ⚠️ *Adjudicated 2026-08-03 (operator): the grid/checkout price gap on the dev stack is a
-      sandbox key drift, not a product defect. Only a mismatch in **plan or period** is a real
-      A4 failure.*
+      ⚠️ *Adjudicated 2026-08-03 (operator, env: `local`): the grid/checkout price gap is a sandbox
+      key drift, not a product defect. Only a mismatch in **plan or period** is a real A4 failure.*
 ```
+
+An annotation with **no** `env:` (written before environments existed) is scoped to the default
+environment only.
 
 Two rules make these annotations durable:
 
@@ -284,8 +303,9 @@ so its absence is never re-reported as a defect.
 
 ## `report` — the fix brief
 
-Write `qa-report.md` addressed to a **dev agent in a fresh session** that has the spec context but
-not yours. For each open defect:
+Select the environment first (`--env <name>`, else the most recent run's — see Environments) and
+name it at the top of the report. Write `qa-report.md` addressed to a **dev agent in a fresh
+session** that has the spec context but not yours. For each open defect:
 
 - **Assertion id and what the spec requires** (with its requirement id).
 - **What you observed** — exact copy, URL, console/network error.
@@ -302,7 +322,8 @@ Tell the operator the file is ready to paste into a dev session. Do not open iss
 
 ## `status`
 
-Read `qa-plan.md` + `qa-runs.md` and report, without running anything: counts of
+For the selected environment (`--env <name>`, else the most recent run's — say which), read
+`qa-plan.md` + `qa-runs.md` and report, without running anything: counts of
 PASS / FAIL / BLOCKED / not-yet-run, the blocker list with each blocker's status, the open
 defects, and the never-observed gaps. One short table, then the single sentence that answers
 "can this ship?".
