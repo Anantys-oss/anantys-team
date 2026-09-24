@@ -1,7 +1,7 @@
 ---
 name: anantys.qa
 description: Run a browser-driven QA campaign against a completed feature. Derives an executable test plan from a spec-kit tasks.md, a freeform feature brief (--brief), a set of tracker issues (--from linear:SKU-…), or one or more GitHub pull requests (--from pr:<url>), executes it in a real browser — against a local dev stack or a deployed environment (staging / a preview), selected with --env — recording PASS/FAIL/BLOCKED per assertion, accumulates operator adjudications so a defect is never re-filed twice, and emits a copy-pasteable fix brief for the dev agent. Environment specifics live in a project-local .anantys/qa.md, never in the skill. Use to QA a finished feature — however it was built — before release.
-allowed-tools: Bash, Read, Write, Edit, Glob, Grep, Task, TaskCreate, TaskUpdate, TaskList
+allowed-tools: Bash, Read, Write, Edit, Glob, Grep, Task, TaskCreate, TaskUpdate, TaskList, AskUserQuestion
 ---
 
 ## Mission
@@ -22,13 +22,15 @@ Invoked as `/anantys.qa <action> [args]`. If no action is given, infer it: no `.
 |---|---|
 | `init` | Interview the operator and write `.anantys/qa.md` — the project's environment contract |
 | `plan` | Derive `qa-plan.md` from the feature source: a spec-kit dir, a `--brief <file.md>`, `--from linear:<SKU-…>`, or `--from pr:<url>` |
-| `run` | Execute the plan in a browser — `--env <name>` targets a deployed environment (staging / preview); default is the environment marked default — recording results and appending to `qa-runs.md` |
+| `run` | Execute the plan in a browser — `--env <name>` targets a deployed environment (staging / preview); default is the environment marked default — recording results and appending to `qa-runs.md`. Runs **autonomous** (whole plan, report at the end) or **interactive** (stop at the first DEFECT, print the fix brief) — asked once per session, or `--mode <autonomous\|interactive>` |
 | `retest` | Re-run only what is unresolved plus the regression-risk cases around each fix (`--env <name>` as for `run`) |
 | `note` | Record an operator adjudication into the plan so it is never re-filed — scoped to one environment (`--env <name>`) or to `--env all` |
 | `report` | Emit `qa-report.md` — a fix brief to paste into a dev session (`--env <name>`; default: the last run's environment) |
 | `status` | Summarize coverage and remaining blockers without running anything (`--env` as for `report`) |
 
 `testplan` — the action's former name — is still accepted as an alias of `plan`.
+
+**Every action ends its reply with the progress table** (see "Progress table"), `init` excepted.
 
 ---
 
@@ -286,6 +288,35 @@ there is real data, not a fixture.
 Preconditions: `.anantys/qa.md` exists, `qa-plan.md` exists — and, if `qa-plan.md` carries an
 `**Under test:**` line, the environment is serving that branch/commit (verified in step 1).
 
+### Run mode — asked once per session
+
+The first `run` or `retest` of a Claude session asks the operator which mode to use, before
+preflight — one `AskUserQuestion`, both options described. Reuse that answer for every later `run` /
+`retest` in the same session without asking again; `--mode autonomous|interactive` skips the
+question and overrides the remembered answer for that call. Never pick a mode yourself.
+
+- **Autonomous** — walk the **whole** plan without stopping on a defect. Record every DEFECT as it
+  is found, and at the end write `qa-report.md` exactly as `report` does.
+- **Interactive** — stop at the **first new DEFECT** and hand off: close the run (steps 5–6 below),
+  write `qa-report.md` exactly as `report` does with the stopping defect listed first, and **print
+  that defect's fix brief in full in your reply**, so the operator can paste it into a dev session
+  straight from the console. Then stop and wait; the next step is a fix and a `retest`.
+  A **new** DEFECT is one that was not already an open defect on this environment before the run.
+  A known defect that still fails is recorded, stays in `qa-report.md`, and does not stop the walk —
+  otherwise a `retest` would halt on the first unfixed case before reaching its regression-risk set.
+
+Either way, `qa-report.md` covers **every open defect on the environment** — never only this run's.
+A report rewritten with one defect silently drops the others from the brief the operator hands on.
+An assertion the run did not walk **keeps its previous status** on this environment; stopping early
+never resets a result to `not run`.
+
+A **DEFECT** is an assertion that FAILs after the adjudication check (Judging rules) — a
+PASS-with-note is not one. A `BLOCKED` result never stops an interactive run: record it and walk on.
+Both modes keep every other rule: preflight stops the campaign, and a `shared` env still needs the
+operator's go before any write.
+
+### Steps
+
 1. **Preflight.** Run every check for the selected environment in `.anantys/qa.md`. On failure,
    **stop and tell the operator** — do not start services yourself, and do not "work around" a failed
    preflight. A campaign run on a half-up stack produces confident nonsense. Then read the plan's
@@ -321,12 +352,18 @@ Preconditions: `.anantys/qa.md` exists, `qa-plan.md` exists — and, if `qa-plan
 3. **Walk the scenarios in order**, in a real browser driven as the environment's `Driven by:`
    line says (see Environments). On production, skip the unsafe scenario classes and record them
    `BLOCKED`. Per scenario: establish the precondition,
-   perform the steps, then evaluate each assertion **individually**.
+   perform the steps, then evaluate each assertion **individually**. In **interactive** mode the
+   first *new* DEFECT ends the walk: finish that assertion's evidence, do steps 5–6, then hand off
+   (see Run mode).
 4. **Post a one-line result after each scenario.** The operator is watching; a campaign that
    reports only at the end is one where a bad reset costs you the whole run.
-5. **Append a run section to `qa-runs.md`**, its header naming the environment — never overwrite
-   prior runs. Prior runs are how a later reader recognises a re-occurrence.
-6. Update the per-assertion status in `qa-plan.md` **for the selected environment only**.
+5. **Append a run section to `qa-runs.md`**, its header naming the environment and the mode —
+   never overwrite prior runs. Prior runs are how a later reader recognises a re-occurrence.
+6. Update the per-assertion status in `qa-plan.md` **for the selected environment only**, and only
+   for the assertions this run walked; then refresh that environment's progress table.
+7. **Finish:** write `qa-report.md` as `report` does — every run, both modes, so a defect this run
+   saw PASS drops out of the brief. Interactive: you only reach this step if the walk met no new
+   DEFECT, so say so. End the reply with the progress table.
 
 ### Judging rules
 
@@ -353,8 +390,8 @@ A full re-run after a fix pass is expensive and mostly re-confirms green. Instea
    broken, especially the ones an *over-fix* would break. A guard added to stop a wrong behaviour
    very often also suppresses the right one; assert the right one explicitly.
 3. Add any assertion the operator flagged in `note` for this environment or for `all`.
-4. Run that subset with the same rules as `run`, append a run section marked `retest` with its
-   environment.
+4. Run that subset with the same rules as `run` — run mode included — and append a run section
+   marked `retest` with its environment.
 
 State the subset before running it, and say plainly what you are **not** re-testing.
 
@@ -391,6 +428,9 @@ Two rules make these annotations durable:
 An assertion the product deliberately dropped is struck through and marked REMOVED — keep the line,
 so its absence is never re-reported as a defect.
 
+After any ruling, refresh **every** progress table in `qa-plan.md` — a REMOVED assertion leaves N
+for all environments (see "Progress table").
+
 ## `report` — the fix brief
 
 Select the environment first (`--env <name>`, else the most recent run's — see Environments) and
@@ -413,10 +453,42 @@ Tell the operator the file is ready to paste into a dev session. Do not open iss
 ## `status`
 
 For the selected environment (`--env <name>`, else the most recent run's — say which), read
-`qa-plan.md` + `qa-runs.md` and report, without running anything: counts of
-PASS / FAIL / BLOCKED / not-yet-run, the blocker list with each blocker's status, the open
+`qa-plan.md` + `qa-runs.md` and report, without running anything: the progress table
+(PASS / DEFECT / BLOCKED / Not run), the blocker list with each blocker's status, the open
 defects, and the never-observed gaps. One short table, then the single sentence that answers
 "can this ship?".
+
+---
+
+## Progress table
+
+Every action but `init` ends its reply with this table, and `qa-plan.md` keeps the same tables
+under its header. Which tables, and who writes them:
+
+- `plan` writes the **default** environment's table (all Not run), and keeps any existing ones —
+  recomputed, since a regeneration can change N.
+- `run` / `retest` add or refresh the **selected** environment's table.
+- `note` refreshes **every** table: a REMOVED assertion changes N for all of them. `note --env all`
+  prints them all; `note --env <name>` prints that environment's.
+- `status` / `report` print the selected environment's table; they write nothing to the plan.
+
+Percentages are of the plan's **total assertions** — REMOVED ones excluded — each with its count;
+they are computed from `qa-plan.md`, never estimated.
+
+```markdown
+**Progress — `<env>` · <N> assertions**
+
+| ✅ Done | 🟢 PASS | 🔴 DEFECT | 🟠 BLOCKED | ⚪ Not run |
+|---|---|---|---|---|
+| 0% (0) | 0% (0) | 0% (0) | 0% (0) | 100% (<N>) |
+```
+
+**DEFECT** counts the assertions whose status on this environment is FAIL; a PASS-with-note counts
+as PASS. **Done** = has a result on this environment (PASS, DEFECT or BLOCKED). The identities hold for the
+**counts** — Done = PASS + DEFECT + BLOCKED, Done + Not run = N — never for the rounded
+percentages, so never adjust a count to make the percentages add up. Round each percentage to a
+whole number on its own; show a non-zero value below 1% as `<1%` (never `0%`) and a value above
+99% but short of 100% as `>99%` (never `100%`).
 
 ---
 

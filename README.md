@@ -50,7 +50,7 @@ Then invoke a skill directly:
 /anantys.qa      plan 206-checkout        # derive the campaign from specs/206-checkout/tasks.md
 /anantys.qa      plan --from pr:42        # …or from a PR that's ready on GitHub
 /anantys.qa      plan --brief feat.md     # …or from a hand-written feature brief
-/anantys.qa      run                      # walk it in a real browser, on the local env
+/anantys.qa      run                      # walk it in a real browser, on the local env (asks: autonomous or interactive)
 /anantys.qa      run --env staging        # …or on a deployed env — never reset, additive only
 /anantys.qa      report                   # fix brief to paste into a dev session
 ```
