@@ -5,7 +5,8 @@ It holds everything that is true of **this project's environments** and nothing 
 of the feature under test.
 
 It declares **one or more environments**. `run --env <name>` / `retest --env <name>` picks one; with
-none, the environment marked **default** (a `local`) is used. Each is one **kind**:
+none, the environment marked **default** is used — the `local` one, or a `shared` one in a project
+with no local stack. Each is one **kind**:
 
 - **`local`** — the developer's own stack. **Resettable**. Has a Reset block.
 - **`shared`** — a deployed env (staging / preview / prod). **Never reset**; test data is created
@@ -18,7 +19,7 @@ connected browser, or a named local command. A `shared` env is always the operat
 
 A file with **no** `## Environment:` blocks (the flat layout an earlier `init` wrote) is read as a
 single `local` environment named `local`, marked default — it keeps working unchanged. Re-run
-`init` to add a `shared` one.
+`init` to add a `shared` one: it first rewrites the flat sections as the `local` block below.
 
 > **No secrets.** Record the *command* that retrieves a credential, never the credential.
 > This file is committed.
@@ -30,7 +31,7 @@ single `local` environment named `local`, marked default — it keeps working un
 
 _Last updated: <YYYY-MM-DD> — maintained by `/anantys.qa init`._
 
-Environments below. `run --env <name>` selects one; default is the `local` marked default.
+Environments below. `run --env <name>` selects one; default is the one marked default.
 
 ## Environment: local (`kind: local`, default)
 
@@ -54,6 +55,15 @@ costs a whole run, and it is the single most common thing this file prevents.
 
 ⚠️ Call out the check whose *silent* failure is indistinguishable from slowness — a missing webhook
 forwarder, an unseeded reference table. Nothing errors; the product just waits or returns empty.
+
+### Build identity — how this environment reports the code it is serving
+```bash
+<command or URL that returns the branch/commit actually running — a /version or /healthz
+endpoint, a deployed-SHA banner, `docker inspect <container>`, a `git -C <deploy path> rev-parse`>
+```
+Leave this blank only if the project genuinely has no way to tell. `run` needs it to enforce a
+plan's `**Under test:**` line; with no probe it must ask the operator and stop, never infer from
+the local checkout — a local branch says nothing about what a remote stack runs.
 
 ### Reset — how to get a fresh test subject
 ```bash
@@ -100,6 +110,13 @@ Production: no
 | S1 | App reachable | `curl -sk -o /dev/null -w '%{http_code}' <app-url>` → 200/307, not 000 |
 | S2 | Signed in | the operator's browser is signed in; the agent reuses that session and never signs in |
 | S3 | The feature has real DATA | the behaviour under test exists on a real record — a shared env has no fixtures, so a campaign against one with no such data can only report BLOCKED |
+
+### Build identity — how this environment reports the code it is serving
+```bash
+<the deployed-SHA endpoint or banner of THIS env — e.g. `curl -s https://api.staging.<domain>/version`>
+```
+Per environment, never shared with `local`: staging lags `main` between deploys, and a plan's
+`**Under test:**` line is only enforceable against what *this* env actually serves.
 
 ### Reset — NONE
 Shared, persistent environment — **never reset it** and never run a destructive command against it.
