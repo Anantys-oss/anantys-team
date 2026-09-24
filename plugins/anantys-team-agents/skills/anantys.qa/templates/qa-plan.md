@@ -3,6 +3,14 @@
 Written by `/anantys.qa plan` into the feature's spec-kit directory, beside `tasks.md`.
 It is a **runnable campaign, not a reading list**: worked top to bottom, one assertion at a time.
 
+**Two numbers, not one.** The progress table measures how many of the plan's own assertions have a
+result — precision. It says nothing about whether the assertions cover the feature. The plan is
+written by the same role that then walks it, so `100% PASS` alone means only *"I did everything I
+decided to do."* §1's coverage table supplies the missing half: one row per requirement id **from
+the source**, which is a denominator the campaign did not author. Index it by requirement, never by
+journey — a journey-indexed table lists what each scenario covers and so can never show a
+requirement nothing covers, which is the only omission worth catching.
+
 ---
 
 ```markdown
@@ -33,9 +41,28 @@ environment that has results — who writes and refreshes each: SKILL.md, "Progr
 |---|---|---|---|---|
 | 0% (0) | 0% (0) | 0% (0) | 0% (0) | 100% (<N>) |
 
+**Coverage — <c> of <R> requirements asserted.** Progress is of this plan's own assertions and
+cannot detect a requirement the plan never asserted. Both numbers are quoted together, always.
+
 ---
 
 ## 1. Scope
+
+**Requirement coverage.** One row per requirement id in the source — every id, including the ones
+nothing covers. `<R>` above is this table's row count; `<c>` is the rows with at least one
+assertion. Never drop a row to make the ratio look better: an uncovered requirement is a stated
+gap, a missing row is a false claim.
+
+| Req | Source | Weight | Asserted by | Status |
+|---|---|---|---|---|
+| FR-0xx | `spec.md` §<n> | money | A1, A2 | covered |
+| US<n> | `spec.md` US<n> | — | B3 | covered |
+| R4 | `brief.md` Requirements | data | — | **UNCOVERED** — <why nothing asserts it, and what it would take> |
+
+**UNCOVERED** is not `BLOCKED`. `BLOCKED` is an assertion that exists and could not be run;
+UNCOVERED is a requirement with no assertion at all, so no run can ever surface it. An UNCOVERED
+requirement carrying money / legal / data weight is a **release blocker** in §3 on its own — it is
+untested by construction, and the blocker list is where untested money paths get said out loud.
 
 | Journey | Covers tasks | Requirements |
 |---|---|---|
@@ -74,11 +101,18 @@ environment's entry. The checkbox is checked only when **every** declared enviro
 3. **Data**: <ids> — no overwrite of existing user data
 4. **Journey**: <ids> — the product never claims a state it has not reached
 
+5. **Untested weight**: <req ids> — UNCOVERED in §1 and carrying money / legal / data weight.
+   Nothing in §2 can fail for these; they are listed here because that is the point.
+
 Everything else is a defect to file, not a blocker.
 
-⚠️ Passing every blocker is not the same as having tested everything. See §4.
+⚠️ Passing every blocker is not the same as having tested everything. See §1 and §4.
 
 ## 4. Known gaps — never observed, only inferred. Never record these as PASS
+
+Assertions that exist and cannot be reached. A requirement with no assertion does not belong
+here — it is UNCOVERED in §1, and putting it here would hide it among cases a run at least knows
+to skip.
 
 - **<assertion / path>** — <why an agent cannot reach it, and the exact human step needed>
 
@@ -89,6 +123,10 @@ Everything else is a defect to file, not a blocker.
 | A1 | <short> | `local` | PASS | <what was observed — exact copy, URL, screenshot> |
 
 For each FAIL: what you saw, what the case expected, the URL, and the console/network error.
+
+The release verdict quotes **both** numbers — `<x>% PASS of <N> assertions, covering <c> of <R>
+requirements` — and names every UNCOVERED requirement. A verdict that quotes only the first is
+answering a question nobody asked.
 ```
 
 ---

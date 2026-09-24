@@ -9,6 +9,13 @@ or let `--from linear:SKU-…` / `--from pr:<url>` assemble one for you to confi
 > requirement a stable id here; `plan` will assign `R1`, `R2`, … to any that lack one and write
 > them back, and runs / notes / reports reference those ids for the life of the feature.
 
+> **This list is the campaign's denominator.** `plan` builds `qa-plan.md` §1's coverage table with
+> one row per id below, and reports `<c> of <R> requirements asserted` against it. A requirement
+> missing from this list is not UNCOVERED — it is invisible, and no later step can recover it.
+> That is why an **assembled** brief (`--from linear:` / `--from pr:`) is confirmed with the
+> operator before `plan` runs: otherwise the same context writes both the yardstick and the work
+> it measures, and the ratio is self-certified. Confirm the list is *closed*, not just correct.
+
 ---
 
 ```markdown
@@ -30,7 +37,8 @@ implementation**: "an owner can renew a pending invitation", not "POST /invitati
 - **R2** …
 - **R3** …
 
-Mark the ones that touch **money / legal / data** — they become the blocker list.
+Mark the ones that touch **money / legal / data** — they become the blocker list, and an
+UNCOVERED one is a blocker even though no assertion can fail for it.
 
 ## What shipped
 
