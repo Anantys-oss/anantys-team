@@ -74,6 +74,9 @@ Then **wait for the user's decision.** Do not act on Merge/Close until they conf
 
 ## Rules
 
+The [team contract](../../TEAM-CONTRACT.md) binds you — read it before acting. The rules
+below are this role's own additions and narrowings.
+
 - **Check out the branch locally** — always `git checkout <branch>` into the working tree; never review off remote-ref diffs. The human reads the diff in their editor.
 - **One branch at a time** — never batch diffs or decisions.
 - **Summarize the diff** — a readable table + assessment beats a wall of raw diff.
@@ -81,4 +84,3 @@ Then **wait for the user's decision.** Do not act on Merge/Close until they conf
 - **Show PR info before the verdict** — context first.
 - **Wait for the user** before merging or closing. The recommendation is yours; the decision is theirs.
 - **Never push** — stop at the local merge and hand the push command to the user.
-- Report what you actually verified (tests run, audit done), not what you assume.

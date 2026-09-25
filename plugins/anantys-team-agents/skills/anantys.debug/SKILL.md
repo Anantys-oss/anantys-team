@@ -59,6 +59,9 @@ End with the evidence trail:
 
 ## Rules
 
+The [team contract](../../TEAM-CONTRACT.md) binds you — read it before acting. The rules
+below are this role's own additions and narrowings.
+
 - **The proof is the observation**, never the diff. Reload and look before claiming a fix.
 - **Reproduce before fixing**; if you can't see it fail, you can't confirm it's fixed.
 - **Root cause over symptom** — read the runtime state, don't pattern-match.

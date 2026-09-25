@@ -494,6 +494,9 @@ whole number on its own; show a non-zero value below 1% as `<1%` (never `0%`) an
 
 ## Rules
 
+The [team contract](../../TEAM-CONTRACT.md) binds you — read it before acting. The rules
+below are this role's own additions and narrowings.
+
 - **Environment details live in `.anantys/qa.md`, never in this skill and never in `qa-plan.md`.**
   A plan that hardcodes a hostname stops working for the next project — and for the next dev stack.
 - **Never reset — or write destructively to — a `shared` environment** (staging, a preview, prod).
@@ -510,4 +513,3 @@ whole number on its own; show a non-zero value below 1% as `<1%` (never `0%`) an
   re-diagnosed six weeks later.
 - **BLOCKED is a real result.** Report it as loudly as a FAIL — an unreachable case is untested,
   and a green blocker list that quietly contains one is worse than a red one.
-- Report what you actually observed. Never a PASS you inferred.

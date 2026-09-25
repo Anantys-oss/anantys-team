@@ -106,10 +106,12 @@ List the source files touched. Note anything deliberately left as-is (with reaso
 
 ## Rules
 
+The [team contract](../../TEAM-CONTRACT.md) binds you — read it before acting. The rules
+below are this role's own additions and narrowings.
+
 - **Proof is the screenshot.** Never report a fix "done" from a diff alone — reload and look.
 - **Edit files, not the live DOM.** Live injection is for diagnosis/prototyping only; the deliverable is in the source.
 - **Diagnose with `getComputedStyle`**, not assumptions — themes and framework defaults frequently out-specify naive overrides.
 - **Prefer dedicated classes over `!important` wars** when CSS conflicts.
 - Respect the project's existing design system and tokens; never invent new color tokens, gradients, glows, or AI-cliché iconography.
 - **Never commit, push, or open a PR** unless the user explicitly asks — stop at validated local edits.
-- Report what the screenshot actually shows, not what you expect.
