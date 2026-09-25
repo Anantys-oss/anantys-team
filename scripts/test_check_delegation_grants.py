@@ -58,6 +58,27 @@ def test_scoped_bash_on_agent_needs_bash_on_skill():
     assert any("Bash(git:*)" in e for e in errors), errors
 
 
+def test_declined_dispatch_is_not_an_escalation():
+    body = "- recommend `tester` on the spec. You do not dispatch it yourself — it writes files."
+    errors, warnings = check([skill("review", {"Read"}, body)], {"tester": {"Read", "Write"}})
+    assert errors == [], errors
+    assert not any("no skill dispatches it" in w for w in warnings), warnings
+
+
+def test_disclaimer_in_another_block_does_not_excuse_a_dispatch():
+    body = "- dispatch the `tester` agent now.\n\n- elsewhere: never dispatch an agent.\n"
+    errors, _ = check([skill("review", {"Task", "Read"}, body)], {"tester": {"Write"}})
+    assert any("Write" in e for e in errors), errors
+
+
+def test_declining_also_drops_the_task_grant_requirement():
+    errors, _ = check(
+        [skill("s", {"Read"}, "never invoke `a` — recommend it to the human")],
+        {"a": {"Read"}},
+    )
+    assert errors == [], errors
+
+
 def test_parse_reads_both_grant_dialects(tmp):
     agent = tmp / "a.md"
     agent.write_text('---\nname: x\ntools: ["Bash", "Read"]\n---\nbody\n')

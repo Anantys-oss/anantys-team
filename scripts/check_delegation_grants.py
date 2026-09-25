@@ -8,9 +8,14 @@ skill's frontmatter says so. The human auditing the skill sees the narrow list.
 
 So a role's *effective* grant set is the union of its own and every agent it
 dispatches. This script computes that union and fails when it exceeds what the
-role declares. There is deliberately no suppression flag: the three honest
-resolutions are to narrow the agent, widen the skill's declared list so the
-capability is visible, or stop dispatching.
+role declares. There is deliberately no suppression flag: the honest resolutions
+are to narrow the agent, widen the skill's declared list so the capability is
+visible, stop dispatching — or *recommend* the run instead of performing it, and
+say so where the agent is named. A skill that tells the human "run `X` yourself,
+I will not" never holds X's grants, so pointing at an agent is not the same act
+as invoking one. Naming an agent still counts as a dispatch by default; only an
+explicit, machine-readable disclaimer in the same block downgrades it, which is
+documentation rather than a way to silence the check.
 
 Usage: python3 scripts/check_delegation_grants.py [root]
 Exit 1 on errors, 0 on warnings only.
@@ -21,6 +26,11 @@ import sys
 from pathlib import Path
 
 FRONTMATTER = re.compile(r"\A---\n(.*?)\n---\n(.*)\Z", re.S)
+# "you do not dispatch it", "never invoke `x`" — the prose declining the dispatch
+DECLINED = re.compile(r"\b(?:do(?:es)?\s+not|don'?t|never|rather\s+than)\s+\w*\s*"
+                      r"(?:dispatch|invoke|launch|delegate|run)", re.I)
+# a markdown block: paragraph, bullet, or numbered step — the unit a disclaimer scopes to
+BLOCK = re.compile(r"\n\s*\n|\n(?=\s*(?:[-*+]\s|\d+\.\s))")
 
 
 def parse(path):
@@ -51,10 +61,14 @@ def check(skills, agents):
     dispatched = set()
 
     for name, grants, body in skills:
+        blocks = BLOCK.split(body)
         for agent, agent_grants in sorted(agents.items()):
-            if f"`{agent}`" not in body:
+            named = [b for b in blocks if f"`{agent}`" in b]
+            if not named:
                 continue
             dispatched.add(agent)
+            if all(DECLINED.search(b) for b in named):
+                continue  # recommended to the human, not run by the skill
             if "Task" not in grants:
                 errors.append(
                     f"{name}: dispatches `{agent}` but has no Task grant — "
@@ -65,7 +79,8 @@ def check(skills, agents):
                 errors.append(
                     f"{name}: dispatching `{agent}` grants it {', '.join(escalation)}, "
                     f"which {name} does not declare — narrow the agent, declare the "
-                    f"capability, or drop the dispatch"
+                    f"capability, drop the dispatch, or state in that block that the "
+                    f"skill does not dispatch it and only recommends the run"
                 )
 
     for agent in sorted(set(agents) - dispatched):
