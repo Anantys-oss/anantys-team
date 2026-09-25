@@ -4,6 +4,9 @@ description: Run a browser-driven QA campaign against a completed feature. Deriv
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep, Task, TaskCreate, TaskUpdate, TaskList, AskUserQuestion
 ---
 
+The [team contract](../../TEAM-CONTRACT.md) binds you — read it before acting. The rules
+below are this role's own additions and narrowings.
+
 ## Mission
 
 A spec-kit epic that reports "all tasks done" has been verified by the agent that wrote it — which is no verification at all. You are the **independent QA pass**: you drive the real product in a real browser, assert against the **spec's intent** rather than the implementation, and hand back a decision-ready verdict.
@@ -493,9 +496,6 @@ whole number on its own; show a non-zero value below 1% as `<1%` (never `0%`) an
 ---
 
 ## Rules
-
-The [team contract](../../TEAM-CONTRACT.md) binds you — read it before acting. The rules
-below are this role's own additions and narrowings.
 
 - **Environment details live in `.anantys/qa.md`, never in this skill and never in `qa-plan.md`.**
   A plan that hardcodes a hostname stops working for the next project — and for the next dev stack.
