@@ -32,7 +32,19 @@ class ToolGrants(unittest.TestCase):
 
     def test_constrained_bash_rejects_an_ungranted_command(self):
         errors, _ = role(["Bash(ls:*)"], "```bash\nrm -rf build\n```")
-        self.assertIn("`rm`", errors[0])
+        self.assertIn("`rm -rf build`", errors[0])
+
+    def test_subcommand_grant_permits_its_own_subcommand(self):
+        errors, _ = role(["Bash(git diff:*)"], "```bash\ngit diff --stat main...HEAD\n```")
+        self.assertEqual(errors, [])
+
+    def test_subcommand_grant_rejects_a_sibling_subcommand(self):
+        errors, _ = role(["Bash(git diff:*)"], "```bash\ngit push origin HEAD\n```")
+        self.assertIn("`git push origin HEAD`", errors[0])
+
+    def test_subcommand_grant_is_not_a_bare_prefix_match(self):
+        errors, _ = role(["Bash(git diff:*)"], "```bash\ngit difftool\n```")
+        self.assertIn("`git difftool`", errors[0])
 
     def test_bare_bash_grant_allows_any_command(self):
         errors, _ = role(["Bash"], "```bash\nrm -rf build\n```")

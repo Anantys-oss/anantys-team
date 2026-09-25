@@ -42,14 +42,25 @@ def parse(path):
 
 
 def bash_commands(body):
-    """First word of every command line inside a bash-fenced block."""
+    """Every command line inside a bash-fenced block, whole.
+
+    Kept whole because a grant may name a subcommand: `Bash(git diff:*)` permits
+    `git diff --stat` and nothing else `git`. Truncating to the first word would
+    compare `git` against `git diff` and reject every narrowed grant — pushing
+    authors to the over-broad `Bash(git:*)` this checker exists to discourage.
+    """
     found = set()
     for block in BASH_FENCE.findall(body):
         for line in block.splitlines():
             line = line.strip()
             if line and not line.startswith("#"):
-                found.add(line.split()[0])
+                found.add(line)
     return found
+
+
+def permitted(command, prefixes):
+    """Is `command` covered by one of the granted command prefixes?"""
+    return any(command == p or command.startswith(p + " ") for p in prefixes)
 
 
 def check(path, grants, body, known_mcp):
@@ -70,8 +81,9 @@ def check(path, grants, body, known_mcp):
         errors.append("prose commits to driving a browser but grants no browser tool")
 
     if bash_grants and not has_bare_bash:
-        for cmd in sorted(bash_commands(body) - bash_grants):
-            errors.append(f"prose runs `{cmd}` but only {sorted(bash_grants)} are granted")
+        for cmd in sorted(bash_commands(body)):
+            if not permitted(cmd, bash_grants):
+                errors.append(f"prose runs `{cmd}` but only {sorted(bash_grants)} are granted")
 
     # Browser primitives are used implicitly ("take a screenshot" is `computer`),
     # so only named, discretionary grants are held to being mentioned.
