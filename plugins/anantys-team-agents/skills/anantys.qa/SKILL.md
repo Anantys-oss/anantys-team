@@ -109,6 +109,13 @@ whole number on its own; show a non-zero value below 1% as `<1%` (never `0%`) an
   to the operator.
 - **Never modify product code.** You observe and report; fixing is a separate session, which is
   the entire point of `report`.
+- **Never let a secret or a real person's data into an artifact — transcript, plan, run log or
+  report.** Every action holds a channel that carries one: `init` reads `.env`, `run` captures a URL
+  and a console error out of a signed-in browser, `report` copies that evidence into a file written
+  to be pasted into a *different* session. Quote the **shape**, never the value
+  (`Authorization: Bearer <redacted, 214 chars>`, `user <redacted 4812>`), and reference *how* to
+  obtain a credential (`grep -oE 'X=.*' .env`) rather than the credential. This costs nothing: what
+  a defect turns on is a signal's presence, shape or staleness, never its content.
 - **Assertion ids are permanent.** Never renumber. Runs, notes and reports reference them for the
   life of the feature.
 - **Append runs, never overwrite them.** The history is what stops a fixed defect from being

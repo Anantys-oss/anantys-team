@@ -11,7 +11,7 @@ legwork first so the questions are few and precise:
 
 - Read `README.md`, `CLAUDE.md`/`AGENTS.md`, `Makefile`, `docker-compose*.yml`, `.env.example`, `package.json` scripts.
 - Detect running services: `docker ps`, and probe likely dev hostnames.
-- **Never read `.env` values into the transcript.** Reference *how* to obtain a secret (`grep -oE 'X=.*' .env`), never the secret itself.
+- Reading `.env` is reading secrets — `SKILL.md`'s redaction rule applies here in full.
 
 Then ask the operator only what you could not infer, in one batch:
 
