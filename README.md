@@ -1,6 +1,6 @@
 # anantys-team
 
-A small, vendor-neutral marketplace that turns Claude Code into a **specialized mini-team**.
+A small, project-agnostic marketplace that turns Claude Code into a **specialized mini-team**.
 
 The `anantys-team-agents` plugin gives Claude a set of **roles** — each one a way to put
 *Claude + a real browser* to work, not just for writing code, but for piloting your tools
@@ -27,7 +27,25 @@ More roles can be added over time without changing how you install the team.
 ## Requirements
 
 - [Claude Code](https://claude.com/claude-code)
-- A connected browser for the browser tools (e.g. the **Claude-in-Chrome** extension).
+- **Claude-in-Chrome**, for the four browser-driven roles (`design`, `ops`, `debug`, `qa`).
+
+  The team is agnostic about *your project* — no hardcoded domains, paths, or design
+  tokens — but not about the browser backend. Each browser role names the
+  `mcp__claude-in-chrome__*` tools in its `allowed-tools`, and that list is a hard
+  allowlist: a different browser MCP (Playwright, chrome-devtools, …) is unreachable
+  from the skill even while connected. To swap backends, edit the role's
+  `allowed-tools` to its equivalent tools — tab context, navigate, click/type, read
+  page, console. The roles' prose is written against capabilities, not against one
+  vendor, so nothing else needs to change.
+
+  That list is a **tool** allowlist, not a **destination** allowlist — it says which
+  verbs a role holds, never where it may point them. The browser it drives is *yours*,
+  signed into everything you use, so each browser role additionally declares its own
+  navigation scope up front: the approved domain list you sign off on (`ops`), the dev
+  URL (`design`), the repro's URL (`debug`), the selected environment's Surfaces
+  (`qa`). `ops` — the one role aimed at live SaaS dashboards under your real account —
+  is read-only there as well as on the codebase: it may change what a page *shows* it,
+  never what the service *stores*.
 
 ## Install
 
