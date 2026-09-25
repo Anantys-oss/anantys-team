@@ -60,6 +60,7 @@ Then invoke a skill directly:
 ```
 anantys-team/
 ├── .claude-plugin/marketplace.json     # the catalog (what `marketplace add` reads)
+├── scripts/check_plugins.py            # validates the catalog against the tree (CI)
 └── plugins/
     └── anantys-team-agents/
         ├── .claude-plugin/plugin.json  # the installable unit (name + version)
