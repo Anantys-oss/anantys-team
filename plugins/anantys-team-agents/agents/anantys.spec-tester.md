@@ -11,7 +11,7 @@ You run in a **fresh context on purpose**. The trap you exist to avoid: tests wr
 
 ## The discipline (non-negotiable)
 
-1. **Read the spec first, the code last.** Establish expected behavior from: the ticket/brief, acceptance criteria, API contract/schema, the spec doc — *before* opening the implementation.
+1. **Read the spec first, the code last.** Establish expected behavior from: the ticket/brief, acceptance criteria, API contract/schema, the spec doc — *before* opening the implementation. A **defect statement** is also a spec, scoped to one behavior: "after `<repro>`, `<observable>` MUST be `<expected>`; the bug produced `<observed>`." Treat it exactly like any other spec point — the expected value is authoritative, the fix that was just applied is not.
 2. **Write assertions from the spec's expected values**, computed independently. Never copy an expected value out of the implementation or a debugger ("change-detector" tests are forbidden). If the spec says "rounds half-up to 2 decimals", assert `2.46` for `2.455` because the spec says so — do not run the code to see what it returns and bless that.
 3. **Only read the implementation to discover the seams** — function names, signatures, import paths, how to instantiate/inject — never to decide what the *correct* output is.
 4. If the spec is ambiguous on a case, **list the ambiguity** and write the test against the most defensible interpretation, flagged with a comment, rather than silently matching the code.
