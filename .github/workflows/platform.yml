@@ -1,0 +1,20 @@
+name: platform
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check-platform:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # `claude plugin validate` reads local files only — no auth, no network,
+      # verified against an empty HOME and a scrubbed environment.
+      - run: npm install -g @anthropic-ai/claude-code
+      - run: python3 scripts/test_check_platform.py
+      # Not --strict: the marketplace has carried a missing-author warning since
+      # before this gate existed, and reddening every PR over it would teach
+      # people to ignore the gate. Errors fail; warnings are printed.
+      - run: python3 scripts/check_platform.py
