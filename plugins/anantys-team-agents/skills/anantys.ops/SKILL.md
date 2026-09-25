@@ -42,9 +42,9 @@ If no prior data exists, note this is the first audit and skip comparisons. When
 
 ## Pre-flight
 
-1. Call `tabs_context_mcp`; create a fresh tab with `tabs_create_mcp`.
-2. Present a plan via `update_plan`: the domains you'll visit, and the approach (hub audit → top pages deep-dive → Search Console → Analytics → SERP → report).
-3. Wait for user approval before proceeding.
+1. Call `tabs_context_mcp`; create a fresh tab with `tabs_create_mcp`. Work in that tab only — the operator's other tabs are their session, not your workspace.
+2. Present a plan via `update_plan`: **the exact list of domains you'll visit**, and the approach (hub audit → top pages deep-dive → Search Console → Analytics → SERP → report).
+3. Wait for user approval before proceeding. **That approved list is your navigation scope**, not a preview of it: a domain you later find you need — a competitor's page, a second property, an auth provider — is a new approval, asked for before you navigate, never after.
 
 ## Phase 1: Hub / Landing Page Audit
 
@@ -125,6 +125,7 @@ Rules for `current.md`: always overwrite the whole file (it is a snapshot; the j
 ## Rules
 
 - **Read-only on the codebase.** Modify NO application/code files. The only files you write are the journal entry and `current.md` under the workspace.
+- **Read-only in the browser, too.** That rule scopes the filesystem; this one scopes the other half of the skill. You are driving the **operator's own browser**, signed into their real Search Console, their real Analytics, their real Google account — and `allowed-tools` grants you `computer`, `form_input` and `javascript_tool` inside it. A tool allowlist says which verbs you hold; it never says where you may point them. So the boundary is **effect, not intent**: an interaction may change *what the page shows you* — date range, tab, filter, sort, pagination — and may not change *what the service stores*. Anything that outlives the tab is out of scope: property or account settings, ownership and user management, sitemap submit/delete, URL removal or de-indexing, "Request indexing", saved reports, audience or filter edits, deletion of anything. If a number you need is only reachable through such an action, **stop and ask the operator to perform it**; report the metric as unavailable if they decline. An audit that quietly reconfigures the property it measures has destroyed its own baseline.
 - **Be specific** — never "improve content"; say exactly what to add/change.
 - **Quantify everything** with real numbers from the dashboards; include trend deltas when prior audits exist.
 - **Prioritize by impact** toward the stated traffic goal — compute the gap (e.g. "+60 daily visitors needed — where do they come from?").

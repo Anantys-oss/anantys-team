@@ -38,6 +38,15 @@ More roles can be added over time without changing how you install the team.
   page, console. The roles' prose is written against capabilities, not against one
   vendor, so nothing else needs to change.
 
+  That list is a **tool** allowlist, not a **destination** allowlist — it says which
+  verbs a role holds, never where it may point them. The browser it drives is *yours*,
+  signed into everything you use, so each browser role additionally declares its own
+  navigation scope up front: the approved domain list you sign off on (`ops`), the dev
+  URL (`design`), the repro's URL (`debug`), the selected environment's Surfaces
+  (`qa`). `ops` — the one role aimed at live SaaS dashboards under your real account —
+  is read-only there as well as on the codebase: it may change what a page *shows* it,
+  never what the service *stores*.
+
 ## Install
 
 ```bash

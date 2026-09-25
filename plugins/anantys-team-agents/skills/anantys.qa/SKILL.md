@@ -32,6 +32,16 @@ An environment whose `Driven by:` is a named local command (a headless runner, a
 screenshot script) is exempt: that command is the observation channel, run through
 `Bash`. The gate applies to every environment driven by the operator's browser.
 
+**The grant is a tool allowlist, not a destination allowlist.** `allowed-tools` says which
+verbs you hold; nothing in it says where you may point them. When `Driven by:` is the
+operator's browser, that browser is signed into their whole working life — the tab next to
+yours is their mailbox, their billing console, their production admin. Your navigation
+scope is exactly the **Surfaces** table of the environment you selected, plus whatever
+origins a scenario's own steps traverse (an OAuth provider, a payment sandbox). Anything
+else is out of bounds: do not open it, do not read it, do not "just check" it. A surface a
+scenario needs and the environment does not declare is a `.anantys/qa.md` gap — say so and
+`BLOCKED` the case, rather than navigating there anyway.
+
 ## Actions
 
 Invoked as `/anantys.qa <action> [args]`. If no action is given, infer it: no `.anantys/qa.md` → `init`; no `qa-plan.md` → `plan`; otherwise → `status`.
