@@ -23,6 +23,7 @@ GENERIC = {"Bash", "Read", "Write", "Edit", "Glob", "Grep"}
 MCP_IN_PROSE = re.compile(r"`([a-z_]+)`|mcp__[a-z-]+__([a-z_]+)")
 BASH_FENCE = re.compile(r"```(?:bash|sh|shell)\n(.*?)```", re.S)
 FRONTMATTER = re.compile(r"\A---\n(.*?)\n---\n(.*)\Z", re.S)
+REFERENCE_LINK = re.compile(r"`(reference/[\w.-]+\.md)`")
 
 
 def parse(path):
@@ -39,6 +40,33 @@ def parse(path):
     # agents use tools: ["Bash", "Read"]; skills use a bare comma-separated list
     grants = [g.strip().strip('"[]') for g in field.split(",")]
     return [g for g in grants if g], m.group(2)
+
+
+def prose_surface(path, body):
+    """A skill's prose is its SKILL.md plus every reference file it names.
+
+    `docs/skill-size.md` makes moving an action's procedure into
+    `reference/<topic>.md` the sanctioned remedy for an oversized SKILL.md. That
+    relocation must not move prose out of this checker's view, or the split
+    silences the gate in both directions: a grant justified only in a reference
+    file reads as unaudited, and a command run only there escapes the check
+    entirely. The unit is the surface the role loads, not the file it starts in.
+
+    Returns (body, warnings). A reference file no action names is prose nothing
+    ever reads — reported, because otherwise this widening quietly skips it.
+    """
+    ref_dir = path.parent / "reference"
+    if not ref_dir.is_dir():
+        return body, []
+    named = set(REFERENCE_LINK.findall(body))
+    parts, warnings = [body], []
+    for ref in sorted(ref_dir.glob("*.md")):
+        rel = f"reference/{ref.name}"
+        if rel in named:
+            parts.append(ref.read_text(encoding="utf-8"))
+        else:
+            warnings.append(f"{rel} is not named in SKILL.md — no action loads it")
+    return "\n".join(parts), warnings
 
 
 def bash_commands(body):
@@ -123,7 +151,9 @@ def main(root):
             print(f"ERROR {rel}: no frontmatter")
             failed = True
             continue
-        errors, warnings = check(path, *p, known_mcp)
+        body, orphans = prose_surface(path, p[1])
+        errors, warnings = check(path, p[0], body, known_mcp)
+        warnings += orphans
         for e in errors:
             print(f"ERROR {rel}: {e}")
         for w in warnings:

@@ -59,6 +59,56 @@ class ToolGrants(unittest.TestCase):
         self.assertEqual(warnings, [])
 
 
+class ProseSurface(unittest.TestCase):
+    """A split SKILL.md must not shrink what the checker reads."""
+
+    def setUp(self):
+        import tempfile
+
+        self.skill = Path(tempfile.mkdtemp()) / "SKILL.md"
+        self.skill.parent.mkdir(parents=True, exist_ok=True)
+
+    def _skill(self, body, **refs):
+        self.skill.write_text(body, encoding="utf-8")
+        if refs:
+            (self.skill.parent / "reference").mkdir(exist_ok=True)
+            for name, text in refs.items():
+                (self.skill.parent / "reference" / f"{name}.md").write_text(text, encoding="utf-8")
+        return self.skill
+
+    def test_a_skill_without_a_reference_dir_is_unchanged(self):
+        body, warnings = c.prose_surface(self._skill("just prose\n"), "just prose\n")
+        self.assertEqual((body, warnings), ("just prose\n", []))
+
+    def test_a_named_reference_file_joins_the_prose(self):
+        text = "Read `reference/run.md` first.\n"
+        body, warnings = c.prose_surface(self._skill(text, run="Ask with AskUserQuestion.\n"), text)
+        self.assertIn("AskUserQuestion", body)
+        self.assertEqual(warnings, [])
+
+    def test_a_grant_justified_only_in_a_reference_file_is_not_unreferenced(self):
+        """The false positive the qa split introduces: the sole body mention moved."""
+        text = "Actions are in `reference/run.md`.\n"
+        path = self._skill(text, run="Confirm with AskUserQuestion before running.\n")
+        body, _ = c.prose_surface(path, text)
+        _, warnings = c.check(path, ["AskUserQuestion"], body, set())
+        self.assertEqual(warnings, [])
+
+    def test_an_ungranted_command_in_a_reference_file_is_still_an_error(self):
+        text = "Steps: `reference/run.md`.\n"
+        path = self._skill(text, run="```bash\nrm -rf build\n```\n")
+        body, _ = c.prose_surface(path, text)
+        errors, _ = c.check(path, ["Bash(ls:*)"], body, set())
+        self.assertIn("`rm -rf build`", errors[0])
+
+    def test_an_unnamed_reference_file_warns(self):
+        text = "Only `reference/run.md` is named.\n"
+        path = self._skill(text, run="steps\n", orphan="prose no action reads\n")
+        body, warnings = c.prose_surface(path, text)
+        self.assertNotIn("no action reads", body)
+        self.assertEqual(warnings, ["reference/orphan.md is not named in SKILL.md — no action loads it"])
+
+
 class Parse(unittest.TestCase):
     def _write(self, text):
         path = Path(self.tmp) / "r.md"
