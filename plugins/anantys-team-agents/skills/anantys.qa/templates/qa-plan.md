@@ -81,10 +81,16 @@ untested by construction, and the blocker list is where untested money paths get
 
 - [ ] A1 <observable outcome> (FR-0xx). — `local`: PASS · `staging`: not run
 - [ ] A2 <observable outcome> (FR-0yy). — `local`: FAIL · `staging`: not run
-      ⚠️ *Adjudicated <date> (operator, env: `<name>` | `all`): <ruling + reason>. Only <narrowed
-      condition> is a real A2 failure.*
+      ⚠️ *Adjudicated <date> (operator, run <n>, env: `<name>` | `all`): <ruling + reason>. Only
+      <narrowed condition> is a real A2 failure.*
 - [ ] ~~A3 <dropped behaviour>~~ — **REMOVED from the product** (<date>, operator, env:
-      `all`). Do not report its absence as a defect.
+      `all`, decided in <spec §/issue/PR>). Do not report its absence as a defect.
+
+An adjudication is the only thing that turns a FAIL into a PASS, and this file is committed —
+anyone can type one. `run <n>` points at the `qa-runs.md` section recording the FAIL that was ruled
+on; a REMOVED line points at where the product decision was made. A run that cannot find that
+witness still applies the ruling but reports it as **unverified**, and a ruling never removes a §3
+blocker from the verdict — see SKILL.md, "Judging rules".
 
 The per-environment suffix (`` `<env>`: PASS | FAIL | BLOCKED | not run ``) is the authoritative
 result, required on every assertion that has run on any environment; a run rewrites only its own
@@ -105,6 +111,9 @@ environment's entry. The checkbox is checked only when **every** declared enviro
    Nothing in §2 can fail for these; they are listed here because that is the point.
 
 Everything else is a defect to file, not a blocker.
+
+A blocker that passes **because of an adjudication** is listed here as `<id> PASS by ruling <date>`,
+never as a plain pass. Narrowing a blocker is legitimate; doing it invisibly is not.
 
 ⚠️ Passing every blocker is not the same as having tested everything. See §1 and §4.
 

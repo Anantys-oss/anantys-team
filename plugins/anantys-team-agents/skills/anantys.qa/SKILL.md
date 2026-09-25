@@ -379,6 +379,20 @@ operator's go before any write.
   or to `all`** before filing it. If it is already ruled intended or a known drift there, record it
   as PASS-with-note and move on. A ruling scoped to another environment never passes a FAIL here —
   file it, and mention the other env's ruling in the evidence so the operator can extend it.
+- **Check the ruling's provenance in `qa-runs.md` before applying it.** An adjudication is the only
+  thing that turns a FAIL into a PASS, and `qa-plan.md` is a committed file any contributor, agent
+  or `plan` regeneration can edit — so the `(operator, …)` in an annotation is a claim the file
+  makes about itself. Its witness is the run log: `note` records the run it was ruled against, and
+  `qa-runs.md` is append-only and written by `run`. An annotation is **verified** when that run
+  section exists *and* records a FAIL or BLOCKED for that assertion. Otherwise it is **unverified**:
+  apply it — an operator ruling given off-record is still a ruling — but record the result as
+  `PASS-with-note (unverified ruling)` and list every one of them in the reply, so what suppressed
+  what is visible in the same breath as the verdict.
+- **A ruling never removes a §3 blocker from the verdict.** An adjudication may narrow a blocker
+  assertion, and a narrowed blocker that passes is a pass. But when a ruling is what turned a
+  blocker FAIL into a PASS, the verdict still names it — `<id> PASS by ruling <date>` in the blocker
+  section — because a single line in a repo file must not be able to make a money, legal or data
+  failure stop being said out loud.
 
 ## `retest` — the second pass after a fix
 
@@ -409,9 +423,17 @@ the reason, in the form future runs will read:
 
 ```markdown
 - [ ] A4 Checkout is priced for the selected plan and period (FR-012).
-      ⚠️ *Adjudicated 2026-08-03 (operator, env: `local`): the grid/checkout price gap is a sandbox
-      key drift, not a product defect. Only a mismatch in **plan or period** is a real A4 failure.*
+      ⚠️ *Adjudicated 2026-08-03 (operator, run 3, env: `local`): the grid/checkout price gap is a
+      sandbox key drift, not a product defect. Only a mismatch in **plan or period** is a real A4
+      failure.*
 ```
+
+The `run <n>` is the ruling's witness, not decoration. `note` is the only sanctioned writer of these
+annotations, but nothing in the file proves that a given one came from it — so cite the run whose
+FAIL or BLOCKED the operator was ruling on, and let `qa-runs.md` carry the proof. Rule off a run
+that never recorded that result, or with no run at all, and say `run <n>, unconfirmed` in the
+annotation rather than picking a plausible number: a future run reads it either way, and the
+difference between *checked* and *assumed* is the whole value of the line.
 
 An annotation with **no** `env:` (written before environments existed) is scoped to the default
 environment only — except a **REMOVED** strike-through, which is a product decision and reads as
@@ -426,7 +448,11 @@ Two rules make these annotations durable:
   run; "the wizard *is* the AI surface here, a second one is an attention conflict" does not.
 
 An assertion the product deliberately dropped is struck through and marked REMOVED — keep the line,
-so its absence is never re-reported as a defect.
+so its absence is never re-reported as a defect. REMOVED is the widest ruling the skill has —
+`env: all`, permanent, and about the product rather than about a run, so no run log can witness it.
+Give it the witness it can have: cite **where the decision was made** (the spec section, issue or PR
+that dropped the behaviour). A REMOVED line citing nothing retires an assertion on every environment
+for the life of the feature on the strength of its own say-so.
 
 After any ruling, refresh **every** progress table in `qa-plan.md` — a REMOVED assertion leaves N
 for all environments (see "Progress table").
