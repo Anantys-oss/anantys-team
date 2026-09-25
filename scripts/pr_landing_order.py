@@ -31,6 +31,13 @@ early wave whose error is only cleared by a later one is red on `main` for the
 whole gap. Verifying only the full union hides exactly that: the union contains
 the fix, the round the operator actually lands does not.
 
+When a round is red, the report then names **what clears it**. A wave is grouped
+by merge conflicts, which have nothing to do with greenness, so the PR carrying a
+fix routinely lands rounds after the checker it satisfies — and the operator has
+no way to tell that from a tree that is simply broken. Each remaining PR is
+folded into the round (minus whichever members it conflicts with, since those are
+exactly the resolutions a human would make) and the failing checkers re-run.
+
 Usage: python3 scripts/pr_landing_order.py [--limit N] [--verify]
 Exit 0 always — this is an operator report, not a gate.
 """
@@ -141,14 +148,39 @@ def union_tree(base, refs):
     return acc, joined, refused
 
 
-def checker_scripts(scripts_dir):
-    """Every checker in a tree: `check_*.py`, never their `test_*` siblings."""
+def checker_scripts(scripts_dir, only=None):
+    """Every checker in a tree: `check_*.py`, never their `test_*` siblings.
+
+    `only` narrows the set by name, for re-testing a tree against a checker
+    already known to fail — the other verdicts are not the question being asked.
+    """
     return sorted(p for p in Path(scripts_dir).glob("check_*.py")
-                  if not p.name.startswith("test_"))
+                  if not p.name.startswith("test_")
+                  and (only is None or p.name in only))
+
+
+def run_checkers(commit, only=None):
+    """{checker name: (exit code, error lines)} for every checker in `commit`.
+
+    `only` restricts the run to checkers of that name — used when re-testing a
+    tree against a known failure, where the other checkers' verdicts are not
+    the question being asked.
+    """
+    out = {}
+    with tempfile.TemporaryDirectory(prefix="pr-union-") as tmp:
+        subprocess.run(f"git archive {commit} | tar -x -C {tmp}",
+                       shell=True, check=True)
+        for script in checker_scripts(Path(tmp) / "scripts", only):
+            done = subprocess.run([sys.executable, str(script), tmp],
+                                  capture_output=True, text=True, cwd=tmp)
+            out[script.name] = (done.returncode, [
+                ln for ln in (done.stdout + done.stderr).strip().splitlines()
+                if ln.startswith(("ERROR", "error"))])
+    return out
 
 
 def verify(base, refs):
-    """Run every checker inside the union of `refs`. Returns (lines, refused).
+    """Checkers inside the union of `refs`. Returns (lines, refused, failing).
 
     A round that refuses anything was not assembled, so its checker results
     belong to a smaller tree than the caller asked for — the caller must say so
@@ -160,24 +192,64 @@ def verify(base, refs):
     if refused:
         return ["not assembled — a human must first resolve "
                 + ", ".join(f"#{n}" for n in refused)
-                + " against the tree the previous wave leaves behind"], refused
+                + " against the tree the previous wave leaves behind"], refused, []
 
-    with tempfile.TemporaryDirectory(prefix="pr-union-") as tmp:
-        subprocess.run(f"git archive {commit} | tar -x -C {tmp}",
-                       shell=True, check=True)
-        found = checker_scripts(Path(tmp) / "scripts")
-        if not found:
-            lines.append("  no checkers in the union — nothing to verify")
-        for script in found:
-            done = subprocess.run([sys.executable, str(script), tmp],
-                                  capture_output=True, text=True, cwd=tmp)
-            status = "OK  " if done.returncode == 0 else "FAIL"
-            lines.append(f"  {status} {script.name}")
-            if done.returncode != 0:
-                lines += [f"       {ln}" for ln
-                          in (done.stdout + done.stderr).strip().splitlines()
-                          if ln.startswith(("ERROR", "error"))]
-    return lines, []
+    results = run_checkers(commit)
+    if not results:
+        lines.append("  no checkers in the union — nothing to verify")
+    for name, (code, errors) in sorted(results.items()):
+        lines.append(f"  {'OK  ' if code == 0 else 'FAIL'} {name}")
+        lines += [f"       {ln}" for ln in errors]
+    return lines, [], sorted(n for n, (code, _) in results.items() if code)
+
+
+def blockers(candidate, landed, edges):
+    """Members of `landed` that `candidate` cannot merge alongside."""
+    return sorted(n for n in landed if frozenset((candidate, n)) in edges)
+
+
+def clearing(base, landed, remaining, failing, edges, refs):
+    """Which still-unlanded PRs turn this round's failing checkers green.
+
+    Waves are computed from merge conflicts alone, so a checker can land rounds
+    ahead of the change that satisfies it — and `main` is red for the whole gap.
+    Mergeability and greenness are different graphs; the partition only ever saw
+    the first one. Reporting the failure without this is reporting half of it:
+    the operator cannot tell a landing-order artifact, which a resolution fixes
+    today, from a real defect in the assembled tree, which nothing in the queue
+    fixes at all.
+
+    A candidate that conflicts with the round is tested against the round minus
+    those members — the tree a human would produce by resolving them — so the
+    answer is not simply withheld for the PRs most likely to be the fix.
+    """
+    numbers = [n for n, _ in landed]
+    lines, cleared = [], {name: [] for name in failing}
+    for number in remaining:
+        blocked = blockers(number, numbers, edges)
+        trimmed = [pr for pr in landed if pr[0] not in blocked]
+        commit, _, refused = union_tree(base, trimmed + [(number, refs[number])])
+        if refused:
+            continue
+        for name, (code, _) in run_checkers(commit, only=failing).items():
+            if code == 0:
+                cleared[name].append((number, blocked))
+    for name in failing:
+        if not cleared[name]:
+            lines.append(f"  nothing in the remaining queue clears {name} — a "
+                         f"defect in the assembled tree, not a landing order")
+            continue
+        for number, blocked in cleared[name]:
+            if blocked:
+                lines.append(
+                    f"  #{number} clears {name}, but conflicts with "
+                    + ", ".join(f"#{n}" for n in blocked)
+                    + " in this round — a green `main` means resolving them "
+                      "together, not landing the round as it stands")
+            else:
+                lines.append(f"  #{number} clears {name} and merges clean into "
+                             f"this round — move it here")
+    return lines
 
 
 def main():
@@ -220,9 +292,15 @@ def main():
         print("\nVerifying every landing round — a wave is not a tree:")
         for i, cumulative in enumerate(rounds(order, refs), 1):
             print(f"\nAfter wave {i} lands:")
-            lines, refused = verify(base, cumulative)
+            lines, refused, failing = verify(base, cumulative)
             for line in lines:
                 print(line)
+            if failing:
+                landed = {n for n, _ in cumulative}
+                for line in clearing(base, cumulative,
+                                     [n for n, _, _, _ in prs if n not in landed],
+                                     failing, edges, refs):
+                    print(line)
             if refused:
                 print(f"  rounds after wave {i} not verified — they sit on a tree "
                       f"only a human can produce")

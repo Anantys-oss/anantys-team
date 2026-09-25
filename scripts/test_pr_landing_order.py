@@ -43,6 +43,41 @@ class CheckerDiscovery(unittest.TestCase):
     def test_empty_tree_has_no_checkers(self):
         self.assertEqual(self.names(), [])
 
+    def test_only_narrows_to_the_named_checkers(self):
+        self.write("check_a.py", "check_b.py")
+        self.assertEqual(
+            [f.name for f in p.checker_scripts(self.dir, ["check_b.py"])],
+            ["check_b.py"])
+
+    def test_only_still_refuses_a_checkers_own_tests(self):
+        self.write("check_a.py", "test_check_a.py")
+        self.assertEqual(
+            p.checker_scripts(self.dir, ["test_check_a.py"]), [])
+
+    def test_an_empty_only_runs_nothing(self):
+        # A round with no failures must not silently re-run the whole set.
+        self.write("check_a.py")
+        self.assertEqual(p.checker_scripts(self.dir, []), [])
+
+
+class Blockers(unittest.TestCase):
+    """Which members of a round stand between it and a candidate fix."""
+
+    def test_a_clean_candidate_is_blocked_by_nobody(self):
+        self.assertEqual(p.blockers(9, [1, 2], edges((1, 2))), [])
+
+    def test_only_the_conflicting_members_are_named(self):
+        self.assertEqual(p.blockers(9, [1, 2, 3], edges((9, 1), (9, 3))), [1, 3])
+
+    def test_conflicts_outside_the_round_are_not_the_rounds_problem(self):
+        self.assertEqual(p.blockers(9, [1], edges((9, 2))), [])
+
+    def test_the_result_is_ordered_so_the_report_is_stable(self):
+        self.assertEqual(p.blockers(9, [3, 1, 2], edges((9, 3), (9, 1))), [1, 3])
+
+    def test_an_empty_round_blocks_nothing(self):
+        self.assertEqual(p.blockers(9, [], edges((9, 1))), [])
+
 
 class Waves(unittest.TestCase):
     def test_no_conflicts_is_one_wave(self):
