@@ -16,7 +16,7 @@ The user names the branch to review (a branch name, a PR number/URL, or "the cur
 
 1. **Clean working tree.** `git status --porcelain` — if there are uncommitted changes, STOP and ask the user to commit or stash first. Never review on top of dirty state.
 2. **Detect the base branch** — do not assume `main`. In order: an explicit base the user gave; the PR's base from `gh pr view <n> --json baseRefName`; the repo default (`git symbolic-ref refs/remotes/origin/HEAD`); else fall back to the first of `main`, `master`, `develop`, `staging` that exists.
-3. **Update the base.** `git fetch origin --prune` then bring the base up to date.
+3. **Update the base — to the base this branch will *land in*.** `git fetch origin --prune`, then fast-forward the base to `origin/<base>`. If the local base is *ahead* of `origin/<base>`, that is a merge from an earlier review in this same sitting: it is unpushed, so it exists nowhere else. Keep it, say so, and review against it. Never `reset --hard origin/<base>` to "start clean" — that silently discards a landing the user already approved, and re-computes your verdict against a tree that no longer describes where the branch is going.
 
 ## Discovery (only if the branch wasn't specified)
 
@@ -49,6 +49,23 @@ Read the actual diff, but **present it as a digestible summary, not a raw dump**
 |------|--------|
 | `path/to/file` | one-line description of what changed and why |
 
+### Step C2 — Locate the branch in the queue
+A **Merge** verdict is a claim about the tree the branch will *land in*, not the tree it was branched from. With one open PR those are the same tree. With N they are not — and that gap is where a branch-at-a-time review goes wrong: N branches each green against the base can still be red in whatever order you land them.
+
+List the siblings and test this branch against each. Read-only — no checkout, no index, no working tree touched:
+```bash
+gh pr list --state open --json number,headRefName --jq '.[].headRefName'
+git merge-tree --write-tree HEAD origin/<sibling> >/dev/null || echo "conflicts: <sibling>"
+```
+(`--write-tree` needs git ≥ 2.38. Older git's `merge-tree` is a different command that prints a diff and **exits 0 on conflict** — check `git --version` first, or you will report "no conflicts" for every sibling.)
+
+Report two things, briefly:
+
+- **Textual edges** — which siblings this branch conflicts with, and in which file. That is not a defect in either branch; it is the *cost of landing in this order*, and the user is the one who chooses to pay it or reorder.
+- **Semantic edges** — a sibling that adds a rule, check, or convention this branch's content is subject to, or that this branch's content would newly violate (and the reverse). `merge-tree` is blind to these: both branches are green alone, the assembled tree is red. You find them by reading the siblings' titles and one-line intents — not their diffs, which is the wall of diff this skill exists to avoid.
+
+If either kind of edge exists, the Merge recommendation is **conditional on order**: say which order is safe, or say plainly that you could not tell. An unqualified Merge is a claim that you looked and found the branch independent.
+
 ### Step D — Assess (this is the value you add)
 Go beyond "it compiles." Check, and report concisely:
 - **What it does** — 1-2 sentences.
@@ -75,7 +92,8 @@ Then **wait for the user's decision.** Do not act on Merge/Close until they conf
 ## Rules
 
 - **Check out the branch locally** — always `git checkout <branch>` into the working tree; never review off remote-ref diffs. The human reads the diff in their editor.
-- **One branch at a time** — never batch diffs or decisions.
+- **One branch at a time** — never batch diffs or decisions. That bounds what you *read*, not what you *account for*: the verdict still has to name the queue the branch lands into (Step C2).
+- **A Merge verdict names the base it was computed against** — report `git rev-parse <base>` with it. If the base moved after you said it, the verdict expired; re-run Step C2 before anyone acts on it.
 - **Summarize the diff** — a readable table + assessment beats a wall of raw diff.
 - **Base wins on conflicts** — the branch adapts to the base.
 - **Show PR info before the verdict** — context first.
