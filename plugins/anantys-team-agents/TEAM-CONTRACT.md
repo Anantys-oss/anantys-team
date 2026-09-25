@@ -59,3 +59,20 @@ lands, it lands here, and each role keeps only its own narrowing.
   scope change, or a verdict.
 - **Redaction on the way out.** What a role may carry out of a session it did not
   choose the contents of.
+
+---
+
+## Landing note
+
+This branch conflicts with exactly two of the sixteen open PRs — #9 (review) and
+#16 (design, ops) — and in each case the conflict is one line: they append to a
+role's `## Rules` list while this branch deletes that list's trailing restatement
+of C1. Resolve by taking their added lines and dropping the restatement:
+
+- `anantys.review` — drop *"Report what you actually verified … not what you assume."*
+- `anantys.design` — drop *"Report what the screenshot actually shows, not what you expect."*
+- `anantys.ops` — drop the trailing *"Never invent metrics."*
+
+The other fourteen merge clean. That this branch could not remove one duplicated
+line from three role files without meeting two of the three PRs that append to
+those same lists is the cost the contract exists to remove.
