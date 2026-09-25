@@ -25,6 +25,12 @@ state (fold the branches with `merge-tree`, extract with `git archive`, never
 touch a branch or the working tree) and runs every `scripts/check_*.py` found
 inside it.
 
+It does so **once per landing round**, not once for the whole queue. Waves land
+one at a time, so `main` passes through every prefix of them, and a checker in an
+early wave whose error is only cleared by a later one is red on `main` for the
+whole gap. Verifying only the full union hides exactly that: the union contains
+the fix, the round the operator actually lands does not.
+
 Usage: python3 scripts/pr_landing_order.py [--limit N] [--verify]
 Exit 0 always — this is an operator report, not a gate.
 """
@@ -49,6 +55,35 @@ def open_prs(limit):
     prs = [(p["number"], p["headRefName"], p["title"],
             {f["path"] for f in p["files"]}) for p in json.loads(raw)]
     return sorted(prs)
+
+
+def stacked(prs):
+    """{contained: container} when one PR's head is an ancestor of another's.
+
+    A stacked PR carries no diff of its own once its container lands, and it
+    breaks a fold: the pair merges cleanly (their merge base *is* the contained
+    head) but folding the contained tree first and then merging the container
+    against `main` re-reads the shared files as two independent edits. Landing
+    the container closes both, so the contained PR leaves the graph.
+    """
+    out = {}
+    for a, ref_a, _, _ in prs:
+        for b, ref_b, _, _ in prs:
+            if a != b and subprocess.run(
+                    ["git", "merge-base", "--is-ancestor",
+                     f"origin/{ref_a}", f"origin/{ref_b}"],
+                    capture_output=True).returncode == 0:
+                out[a] = b
+    return out
+
+
+def rounds(order, refs):
+    """Cumulative landing rounds: what `main` holds after each wave lands."""
+    out, seen = [], []
+    for wave in order:
+        seen = seen + [(n, refs[n]) for n in wave]
+        out.append(list(seen))
+    return out
 
 
 def conflicts(prs):
@@ -113,13 +148,19 @@ def checker_scripts(scripts_dir):
 
 
 def verify(base, refs):
-    """Run every checker inside the union of `refs`. Returns the report lines."""
+    """Run every checker inside the union of `refs`. Returns (lines, refused).
+
+    A round that refuses anything was not assembled, so its checker results
+    belong to a smaller tree than the caller asked for — the caller must say so
+    rather than present them as the round's verdict.
+    """
     commit, joined, refused = union_tree(base, refs)
     lines = [f"Union of {len(joined)} PRs: "
              + (", ".join(f"#{n}" for n in joined) or "(none)")]
     if refused:
-        lines.append("Excluded (conflicts with the accumulation): "
-                     + ", ".join(f"#{n}" for n in refused))
+        return ["not assembled — a human must first resolve "
+                + ", ".join(f"#{n}" for n in refused)
+                + " against the tree the previous wave leaves behind"], refused
 
     with tempfile.TemporaryDirectory(prefix="pr-union-") as tmp:
         subprocess.run(f"git archive {commit} | tar -x -C {tmp}",
@@ -136,7 +177,7 @@ def verify(base, refs):
                 lines += [f"       {ln}" for ln
                           in (done.stdout + done.stderr).strip().splitlines()
                           if ln.startswith(("ERROR", "error"))]
-    return lines
+    return lines, []
 
 
 def main():
@@ -151,11 +192,18 @@ def main():
         print("no open PRs")
         return 0
     titles = {n: t for n, _, t, _ in prs}
+    refs = {n: ref for n, ref, _, _ in prs}
+    contained = stacked(prs)
+    if contained:
+        prs = [pr for pr in prs if pr[0] not in contained]
     edges = conflicts(prs)
     order = waves([n for n, _, _, _ in prs], edges)
 
     print(f"{len(prs)} open PRs, {len(edges)} conflicting pairs, "
           f"{len(order)} waves ({max(len(order) - 1, 0)} rebase rounds)\n")
+    for small, big in sorted(contained.items()):
+        print(f"#{small} is contained in #{big} — landing #{big} closes it; "
+              f"not counted above\n")
     for i, wave in enumerate(order, 1):
         print(f"Wave {i} — land in any order, no rebase between them:")
         for n in wave:
@@ -169,9 +217,16 @@ def main():
 
     if args.verify:
         base = run("git", "rev-parse", "main").strip()
-        print("\nVerifying the assembled tree — mergeable is not green:")
-        for line in verify(base, [(n, ref) for n, ref, _, _ in prs]):
-            print(line)
+        print("\nVerifying every landing round — a wave is not a tree:")
+        for i, cumulative in enumerate(rounds(order, refs), 1):
+            print(f"\nAfter wave {i} lands:")
+            lines, refused = verify(base, cumulative)
+            for line in lines:
+                print(line)
+            if refused:
+                print(f"  rounds after wave {i} not verified — they sit on a tree "
+                      f"only a human can produce")
+                break
     return 0
 
 

@@ -76,5 +76,29 @@ class Waves(unittest.TestCase):
         self.assertEqual(sorted(landed), [1, 2, 3, 4, 5])
 
 
+class Rounds(unittest.TestCase):
+    refs = {1: "a", 2: "b", 3: "c"}
+
+    def test_each_round_is_a_prefix_of_the_queue(self):
+        self.assertEqual(
+            p.rounds([[1, 2], [3]], self.refs),
+            [[(1, "a"), (2, "b")], [(1, "a"), (2, "b"), (3, "c")]],
+        )
+
+    def test_one_wave_is_one_round(self):
+        self.assertEqual(p.rounds([[1]], self.refs), [[(1, "a")]])
+
+    def test_the_last_round_holds_the_whole_queue(self):
+        last = p.rounds([[1], [2], [3]], self.refs)[-1]
+        self.assertEqual([n for n, _ in last], [1, 2, 3])
+
+    def test_an_earlier_round_never_sees_a_later_wave(self):
+        first = p.rounds([[1], [2, 3]], self.refs)[0]
+        self.assertEqual([n for n, _ in first], [1])
+
+    def test_no_waves_is_no_rounds(self):
+        self.assertEqual(p.rounds([], self.refs), [])
+
+
 if __name__ == "__main__":
     unittest.main()
