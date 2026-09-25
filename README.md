@@ -34,9 +34,14 @@ worthless:
 
 ```
 /anantys.debug   defect spec  ──▶  anantys.spec-tester   regression test, fresh context
-/anantys.review  spec/ticket  ──▶  anantys.spec-tester   are the PR's tests change-detectors?
+/anantys.review  spec/ticket  ──▷  anantys.spec-tester   are the PR's tests change-detectors?
+                                                         (recommended as Audit, you authorize)
 /anantys.review  the diff     ──▶  anantys.code-auditor  what did it omit?
 ```
+
+A solid arrow is a dispatch the skill performs; `──▷` is one it recommends and you authorize.
+`review` is read-only by declaration — it may not hand its clean working tree to an agent that
+writes files, so the test run it needs is a verdict, not a side effect.
 
 What crosses the boundary is always the **spec, never the diff**. Hand `spec-tester` the
 expected behavior and it can write a test that fails; hand it the implementation and it can
