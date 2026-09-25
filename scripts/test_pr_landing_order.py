@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Fixture tests for pr_landing_order — run: python3 -m unittest discover scripts"""
 
+import shutil
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -11,6 +13,35 @@ import pr_landing_order as p  # noqa: E402
 
 def edges(*pairs):
     return {frozenset(pair): [] for pair in pairs}
+
+
+class CheckerDiscovery(unittest.TestCase):
+    def setUp(self):
+        self.dir = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.dir)
+
+    def write(self, *names):
+        for n in names:
+            (self.dir / n).write_text("")
+
+    def names(self):
+        return [found.name for found in p.checker_scripts(self.dir)]
+
+    def test_finds_checkers(self):
+        self.write("check_a.py", "check_b.py")
+        self.assertEqual(self.names(), ["check_a.py", "check_b.py"])
+
+    def test_skips_a_checkers_own_tests(self):
+        # test_check_a.py imports check_a and would be run as if it were a gate.
+        self.write("check_a.py", "test_check_a.py")
+        self.assertEqual(self.names(), ["check_a.py"])
+
+    def test_skips_unrelated_scripts(self):
+        self.write("check_a.py", "pr_landing_order.py", "helper.py")
+        self.assertEqual(self.names(), ["check_a.py"])
+
+    def test_empty_tree_has_no_checkers(self):
+        self.assertEqual(self.names(), [])
 
 
 class Waves(unittest.TestCase):
