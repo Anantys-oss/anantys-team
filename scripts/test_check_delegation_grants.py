@@ -79,34 +79,34 @@ def test_declining_also_drops_the_task_grant_requirement():
     assert errors == [], errors
 
 
-def test_parse_reads_both_grant_dialects(tmp):
-    agent = tmp / "a.md"
+def test_parse_reads_both_grant_dialects(tmp_path):
+    agent = tmp_path / "a.md"
     agent.write_text('---\nname: x\ntools: ["Bash", "Read"]\n---\nbody\n')
     assert parse(agent) == ("x", {"Bash", "Read"}, "body\n")
 
-    sk = tmp / "SKILL.md"
+    sk = tmp_path / "SKILL.md"
     sk.write_text("---\nname: y\nallowed-tools: Read, Task\n---\nbody\n")
     assert parse(sk) == ("y", {"Read", "Task"}, "body\n")
 
 
-def test_parse_returns_none_without_frontmatter(tmp):
-    plain = tmp / "p.md"
+def test_parse_returns_none_without_frontmatter(tmp_path):
+    plain = tmp_path / "p.md"
     plain.write_text("# no frontmatter\n")
     assert parse(plain) is None
 
 
-def test_main_exits_nonzero_on_escalation(tmp):
-    sd = tmp / "plugins" / "p" / "skills" / "s"
+def test_main_exits_nonzero_on_escalation(tmp_path):
+    sd = tmp_path / "plugins" / "p" / "skills" / "s"
     sd.mkdir(parents=True)
     (sd / "SKILL.md").write_text("---\nname: s\nallowed-tools: Read, Task\n---\ncall `a`\n")
-    ad = tmp / "plugins" / "p" / "agents"
+    ad = tmp_path / "plugins" / "p" / "agents"
     ad.mkdir(parents=True)
     (ad / "a.md").write_text('---\nname: a\ntools: ["Read", "Write"]\n---\nbody\n')
-    assert main(tmp) == 1
+    assert main(tmp_path) == 1
 
 
-def test_main_errors_when_no_roles_exist(tmp):
-    assert main(tmp) == 1
+def test_main_errors_when_no_roles_exist(tmp_path):
+    assert main(tmp_path) == 1
 
 
 if __name__ == "__main__":
