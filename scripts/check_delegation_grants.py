@@ -31,6 +31,7 @@ DECLINED = re.compile(r"\b(?:do(?:es)?\s+not|don'?t|never|rather\s+than)\s+\w*\s
                       r"(?:dispatch|invoke|launch|delegate|run)", re.I)
 # a markdown block: paragraph, bullet, or numbered step — the unit a disclaimer scopes to
 BLOCK = re.compile(r"\n\s*\n|\n(?=\s*(?:[-*+]\s|\d+\.\s))")
+REFERENCE_LINK = re.compile(r"`(reference/[\w.-]+\.md)`")
 
 
 def parse(path):
@@ -47,6 +48,37 @@ def parse(path):
     # agents write tools: ["Bash", "Read"]; skills write a bare comma list
     grants = {g.strip().strip('"[]') for g in (field or "").split(",")}
     return name, grants - {""}, m.group(2)
+
+
+def prose_surface(path, body):
+    """A skill's prose is its SKILL.md plus every reference file it names.
+
+    `docs/skill-size.md` makes moving an action's procedure into
+    `reference/<topic>.md` the sanctioned remedy for an oversized SKILL.md. A
+    dispatch relocated there is invisible to a checker that reads only
+    SKILL.md, and this checker then states the opposite of the truth in both
+    directions: the escalation goes unreported, and the agent is additionally
+    listed as dispatched by nobody. The unit is the surface the role loads.
+
+    Blocks are joined with a blank line so a disclaimer stays scoped to its own
+    file — `check()` splits on block boundaries, and a single newline would fuse
+    the last block of one file onto the first block of the next.
+
+    Returns (body, warnings). A reference file no action names is prose nothing
+    ever reads — reported, because otherwise this widening quietly skips it.
+    """
+    ref_dir = path.parent / "reference"
+    if not ref_dir.is_dir():
+        return body, []
+    named = set(REFERENCE_LINK.findall(body))
+    parts, warnings = [body], []
+    for ref in sorted(ref_dir.glob("*.md")):
+        rel = f"reference/{ref.name}"
+        if rel in named:
+            parts.append(ref.read_text(encoding="utf-8"))
+        else:
+            warnings.append(f"{rel} is not named in SKILL.md — no action loads it")
+    return "\n\n".join(parts), warnings
 
 
 def covers(grants, needed):
@@ -90,10 +122,13 @@ def check(skills, agents):
 
 
 def main(root):
-    skills, agents = [], {}
+    skills, agents, orphans = [], {}, []
     for path in sorted(root.glob("plugins/*/skills/*/SKILL.md")):
         if parsed := parse(path):
-            skills.append(parsed)
+            name, grants, body = parsed
+            body, unnamed = prose_surface(path, body)
+            orphans += [f"{name}: {w}" for w in unnamed]
+            skills.append((name, grants, body))
     for path in sorted(root.glob("plugins/*/agents/*.md")):
         if parsed := parse(path):
             agents[parsed[0]] = parsed[1]
@@ -103,6 +138,7 @@ def main(root):
         return 1
 
     errors, warnings = check(skills, agents)
+    warnings = orphans + warnings
     for w in warnings:
         print(f"WARN  {w}")
     for e in errors:

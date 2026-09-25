@@ -2,10 +2,12 @@
 """Tests for check_delegation_grants. Run: python3 scripts/test_check_delegation_grants.py"""
 
 import sys
+import tempfile
+import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
-from check_delegation_grants import check, covers, main, parse  # noqa: E402
+from check_delegation_grants import check, covers, main, parse, prose_surface  # noqa: E402
 
 
 def skill(name, grants, body=""):
@@ -109,22 +111,84 @@ def test_main_errors_when_no_roles_exist(tmp_path):
     assert main(tmp_path) == 1
 
 
-if __name__ == "__main__":
-    import tempfile
+def _split_skill(tmp_path, procedure, agent_tools='["Bash", "Write"]'):
+    """A skill whose procedure lives in a named reference file, plus one agent."""
+    sd = tmp_path / "plugins" / "p" / "skills" / "s"
+    (sd / "reference").mkdir(parents=True)
+    (sd / "SKILL.md").write_text(
+        "---\nname: s\nallowed-tools: Read, Task\n---\nProcedure: `reference/run.md`.\n"
+    )
+    (sd / "reference" / "run.md").write_text(procedure)
+    ad = tmp_path / "plugins" / "p" / "agents"
+    ad.mkdir(parents=True)
+    (ad / "wide.md").write_text(f'---\nname: wide\ntools: {agent_tools}\n---\nbody\n')
+    return sd
 
-    failures = 0
+
+def test_dispatch_in_a_reference_file_is_still_a_dispatch(tmp_path):
+    """The sanctioned SKILL.md split must not move a dispatch out of the gate's view.
+
+    Before prose_surface, this skill passed silently *and* the agent was reported
+    as dispatched by nobody — the checker stating the opposite of the truth twice.
+    """
+    _split_skill(tmp_path, "Dispatch `wide` to apply the fix.\n")
+    assert main(tmp_path) == 1
+
+
+def test_a_disclaimer_in_a_reference_file_still_declines(tmp_path):
+    _split_skill(tmp_path, "Recommend `wide`; you never dispatch it yourself.\n")
+    assert main(tmp_path) == 0
+
+
+def test_a_disclaimer_does_not_leak_across_the_file_join(tmp_path):
+    """SKILL.md's trailing block must not absorb the reference file's opening one."""
+    sd = _split_skill(tmp_path, "Dispatch `wide` now.\n")
+    (sd / "SKILL.md").write_text(
+        "---\nname: s\nallowed-tools: Read, Task\n---\n"
+        "Procedure: `reference/run.md`. You never dispatch an agent from here."
+    )
+    assert main(tmp_path) == 1
+
+
+def test_unnamed_reference_file_is_reported_not_read(tmp_path):
+    sd = _split_skill(tmp_path, "Dispatch `wide` now.\n")
+    (sd / "SKILL.md").write_text("---\nname: s\nallowed-tools: Read, Task\n---\nno links here\n")
+    assert main(tmp_path) == 0  # the dispatch is unreachable prose, not an escalation
+    body, warnings = prose_surface(sd / "SKILL.md", "no links here\n")
+    assert "wide" not in body
+    assert any("reference/run.md" in w for w in warnings), warnings
+
+
+def test_skill_without_a_reference_dir_is_untouched(tmp_path):
+    sk = tmp_path / "SKILL.md"
+    sk.write_text("x")
+    assert prose_surface(sk, "body") == ("body", [])
+
+
+def load_tests(loader, tests, pattern):
+    """Make these pytest-style functions visible to `unittest discover`.
+
+    The repo's CI step is `python3 -m unittest discover -s scripts`, which
+    collects TestCase subclasses only. A module of bare functions collects
+    *zero* tests and reports OK — a green wall in front of an empty room. This
+    adapter registers each one and supplies the temp directory pytest would
+    have injected as `tmp_path`, so one suite runs under both runners.
+    """
+    suite = unittest.TestSuite()
     for name, fn in sorted(globals().items()):
-        if not name.startswith("test_"):
+        if not name.startswith("test_") or not callable(fn):
             continue
-        try:
+
+        def run(case, fn=fn):
             if fn.__code__.co_argcount:
                 with tempfile.TemporaryDirectory() as d:
                     fn(Path(d))
             else:
                 fn()
-            print(f"ok   {name}")
-        except AssertionError as exc:
-            failures += 1
-            print(f"FAIL {name}: {exc}")
-    print(f"\n{failures} failures")
-    sys.exit(1 if failures else 0)
+
+        suite.addTest(type(name, (unittest.TestCase,), {name: run})(name))
+    return suite
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)
