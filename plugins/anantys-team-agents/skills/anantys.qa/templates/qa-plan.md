@@ -85,6 +85,16 @@ untested by construction, and the blocker list is where untested money paths get
       <narrowed condition> is a real A2 failure.*
 - [ ] ~~A3 <dropped behaviour>~~ — **REMOVED from the product** (<date>, operator, env:
       `all`, decided in <spec §/issue/PR>). Do not report its absence as a defect.
+- [ ] A4 <observable outcome, reworded by a regeneration> (FR-0zz). — `local`: not run
+      ⚠️ *STALE — re-adjudicate: Adjudicated <date> (operator, run <n>, env: `local`): <original
+      ruling + reason>.* Written about the previous wording of A4; suppresses nothing until `note`
+      re-rules it.
+
+A `plan` regeneration carries every annotation and result over, but an annotation is bound to the
+**assertion text** it was written about, not to the id — the id outlives a rewording. So a reworded
+assertion keeps its ruling marked `STALE` and its results reset to `not run`: a suppression that
+migrates onto new behaviour is the one regeneration failure no later run can detect. See SKILL.md,
+"Regenerating over an existing plan".
 
 An adjudication is the only thing that turns a FAIL into a PASS, and this file is committed —
 anyone can type one. `run <n>` points at the `qa-runs.md` section recording the FAIL that was ruled
