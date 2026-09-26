@@ -1,0 +1,11 @@
+# Errors that already existed when this gate was added.
+#
+# A gate may not fix the violations it detects: that duplicates the change which
+# owns the fix, and forces the two to land in one order. Declare them here
+# instead, one `<path>: <message>` per line, and let the owning change land
+# whenever it lands.
+#
+# When a line's error is gone the check prints "fixed, so delete from ..." —
+# a warning, not a failure. Delete the line in the change that fixed it.
+
+plugins/anantys-team-agents/skills/anantys.qa/SKILL.md: prose commits to driving a browser but grants no browser tool

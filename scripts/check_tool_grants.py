@@ -9,8 +9,11 @@ directions, and each direction fails differently:
   * a tool granted but never referenced -> an unaudited capability sitting on a
     role that has no use for it.
 
+Errors that predate this gate are declared in `tool-grants-baseline.txt` rather
+than fixed here — see `baseline()` for why the gate may not fix its own subject.
+
 Usage: python3 scripts/check_tool_grants.py [root]
-Exit 1 on errors, 0 on warnings only.
+Exit 1 on undeclared errors, 0 on warnings and declared ones.
 """
 
 import re
@@ -19,6 +22,8 @@ from pathlib import Path
 
 # Grants that are inherently generic — never reported as unreferenced.
 GENERIC = {"Bash", "Read", "Write", "Edit", "Glob", "Grep"}
+
+BASELINE = Path(__file__).with_name("tool-grants-baseline.txt")
 
 MCP_IN_PROSE = re.compile(r"`([a-z_]+)`|mcp__[a-z-]+__([a-z_]+)")
 BASH_FENCE = re.compile(r"```(?:bash|sh|shell)\n(.*?)```", re.S)
@@ -125,6 +130,25 @@ def check(path, grants, body, known_mcp):
     return errors, warnings
 
 
+def baseline():
+    """Errors this gate was introduced alongside, and so may not fail on.
+
+    A checker added to a repo that already violates it cannot go green on its
+    own. Fixing the violation here would duplicate — and conflict with — the
+    change that owns that fix, so the gate and the fix become mergeable only in
+    one order, each looking optional until the other lands. Declaring the known
+    error instead makes the two orderings independent.
+
+    A declared error that no longer occurs is a warning, never a failure: the
+    fix landing must not turn this gate red in its turn. The warning is the
+    signal to delete the line.
+    """
+    if not BASELINE.is_file():
+        return set()
+    lines = BASELINE.read_text(encoding="utf-8").splitlines()
+    return {s for s in (line.strip() for line in lines) if s and not s.startswith("#")}
+
+
 def main(root):
     files = sorted(root.glob("plugins/*/skills/*/SKILL.md")) + sorted(
         root.glob("plugins/*/agents/*.md")
@@ -144,6 +168,7 @@ def main(root):
         if g.startswith("mcp__")
     }
 
+    declared, matched = baseline(), set()
     failed = False
     for path, p in parsed:
         rel = path.relative_to(root)
@@ -155,10 +180,18 @@ def main(root):
         errors, warnings = check(path, p[0], body, known_mcp)
         warnings += orphans
         for e in errors:
-            print(f"ERROR {rel}: {e}")
+            entry = f"{rel}: {e}"
+            if entry in declared:
+                matched.add(entry)
+                print(f"BASE  {entry} (declared in {BASELINE.name})")
+            else:
+                print(f"ERROR {entry}")
+                failed = True
         for w in warnings:
             print(f"WARN  {rel}: {w}")
-        failed = failed or bool(errors)
+
+    for stale in sorted(declared - matched):
+        print(f"WARN  fixed, so delete from {BASELINE.name}: {stale}")
 
     print("tool-grant check: FAILED" if failed else "tool-grant check: OK")
     return 1 if failed else 0

@@ -109,6 +109,57 @@ class ProseSurface(unittest.TestCase):
         self.assertEqual(warnings, ["reference/orphan.md is not named in SKILL.md — no action loads it"])
 
 
+class Baseline(unittest.TestCase):
+    """A gate must be introducible green while its violations still exist."""
+
+    OFFENCE = "plugins/p/skills/s/SKILL.md: prose commits to driving a browser but grants no browser tool"
+
+    def setUp(self):
+        import tempfile
+
+        self.root = Path(tempfile.mkdtemp())
+        skill = self.root / "plugins/p/skills/s/SKILL.md"
+        skill.parent.mkdir(parents=True)
+        skill.write_text("---\nallowed-tools: Read\n---\nDrive a browser.\n", encoding="utf-8")
+        self.addCleanup(setattr, c, "BASELINE", c.BASELINE)
+        c.BASELINE = self.root / "baseline.txt"
+
+    def _declare(self, text):
+        c.BASELINE.write_text(text, encoding="utf-8")
+
+    def _run(self):
+        """(exit code, report) — captured, so a suite run stays readable."""
+        import contextlib
+        import io
+
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            code = c.main(self.root)
+        return code, out.getvalue()
+
+    def test_an_undeclared_error_fails(self):
+        self.assertEqual(self._run()[0], 1)
+
+    def test_a_declared_error_does_not_fail(self):
+        self._declare(f"# comment\n\n{self.OFFENCE}\n")
+        code, report = self._run()
+        self.assertEqual(code, 0)
+        self.assertIn("BASE ", report)
+
+    def test_declaring_one_error_does_not_excuse_another(self):
+        self._declare("plugins/p/skills/s/SKILL.md: something else entirely\n")
+        self.assertEqual(self._run()[0], 1)
+
+    def test_a_stale_entry_warns_instead_of_failing(self):
+        """The fix landing must not turn the gate red in its turn."""
+        self._declare("plugins/p/skills/s/SKILL.md: an error nothing reports\n")
+        skill = self.root / "plugins/p/skills/s/SKILL.md"
+        skill.write_text("---\nallowed-tools: Read\n---\nNo hands here.\n", encoding="utf-8")
+        code, report = self._run()
+        self.assertEqual(code, 0)
+        self.assertIn("fixed, so delete", report)
+
+
 class Parse(unittest.TestCase):
     def _write(self, text):
         path = Path(self.tmp) / "r.md"
