@@ -195,7 +195,7 @@ and a field missing from it is a field a regeneration silently destroys:
 | Assertion ids | `plan` | never renumbered, never dropped |
 | Per-environment result suffixes | `run` / `retest` | carried over verbatim |
 | `⚠️ Adjudicated` annotations | `note` | carried over verbatim |
-| `~~…~~ REMOVED` strike-throughs | `note` | carried over verbatim |
+| `~~…~~ REMOVED` strike-throughs | `note`, `plan` | carried over verbatim |
 | Progress tables | `run` / `retest` / `note` | kept, recomputed (N can change) |
 | Coverage-table `UNCOVERED` rows | `plan` | rebuilt from the source |
 
@@ -218,6 +218,54 @@ usually *why* you regenerated. So for every id whose assertion text changed:
 Silently transferring a suppression onto new behaviour is the one regeneration failure nothing
 downstream can detect — the annotation and the assertion both stay well-formed.
 
+#### The requirement is the third axis, and only two of the three are recorded
+
+A result is a claim about a triple: this **requirement**, verified on this **code**, in this
+**environment**. The plan records the code (`**Under test:**`, which `run` re-checks against the
+stack's build identity) and every suffix records its environment. Nothing records the requirements.
+So the rule above can only reach the unrecorded axis by proxy — and it proxies through the
+assertion's *wording*, which the authoring rules deliberately make change-resistant. "Write
+assertions against the requirement, not the implementation" is an instruction to abstract away the
+detail that a requirement change usually moves. FR-042 tightening from "within 24 hours" to "within
+1 hour" leaves `A7 the confirmation email arrives (FR-042)` word-for-word correct: text unchanged,
+so the ruling stays live and `local: PASS` carries over — a pass observed against the superseded
+rule. The better the assertion is written, the quieter the staleness.
+
+So record the revision the requirements came from, as a header line beside `**Under test:**`:
+
+```markdown
+**Derived from:** `specs/206-subscribe-funnel/` @ a1b2c3d
+```
+
+- **spec-kit dir** — the last commit touching the source files (`git log -1 --format=%h -- <dir>`).
+  If the source is untracked or has uncommitted changes, write `@ uncommitted`: the next
+  regeneration then treats every requirement as changed, because an unrecorded revision is not the
+  same thing as an unchanged one.
+- **`--brief` / `--from linear:` / `--from pr:`** — the copy at `.anantys/qa/<slug>/brief.md` **is**
+  the snapshot. Diff the newly assembled brief against the existing copy **before** overwriting it;
+  after the write there is nothing left to compare, and this is the only moment the comparison is
+  possible.
+
+With the revision recorded, a regeneration compares requirements instead of wording. Per assertion,
+by the state of the requirement it cites:
+
+| Cited requirement | On regeneration |
+|---|---|
+| unchanged | annotation and result suffixes carried over verbatim |
+| text changed | ruling → `STALE`, suffixes → `not run` — as for a reworded assertion |
+| absent from the source | struck through `REMOVED (<date>, source: <rev>)`, excluded from `N` |
+
+`REMOVED (source: …)` is the existing mechanism with the witness the ruling rules already demand:
+the revision that dropped the requirement *is* where the product decision was made. It is not an
+operator ruling and must never be reported as one. The alternative — leaving the orphan live, since
+ids are never dropped — keeps a PASS for a requirement that no longer exists, counted in a
+denominator it is no longer part of.
+
+That mismatch is the general case, and it is what the coverage ratio hides: `<R>` is rebuilt from
+today's source while the suffixes it counts were observed against earlier ones. A regeneration that
+changes `**Derived from:**` says so in the preservation diff, and names the requirements that moved
+— every result carried across that line is an observation against a superseded revision.
+
 If the source carries an **under-test precondition** — a `--from pr:` head branch, or a brief's
 `_Under test:_` line — copy it into the plan header as `**Under test:** <branch> @ <head commit> —
 <environment>` (plus `pr: <ref>` for a PR source). Record the head **commit**, not only the branch:
@@ -225,9 +273,10 @@ once the PR merges, `run` can only recognise the shipped code by commit ancestry
 brief is never enforced: a PR-derived campaign would run green against a stack serving `main`.
 
 Show the operator the scenario list and the blocker list before writing. On a regeneration, show
-the preservation diff too — assertions added, assertions whose text changed (and so whose
-annotations go stale), and results carried over. A regeneration is a destructive write to recorded
-observations; the operator sees what it costs before it happens.
+the preservation diff too — the `**Derived from:**` revision before and after, assertions added,
+assertions whose text or whose cited requirement changed (and so whose annotations go stale),
+requirements gone from the source, and results carried over. A regeneration is a destructive write
+to recorded observations; the operator sees what it costs before it happens.
 
 ### `--from pr:` — assembling the brief from pull requests
 
@@ -499,6 +548,11 @@ so its absence is never re-reported as a defect. REMOVED is the widest ruling th
 Give it the witness it can have: cite **where the decision was made** (the spec section, issue or PR
 that dropped the behaviour). A REMOVED line citing nothing retires an assertion on every environment
 for the life of the feature on the strength of its own say-so.
+
+`note` is not its only writer: `plan` marks REMOVED too, when a regeneration finds the assertion's
+cited requirement gone from the source (see "The requirement is the third axis"). Those cite
+`source: <rev>` rather than an operator, and the distinction is reported, never flattened — one is a
+product ruling, the other is a source diff, and only the first one a person made.
 
 After any ruling, refresh **every** progress table in `qa-plan.md` — a REMOVED assertion leaves N
 for all environments (see "Progress table").
