@@ -14,6 +14,18 @@ This is a **Ralf loop** — the model's limit is rarely the model; it's the feed
 
 1. **A way to exercise the app live.** For web bugs, call `mcp__claude-in-chrome__tabs_context_mcp` first; if the browser tools aren't available, STOP and say so. For non-browser bugs, confirm you can run the failing path (a command, a test, a request) and read its output/logs.
 2. **A concrete repro.** Get the exact steps, URL, input, or failing test from the user. If you can't reproduce it, say so and gather more signal — never "fix" a bug you haven't seen fail.
+3. **A known tree state — because you will need to undo.** You edit source files and this loop can
+   end UNRESOLVED (step 4b), which obliges you to leave the tree as you found it. You cannot undo to
+   a state you never recorded. Before the first edit, run `git status --porcelain` and
+   `git branch --show-current`, and **report both to the user**:
+   - **Dirty tree** — the changes are the user's, not yours. STOP and ask them to commit or stash.
+     Do not start and do not stash for them: after three of your own edits, nothing distinguishes
+     their line from yours, and an undo that reverts a whole file destroys work you never saw.
+   - **Unexpected branch** — the checkout is ambient state you did not set. A previous session may
+     have left it on a review branch or a feature branch. Name the branch and confirm it is where
+     the fix belongs before editing; a verified fix on the wrong branch is not a delivered fix.
+
+   With a clean tree at a named commit, "undo" is exact: `git checkout -- <files you touched>`.
 
 ## Workflow
 
@@ -55,8 +67,11 @@ Declare UNRESOLVED and hand back when **either** holds:
 
 Handing back is not failure — it is the honest version of the same evidence trail. Report the
 rejected hypotheses and *what observation killed each one*; that is the expensive part and the next
-agent (or the human) should not pay for it twice. Leave the tree at baseline, exactly as a rejected
-hypothesis is left: an UNRESOLVED handoff that also ships four dead edits is worse than no attempt.
+agent (or the human) should not pay for it twice. Then **restore the tree to the state precondition
+3 recorded** — `git checkout -- <the files you touched>`, and `git status --porcelain` clean again
+before you report. An UNRESOLVED handoff that also ships four dead edits is worse than no attempt.
+(That is the *tree*'s starting state. The word "baseline" in step 1 means the failure signal you
+captured, which you keep — it is the evidence.)
 
 ### 5. Guard against regressions
 
@@ -88,4 +103,7 @@ got, Fix is empty, and Re-proof lists each hypothesis with the observation that 
 - One hypothesis per iteration; wrong ones are expected, unverified ones are not.
 - **UNRESOLVED is a result, not a failure** — three rejected hypotheses with no new signal, or a
   blocker you must not work around, ends the loop. Never buy an exit by lowering the bar for proof.
+- **Record the tree before you edit it, and say where you are.** Clean tree, named branch, both
+  reported. A loop that may have to undo cannot start from a state it did not read, and a fix
+  verified on a branch nobody chose is not delivered.
 - **Never commit, push, or open a PR** unless the user explicitly asks — stop at the verified local fix.
