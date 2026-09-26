@@ -17,6 +17,14 @@ The user names the branch to review (a branch name, a PR number/URL, or "the cur
 1. **Clean working tree.** `git status --porcelain` — if there are uncommitted changes, STOP and ask the user to commit or stash first. Never review on top of dirty state.
 2. **Detect the base branch** — do not assume `main`. In order: an explicit base the user gave; the PR's base from `gh pr view <n> --json baseRefName`; the repo default (`git symbolic-ref refs/remotes/origin/HEAD`); else fall back to the first of `main`, `master`, `develop`, `staging` that exists.
 3. **Update the base — to the base this branch will *land in*.** `git fetch origin --prune`, then fast-forward the base to `origin/<base>`. If the local base is *ahead* of `origin/<base>`, that is a merge from an earlier review in this same sitting: it is unpushed, so it exists nowhere else. Keep it, say so, and review against it. Never `reset --hard origin/<base>` to "start clean" — that silently discards a landing the user already approved, and re-computes your verdict against a tree that no longer describes where the branch is going.
+4. **Record the branch you started on, and say where you will leave it.** Step A's checkout is
+   mandatory, so this skill *always* moves the working tree — and the working tree is shared. The
+   next session in this repo (a debug loop, a design pass, a test run) inherits whatever branch you
+   leave behind, and none of them asks which one it is; a fix verified on a stale review branch is
+   not a delivered fix. Note `git branch --show-current` before you touch anything, and end every
+   verdict — Merge, Close, Skip, **and Audit** — back on `<base>` unless the user says otherwise.
+   State it in the report: *"tree left on `<base>`, at `<sha>`."* You entered someone else's
+   checkout; hand it back somewhere predictable.
 
 ## Discovery (only if the branch wasn't specified)
 
