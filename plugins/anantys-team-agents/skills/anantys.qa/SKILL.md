@@ -355,10 +355,23 @@ operator's go before any write.
    perform the steps, then evaluate each assertion **individually**. In **interactive** mode the
    first *new* DEFECT ends the walk: finish that assertion's evidence, do steps 5–6, then hand off
    (see Run mode).
-4. **Post a one-line result after each scenario.** The operator is watching; a campaign that
-   reports only at the end is one where a bad reset costs you the whole run.
-5. **Append a run section to `qa-runs.md`**, its header naming the environment and the mode —
-   never overwrite prior runs. Prior runs are how a later reader recognises a re-occurrence.
+4. **Record a one-line result after each scenario — to `qa-runs.md`, not only to the console.**
+   Open this run's section *before* the first scenario, header written and result table empty, and
+   append each assertion's row as you judge it. The operator is watching; a campaign that
+   reports only at the end is one where a bad reset costs you the whole run. A walk that is cut
+   short — a crashed browser, an exhausted session, a `^C` — writes nothing at all if its only
+   durable write is step 5, and the plan then still shows every walked assertion's *previous*
+   status. On a regression pass that previous status is PASS, so the artifact survives greener
+   than the run that produced it, and the FAILs never reach the log `retest` builds its subset
+   from.
+5. **Close the run section in `qa-runs.md`** — its header names the environment and the mode, and
+   its `⏳ in progress` marker becomes `✅ complete` only once steps 6–7 have run. Never overwrite
+   prior runs; prior runs are how a later reader recognises a re-occurrence. A section still
+   marked `⏳ in progress` when a later command reads the file is an **interrupted run**: the rows
+   it holds are real observations and carry their results, but the assertions below them were
+   never walked, and `qa-plan.md` and `qa-report.md` were never updated for it. Report those two
+   as stale, name the run that left them that way, and carry its FAILs forward like any other.
+   An interrupted run is a result — it is just not a verdict.
 6. Update the per-assertion status in `qa-plan.md` **for the selected environment only**, and only
    for the assertions this run walked; then refresh that environment's progress table.
 7. **Finish:** write `qa-report.md` as `report` does — every run, both modes, so a defect this run

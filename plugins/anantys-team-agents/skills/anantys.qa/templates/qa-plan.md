@@ -96,7 +96,9 @@ For each FAIL: what you saw, what the case expected, the URL, and the console/ne
 ## Companion: `qa-runs.md`
 
 Appended by `run` / `retest` — **never overwritten**. Prior runs are how a later reader
-recognises a re-occurrence instead of re-diagnosing it from scratch.
+recognises a re-occurrence instead of re-diagnosing it from scratch. A run's section is opened
+**before** its first scenario and each result row appended as it is judged, so a walk that is cut
+short still leaves what it observed.
 
 ```markdown
 # Run log — <feature>
@@ -105,6 +107,7 @@ recognises a re-occurrence instead of re-diagnosing it from scratch.
 > `staging`: <…>. A result on one environment says nothing about another.
 
 ## Run <n> — <date> — `run` | `retest` — env: `<name>` — mode: autonomous | interactive
+⏳ in progress | ✅ complete
 
 Environment: `<name>` (`local` | `shared`). Subject: <account/fixture id>. Build observed:
 <branch/commit the env was serving, from its build-identity check — omit only when the plan has no
@@ -129,3 +132,11 @@ Environment: `<name>` (`local` | `shared`). Subject: <account/fixture id>. Build
 A FAIL that came back PASS with nothing to put in **What changed** does not belong in this table: it
 did not reproduce on the same build, which is not a fix. It keeps its FAIL suffix and stays open —
 see SKILL.md, "A green retest is a fix only when something names the change".
+
+The line under the header is written `⏳ in progress` when the section is opened and replaced with
+`✅ complete` by step 5 once the walk has ended and steps 6–7 have run. **`⏳ in progress` on
+the last section means the run was interrupted**: the rows it holds are real results, the
+assertions below them were never walked, and `qa-plan.md` and `qa-report.md` have not been updated
+for that run. A later `run`, `retest`, `report` or `status` reads that marker before it reads the
+plan, and says so instead of presenting a stale plan as current. Interactive mode's deliberate
+stop is *not* this case — it runs steps 5–7 and closes its section normally.
