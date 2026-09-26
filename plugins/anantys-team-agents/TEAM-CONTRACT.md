@@ -76,6 +76,32 @@ lands, it lands here, and each role keeps only its own narrowing.
   tree they cannot tell the operator's uncommitted work from their own. Two halves,
   and the second is the one every role skips: read `git status --porcelain` and
   `git branch --show-current` before the first write, and say where you left them.
+- **A gate that waits assumes someone is there — reach a state safe to abandon
+  first.** Every role in this plugin stops on a question: no browser, no dev URL, a
+  missing config field, a dirty tree, a plan awaiting approval, a verdict awaiting a
+  decision. All of them are written as a *pause*. Unattended — dispatched, scheduled,
+  or driven by an autonomous loop, which is how these roles are most often run — there
+  is no pause. The question is the last thing the session emits, and whatever the role
+  had already done to the operator's machine is where it stays. Three shapes, and only
+  one of them is currently handled:
+
+  | when the gate fires | what the operator is left with |
+  |---|---|
+  | before any work (`ops` pre-flight step 3; `design`'s dev-URL ask; `qa`'s run-mode question, which is asked *before preflight* and carries **"Never pick a mode yourself"**) | nothing done, no record that anything was attempted |
+  | mid-work, tree mutated (`review` Step E waits for Merge/Close/Skip/Audit while checked out on the PR branch with the base merged in and the resolution committed) | a foreign branch and an unpushed merge commit, on a tree that reports clean — the next role's pre-flight passes and it works on the wrong code |
+  | mid-work, artifact partially written (`qa`'s interactive stop at the first DEFECT) | **handled** — it closes the run and writes `qa-report.md` *before* it stops |
+
+  The third row is the rule the other two are missing, and it is already in the repo:
+  make the work durable, then ask. A gate may block on an answer; it may not block
+  while holding state nobody else can see. Note also that `qa`'s existing
+  `autonomous` mode is not this — it is defect-stop policy, and the mode named for
+  not needing an operator is selected by asking one. The vocabulary is taken, which
+  is why this gap reads as covered.
+
+  When this rule is promoted here, each role keeps only its own answer to "what does
+  safe-to-abandon mean for me": `review` returns to base before waiting, `ops` names
+  the partial report it wrote, the `agents/` pair inherits it unchanged — they already
+  run with no operator in the loop, so for them every gate is this gate.
 
 ---
 
