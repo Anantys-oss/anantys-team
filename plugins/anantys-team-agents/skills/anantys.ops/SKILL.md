@@ -16,6 +16,26 @@ This is an **Assistant Ops** pattern: the browser is your hands on the dashboard
 $ARGUMENTS
 ```
 
+### Read `.anantys/ops.md` before you ask
+
+Most of what this skill needs below is a fact about the site, not about this run — it was true
+last audit and will be true next audit. **Read `.anantys/ops.md` at the repo root first** and ask the operator
+only the remainder. If the file does not exist, that means *not configured yet*, never *nothing
+to configure*: read `templates/ops-config.md` for the shape, interview once, write the file, then
+run. See `docs/project-config.md`.
+
+Two things stay out of it, and they are the two this skill most needs to keep asking for:
+
+- **The traffic goal**, which is this run's target, not a setting.
+- **The approved navigation scope.** Pre-flight's approved domain list is consent for one run.
+  Written down it becomes a standing grant that nobody renews, and the gate never fires again.
+  The file's "usually in scope" section is context for the ask — never a substitute for it.
+
+A fact in the file is a claim with a date. A dashboard URL that 404s or lands on the wrong
+property has expired: re-ask it, rewrite the line, and say in the report that it changed. Never
+guess the replacement — a silently corrected dashboard URL is a metric attributed to the wrong
+property.
+
 The user should provide (ask for anything missing — do NOT guess or hardcode):
 
 - **Site domain** to audit (e.g. `example.com`).
