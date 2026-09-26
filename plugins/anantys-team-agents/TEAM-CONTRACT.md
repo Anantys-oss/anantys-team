@@ -64,6 +64,18 @@ lands, it lands here, and each role keeps only its own narrowing.
   scope change, or a verdict.
 - **Redaction on the way out.** What a role may carry out of a session it did not
   choose the contents of.
+- **The working tree is shared, ambient state — declare what you require and what
+  you leave.** Five roles mutate the operator's checkout (`debug`, `design`, `qa`,
+  `spec-tester`, `review`). Across all nineteen open branches, exactly one declares
+  an entry state and none declares an exit state, so every role after the first
+  inherits a tree it did not read: `review`'s Step A checkout is mandatory, and the
+  next `debug` session edits source on whatever branch that left behind, then
+  declines to commit by its own rule. The same gap makes the *undo* rules unsafe
+  rather than merely absent — `debug`'s UNRESOLVED restore and `design`'s
+  per-task revert both target a starting state nobody recorded, and on a dirty
+  tree they cannot tell the operator's uncommitted work from their own. Two halves,
+  and the second is the one every role skips: read `git status --porcelain` and
+  `git branch --show-current` before the first write, and say where you left them.
 
 ---
 
