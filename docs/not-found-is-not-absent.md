@@ -77,7 +77,16 @@ Measured with `git merge-tree --write-tree` against all 19 open heads, three pla
 in `anantys.qa/SKILL.md` collides with it. The resolution is mechanical — the block moves verbatim,
 and the discovery prose it refers to now lives in `reference/sources.md`.
 
-`anantys.ops/SKILL.md` and the new doc add zero edges.
+`anantys.ops` adds one, on its `allowed-tools` line, and it is the useful kind. The absence proof
+runs three git subcommands; ops held `Bash(git:*)`, and #9 removes it outright, so the union of #9
+and this change would have ops calling git with no git grant. `check_tool_grants` is green on that
+union — its prose-to-grant direction catches browser and Task tools, not Bash subcommands — which is
+the reminder that a green gate is not the union working. The grant is narrowed here to
+`Bash(git rev-parse:*)`, `Bash(git log:*)`, `Bash(git ls-files:*)`: strictly less than main, so a
+reduction either way, and the branch is coherent alone. Resolution against #9 is to take the narrow
+list.
+
+The new doc adds zero edges.
 
 ## Not done
 
