@@ -18,6 +18,15 @@ against a stack serving `main`, reports green having verified nothing. Once the 
 deployed, a deployed commit that contains it satisfies the line; there is no need to edit it. Omit
 it for a feature that was already merged and deployed when the plan was written.
 
+**Recorded under:** anantys-team-agents v<running plugin version>. The rules that scored the
+statuses below — what counts as PASS, when a green retest closes a defect, what an adjudication
+annotation authorises. The other header lines pin the code and the requirements; this one pins the
+contract, so a later reader is not silently applying today's rules to an older campaign's results.
+`plan` **preserves** this line on a regeneration rather than refreshing it: restamping carried-over
+statuses would assert that the new rules scored results they never saw. `status` and `report` name a
+mismatch in the ship sentence; nothing invalidates or blocks on it, since the version also moves for
+changes that touch no scoring rule.
+
 **How to use.** Preflight first — stop if it fails. Reset (a `local` env only — never a `shared`
 one). Then walk §2 in order. Each scenario states its **precondition**, its **steps**, and what to
 **assert**. Record PASS/FAIL/BLOCKED **per assertion and per environment**, never one verdict per
@@ -108,7 +117,8 @@ recognises a re-occurrence instead of re-diagnosing it from scratch.
 
 Environment: `<name>` (`local` | `shared`). Subject: <account/fixture id>. Build observed:
 <branch/commit the env was serving, from its build-identity check — omit only when the plan has no
-**Under test:** line>. Path walked: <one line>.
+**Under test:** line>. Recorded under: anantys-team-agents v<running version>. Path walked:
+<one line>.
 
 | ID | Result | Evidence |
 |----|--------|----------|
