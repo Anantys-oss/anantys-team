@@ -137,8 +137,11 @@ environment blocks and leaves the others untouched.
 **Re-running `init` on a flat file migrates it first.** If the existing `.anantys/qa.md` has no
 `## Environment:` blocks (the legacy layout, see Environments), rewrite its flat `## Surfaces` /
 `## Preflight` / `## Reset` / `## Credentials` / … sections as one
-`## Environment: local (kind: local, default)` block **before** adding any new one, and show the
-converted file in the confirmation below. Appending a `shared` block to a flat file leaves the local
+`## Environment: local (kind: <asked>, default)` block **before** adding any new one, and show the
+converted file in the confirmation below. **Ask the kind — never carry it over from the name.** A
+flat file's sections say nothing about whether they describe a dev stack or a deployed one, and the
+migration is the moment the answer becomes durable; a `local` answer also needs the Target and probe
+the Reset block predates. Appending a `shared` block to a flat file leaves the local
 sections read by nothing and no environment marked default — the local campaign stops resolving.
 
 Confirm the file back to the operator before writing. `.anantys/qa.md` is committed — so it must
@@ -232,10 +235,16 @@ local dev stack *or* a deployed one. Each environment is one of two **kinds**:
 
 **How each environment is driven is read from its `Driven by:` line**, never assumed: the
 operator's connected browser (e.g. Claude-in-Chrome), or a named local command. A `shared` env is
-always driven by the operator's connected browser. An environment with no `Driven by:` line — a
-legacy file included — is driven by the operator's connected browser.
+always driven by the operator's connected browser — its kind *derives* the line, which is a
+declaration, not an absence. A **declared** env missing the line is not assumed to be: ask which
+drives it, fold the question into the run-mode question below, and write the answer into
+`.anantys/qa.md`. Never fall back to the operator's connected browser — it is the widest capability
+this skill has, and a missing line is the one case where nobody chose to grant it.
 
-**Production is a `shared` env with `Production: yes`**, and gets two extra guards:
+**Production is a `shared` env with `Production: yes`**. A `shared` block with **no** `Production:`
+line is treated as production until the operator says otherwise — being wrong that way costs a
+handful of `BLOCKED` assertions, being wrong the other way charges a real card or emails a real
+person. Production gets two extra guards:
 
 - **Never run on production:** any scenario that charges a real card, records a real consent, or
   sends a notification (email, SMS, push) to a real person. Those assertions are `BLOCKED` on
@@ -259,10 +268,23 @@ block in `.anantys/qa.md`.
 
 **A `.anantys/qa.md` with no `## Environment:` blocks** (written by an earlier `init`: flat
 `## Surfaces` / `## Preflight` / `## Reset` / `## Credentials` sections) **is a single `local`
-environment named `local`, and it is the default** — run it exactly as before, reset included.
-`--env <other>` against such a file is an error: stop and tell the operator to re-run `init`, which
-migrates the file before declaring the new environment (see `init`). Never guess an environment's
-kind; an env whose kind you cannot establish is not run.
+environment named `local`, and it is the default** — its surfaces, preflight checks, credentials and
+drift notes are read exactly as before. Its **kind is undeclared**, so its Reset block is **not
+run**: the flat layout predates the `local`/`shared` distinction, nothing in it was written under a
+rule that asked which kind it targets, and it carries neither a declared Target nor a probe to
+compare one against. A campaign needing a fresh subject there asks the operator to re-run `init`
+first. `--env <other>` against such a file is an error: stop and tell the operator to re-run `init`,
+which migrates the file before declaring the new environment (see `init`). Never guess an
+environment's kind; an env whose kind you cannot establish is not reset and not run.
+
+**An absent declaration is never a permission** — the general rule the three paragraphs above
+apply, stated once in `templates/qa-config.md`. A field this skill gates an action on can be
+missing: an older `init` wrote the file, a hand edit dropped a line, the operator skipped the
+question. Missing resolves to the **narrower** branch, and a field whose absence would widen what an
+action may do is asked, never inferred. Note which way the existing defaults already lean: the two
+fields about *being able to verify* fail closed (no build-identity probe ⇒ ask and stop; no payment
+instrument ⇒ every checkout case `BLOCKED`). The fields about *permission to act* are the ones to
+watch, because their permissive branch reads like backward compatibility.
 
 **Results are per environment**, since an assertion can pass on one and fail on another (a fix
 deployed to staging but not the local stack, or the reverse):
@@ -344,11 +366,14 @@ operator's go before any write.
    **On a `shared` env, confirm the target before anything is written:** echo the environment name,
    its base URL, the build it serves, whether it is production, and the scenarios that will create
    data there — then wait for the operator's explicit go. No go, no run.
-2. **Reset — `local` only.** On a `local` environment, apply its reset procedure and confirm it took
-   effect (a stale auth cookie or leftover cache silently invalidates every assertion that follows) —
-   verify by observing the app, not by trusting the command's exit code. On a **`shared`**
-   environment there is **NO reset**: never reset staging / preview / prod — reuse the operator's
-   session and create any needed test data additively (see Environments).
+2. **Reset — a declared `local` env only.** On an environment whose block declares `kind: local`,
+   apply its reset procedure and confirm it took effect (a stale auth cookie or leftover cache
+   silently invalidates every assertion that follows) — verify by observing the app, not by trusting
+   the command's exit code. On a **`shared`** environment there is **NO reset**: never reset staging /
+   preview / prod — reuse the operator's session and create any needed test data additively. On an
+   environment whose kind is **undeclared** (a flat legacy file) there is also no reset: ask the
+   operator to re-run `init` and declare it, or walk the plan with whatever subject state exists and
+   mark anything the leftover state invalidates `BLOCKED` (see Environments).
 3. **Walk the scenarios in order**, in a real browser driven as the environment's `Driven by:`
    line says (see Environments). On production, skip the unsafe scenario classes and record them
    `BLOCKED`. Per scenario: establish the precondition,
