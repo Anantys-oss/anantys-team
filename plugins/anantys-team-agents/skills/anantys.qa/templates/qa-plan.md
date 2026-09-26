@@ -120,8 +120,12 @@ Environment: `<name>` (`local` | `shared`). Subject: <account/fixture id>. Build
 - **<id>** — <one line>
 
 ### Closed this run — do not re-file
-| ID | Was | Now |
-|----|-----|-----|
-| <id> | <symptom> | ✅ FIXED — <how it was verified> |
-| <id> | <symptom> | **NOT A DEFECT** — <operator ruling + reason> |
+| ID | Was | Now | What changed |
+|----|-----|-----|--------------|
+| <id> | <symptom> | ✅ FIXED — <how it was verified> | <commit, or the operator's statement of the fix> |
+| <id> | <symptom> | **NOT A DEFECT** — <operator ruling + reason> | — |
 ```
+
+A FAIL that came back PASS with nothing to put in **What changed** does not belong in this table: it
+did not reproduce on the same build, which is not a fix. It keeps its FAIL suffix and stays open —
+see SKILL.md, "A green retest is a fix only when something names the change".

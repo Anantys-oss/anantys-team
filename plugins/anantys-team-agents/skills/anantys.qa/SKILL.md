@@ -362,7 +362,8 @@ operator's go before any write.
 6. Update the per-assertion status in `qa-plan.md` **for the selected environment only**, and only
    for the assertions this run walked; then refresh that environment's progress table.
 7. **Finish:** write `qa-report.md` as `report` does — every run, both modes, so a defect this run
-   saw PASS drops out of the brief. Interactive: you only reach this step if the walk met no new
+   saw PASS drops out of the brief. A defect that merely failed to reproduce has not become a PASS
+   and does not drop (see `retest`). Interactive: you only reach this step if the walk met no new
    DEFECT, so say so. End the reply with the progress table.
 
 ### Judging rules
@@ -394,6 +395,27 @@ A full re-run after a fix pass is expensive and mostly re-confirms green. Instea
    marked `retest` with its environment.
 
 State the subset before running it, and say plainly what you are **not** re-testing.
+
+### A green retest is a fix only when something names the change
+
+The subset is chosen *because* these assertions failed, and nothing that passed is re-run — so
+every retest is a one-sided trial. An intermittent defect needs to go green **once** to be closed
+and to fail **every** retest to stay open, which is precisely backwards: a race, a timing-dependent
+redirect or a cache that is warm this time produces a green result on an unfixed build half the
+time. Before recording a FAIL → PASS transition as `FIXED` in `qa-runs.md`, **name what changed** —
+the commit that addressed it, or the operator's statement of the fix. If nothing can be named, the
+assertion did not **reproduce**, which is not the same as fixed:
+
+- **Keep its FAIL status** on that environment and say in the run section that it did not reproduce
+  on this build. Never write `FIXED`, and never write `do not re-file`.
+- It **stays in the retest subset** and stays in `qa-report.md`, the non-reproduction recorded as
+  part of its evidence. An assertion that answers differently on the same build has been verified
+  neither way, and FAIL is the side a release verdict must be wrong on.
+- The way out is the operator's: they rule on it with `note` — a known environment race, a harness
+  timing artifact — and it becomes PASS-with-note like every other adjudication.
+
+Intermittent is the most expensive class of defect to find and the cheapest to lose. Closing one on
+the single run that went green is how it reaches production with a green report behind it.
 
 ## `note` — record an operator adjudication
 
