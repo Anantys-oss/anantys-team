@@ -25,11 +25,18 @@ state (fold the branches with `merge-tree`, extract with `git archive`, never
 touch a branch or the working tree) and runs every `scripts/check_*.py` found
 inside it.
 
-It does so **once per landing round**, not once for the whole queue. Waves land
-one at a time, so `main` passes through every prefix of them, and a checker in an
-early wave whose error is only cleared by a later one is red on `main` for the
-whole gap. Verifying only the full union hides exactly that: the union contains
-the fix, the round the operator actually lands does not.
+It does so **per landing round**, not once for the whole queue. Waves land one at
+a time, so `main` passes through every prefix of them, and a checker in an early
+wave whose error is only cleared by a later one is red on `main` for the whole
+gap. Verifying only the full union hides exactly that: the union contains the
+fix, the round the operator actually lands does not.
+
+In practice that means **one round per run: the next one.** A PR sits in a later
+wave precisely because it conflicts with an earlier one, so every round past the
+first contains a conflicting pair and cannot be assembled here — its members'
+rebased content does not exist yet, and the rebase is a human's edit, not a
+derivation. This is structural, not a property of today's queue. The loop is:
+verify the next round, land it, rebase what conflicted, re-run.
 
 When a round is red, the report then names **what clears it**. A wave is grouped
 by merge conflicts, which have nothing to do with greenness, so the PR carrying a
@@ -190,9 +197,10 @@ def verify(base, refs):
     lines = [f"Union of {len(joined)} PRs: "
              + (", ".join(f"#{n}" for n in joined) or "(none)")]
     if refused:
-        return ["not assembled — a human must first resolve "
+        return ["not assembled — "
                 + ", ".join(f"#{n}" for n in refused)
-                + " against the tree the previous wave leaves behind"], refused, []
+                + " conflict with an earlier round, which is why they are in "
+                  "this one; their rebased content does not exist yet"], refused, []
 
     results = run_checkers(commit)
     if not results:
@@ -201,6 +209,25 @@ def verify(base, refs):
         lines.append(f"  {'OK  ' if code == 0 else 'FAIL'} {name}")
         lines += [f"       {ln}" for ln in errors]
     return lines, [], sorted(n for n, (code, _) in results.items() if code)
+
+
+def unverifiable(round_number):
+    """Why the run stops here, and what the operator does to move it forward.
+
+    Rounds past the first refuse by construction, not by accident: `waves` defers
+    a PR exactly when it conflicts with one already placed, so every later round
+    holds a conflicting pair. Saying "a human must resolve them" invites the
+    operator to resolve something now; the resolution that matters is the rebase
+    that only exists *after* the round below it has landed.
+    """
+    if round_number == 1:
+        return ("  nothing is verifiable: this round's members are pairwise "
+                "clean but do not combine, so no tree exists to check")
+    return (f"  rounds {round_number} and later are not verifiable today — "
+            f"their members conflict with an earlier round, which is why they "
+            f"are in a later one, and their rebased content does not exist "
+            f"yet. Land round {round_number - 1}, rebase them onto the new "
+            f"`main`, re-run: round {round_number} becomes round 1.")
 
 
 def blockers(candidate, landed, edges):
@@ -289,7 +316,7 @@ def main():
 
     if args.verify:
         base = run("git", "rev-parse", "main").strip()
-        print("\nVerifying every landing round — a wave is not a tree:")
+        print("\nVerifying the next landing round — a wave is not a tree:")
         for i, cumulative in enumerate(rounds(order, refs), 1):
             print(f"\nAfter wave {i} lands:")
             lines, refused, failing = verify(base, cumulative)
@@ -302,8 +329,7 @@ def main():
                                      failing, edges, refs):
                     print(line)
             if refused:
-                print(f"  rounds after wave {i} not verified — they sit on a tree "
-                      f"only a human can produce")
+                print(unverifiable(i))
                 break
     return 0
 

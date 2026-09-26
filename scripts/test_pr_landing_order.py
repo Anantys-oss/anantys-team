@@ -111,6 +111,58 @@ class Waves(unittest.TestCase):
         self.assertEqual(sorted(landed), [1, 2, 3, 4, 5])
 
 
+class LaterWavesAlwaysConflictBackwards(unittest.TestCase):
+    """The property that makes every round past the first unassemblable.
+
+    `waves` defers a PR exactly when it collides with one already placed in the
+    current wave, so a later wave's member always conflicts with the wave below
+    it. A round is a cumulative prefix, so round k>1 always contains a
+    conflicting pair and `union_tree` must refuse it. This is why `--verify`
+    reports one round and stops — and it is a fact about the partition, not
+    about any particular queue.
+    """
+
+    def assert_conflicts_backwards(self, numbers, graph):
+        order = p.waves(numbers, graph)
+        for i, wave in enumerate(order[1:], 1):
+            for pr in wave:
+                self.assertTrue(
+                    any(frozenset((pr, earlier)) in graph
+                        for earlier in order[i - 1]),
+                    f"#{pr} in wave {i + 1} conflicts with nothing in wave {i}")
+
+    def test_a_chain(self):
+        self.assert_conflicts_backwards(
+            [1, 2, 3, 4], edges((1, 2), (2, 3), (3, 4)))
+
+    def test_a_triangle(self):
+        self.assert_conflicts_backwards([1, 2, 3], edges((1, 2), (2, 3), (1, 3)))
+
+    def test_a_star_with_bystanders(self):
+        self.assert_conflicts_backwards(
+            [1, 2, 3, 4, 5], edges((1, 2), (1, 3), (1, 4)))
+
+    def test_one_wave_has_no_later_wave_to_check(self):
+        self.assert_conflicts_backwards([1, 2, 3], {})
+
+
+class Unverifiable(unittest.TestCase):
+    def test_it_names_the_round_to_land_and_the_one_that_follows(self):
+        message = p.unverifiable(2)
+        self.assertIn("Land round 1", message)
+        self.assertIn("round 2 becomes round 1", message)
+
+    def test_it_never_tells_the_operator_to_land_round_zero(self):
+        # Round 1 can only refuse if pairwise-clean PRs fail to combine;
+        # there is no earlier round to land, so the remedy must not claim one.
+        self.assertNotIn("round 0", p.unverifiable(1))
+
+    def test_it_does_not_ask_for_a_resolution_that_cannot_happen_yet(self):
+        # The rebase exists only after the round below lands — inviting a
+        # resolution now sends the operator at work that is not theirs to do.
+        self.assertNotIn("must first resolve", p.unverifiable(3))
+
+
 class Rounds(unittest.TestCase):
     refs = {1: "a", 2: "b", 3: "c"}
 
