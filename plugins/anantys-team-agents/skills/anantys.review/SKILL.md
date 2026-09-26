@@ -34,6 +34,14 @@ git merge <base> --no-edit
 ```
 Confirm you are on the branch (`git branch --show-current`) before assessing. If conflicts arise, resolve them (the **base wins** on conflicts — the branch adapts to the base, not the reverse), then commit the resolution. If conflicts are non-trivial, surface them to the user rather than guessing.
 
+**This merge is local-only.** You do not push, so the branch now diverges from `origin/<branch>` and the PR on GitHub still shows the old, conflicting head. Say so explicitly and hand the user the one command that closes the gap, theirs to run:
+
+```bash
+git push origin <branch>       # only if they want the resolution on the PR
+```
+
+A conflict resolution you commit and never surface is work thrown away silently.
+
 ### Step B — Identify the PR
 `gh pr view <branch> --json number,state,author,url,isDraft,title` (fallback: skip if no `gh`). Show PR number, author, state, URL up front — context before verdict.
 
@@ -59,8 +67,8 @@ Go beyond "it compiles." Check, and report concisely:
 
 ### Step E — Recommend, then STOP
 Give one clear recommendation with a one-line rationale:
-- **Merge** — solid; merge into base, close PR, delete branch.
-- **Close** — superseded/obsolete; close PR, delete branch.
+- **Merge** — solid; merge into base locally, hand the push to the user.
+- **Close** — superseded/obsolete; close the PR, leave both branches standing.
 - **Skip** — keep the branch for now, decide later.
 - **Audit** — needs deeper review/testing before deciding.
 
@@ -68,9 +76,33 @@ Then **wait for the user's decision.** Do not act on Merge/Close until they conf
 
 ## Acting on the decision (only after explicit confirmation)
 
-- **Merge:** `git checkout <base> && git merge <branch> --no-edit`, then `gh pr close <n> --comment "Merged into <base>." --delete-branch` and `git branch -D <branch>`. Remind the user to `git push origin <base>` — **you do not push**.
-- **Close:** `gh pr close <n> --comment "<reason>" --delete-branch` and `git branch -D <branch>`.
+You run the reversible half. The user runs the irreversible half — because **you never push**, and
+nothing you have done is durable until they do.
+
+- **Merge:**
+  ```bash
+  git checkout <base>
+  git merge <branch> --no-edit
+  git merge-base --is-ancestor <branch> HEAD   # verify the commits really landed
+  ```
+  Then STOP and hand over:
+  ```bash
+  git push origin <base>     # this auto-closes the PR as *Merged*
+  ```
+  **Do not run `gh pr close` on a merge.** Pushing the base closes the PR as *Merged* by itself;
+  closing it by hand records the work as *rejected* in the project's history, which is the opposite
+  of the decision that was just made.
+
+- **Close:** `gh pr close <n> --comment "<reason>"`. Closing is reversible; the branches are the
+  only copy of the work, so leave them standing. Deleting them is a separate decision the user
+  makes afterwards, never a flag bundled into the close.
+
 - **Skip:** return to base, leave the branch untouched.
+
+**Never delete a branch — local or remote.** Not with `--delete-branch`, not with `git branch -D`.
+On the Merge path the merge commit lives only in an unpushed local base, so deleting both copies
+destroys the work outright; on the Close path the branch *is* the work. Deletion buys nothing a
+later `git branch -d` can't, and it is the one step in this whole skill that cannot be undone.
 
 ## Rules
 
@@ -81,4 +113,7 @@ Then **wait for the user's decision.** Do not act on Merge/Close until they conf
 - **Show PR info before the verdict** — context first.
 - **Wait for the user** before merging or closing. The recommendation is yours; the decision is theirs.
 - **Never push** — stop at the local merge and hand the push command to the user.
+- **Nothing irreversible before it is durable.** You don't push, so every merge and conflict
+  resolution you make exists in exactly one place: this working tree. Never destroy the other copy
+  — no branch deletion, no `gh pr close` on a merge — while that is true.
 - Report what you actually verified (tests run, audit done), not what you assume.

@@ -1,7 +1,7 @@
 ---
 name: anantys.ops
 description: Browser-driven web/SEO ops reviewer — pilot a real browser across live pages and SaaS dashboards (Search Console, Analytics, SERP) to collect data and produce an actionable, quantified optimization report with trend deltas. Use for recurring acquisition/SEO audits.
-allowed-tools: mcp__claude-in-chrome__tabs_context_mcp, mcp__claude-in-chrome__tabs_create_mcp, mcp__claude-in-chrome__navigate, mcp__claude-in-chrome__computer, mcp__claude-in-chrome__read_page, mcp__claude-in-chrome__find, mcp__claude-in-chrome__get_page_text, mcp__claude-in-chrome__javascript_tool, mcp__claude-in-chrome__form_input, mcp__claude-in-chrome__update_plan, Read, Write, Glob, Bash(mkdir:*), Bash(git:*), Bash(ls:*)
+allowed-tools: mcp__claude-in-chrome__tabs_context_mcp, mcp__claude-in-chrome__tabs_create_mcp, mcp__claude-in-chrome__navigate, mcp__claude-in-chrome__computer, mcp__claude-in-chrome__read_page, mcp__claude-in-chrome__find, mcp__claude-in-chrome__get_page_text, mcp__claude-in-chrome__javascript_tool, mcp__claude-in-chrome__form_input, mcp__claude-in-chrome__update_plan, Read, Write, Glob, Bash(mkdir:*), Bash(ls:*)
 ---
 
 ## Mission
@@ -32,7 +32,7 @@ If a browser is not available (`tabs_context_mcp` returns nothing usable), STOP 
 
 Load prior context so every metric can be reported with a trend delta:
 
-1. **Read `<workspace>/current.md`** if it exists — the living status file with current KPIs, targets, and pending actions from the last audit.
+1. **Read `<workspace>/current.md`** if it exists — the living status file with current KPIs, targets, and pending actions from the last audit. **Record whether you read it, and whether the Audit History table parsed** — Phase 6 rewrites this file from scratch and needs to know.
 2. **List `<workspace>/journal/`** (via `Glob`/`ls`) and **read the last 3 entries** (most recent first). Extract date, KPIs (clicks, impressions, CTR, position, daily visitors), top queries + positions, recommendations made, actions completed.
 3. **Build a comparison baseline** so you can compute deltas (e.g. "+12% clicks vs last audit", "position 7.2 → 5.0").
 
@@ -81,7 +81,15 @@ For each **target query** the user provided, navigate to a clean search URL (`ht
 
 ## Phase 5: Analysis & Report
 
-Compile findings into a markdown report at **`<workspace>/journal/<YYYY-MM-DD>-analysis.md`** (`mkdir -p` the dir). Then give a brief in-conversation summary linking the file. Suggested structure (adapt to the business):
+Compile findings into a markdown report at **`<workspace>/journal/<YYYY-MM-DD>-analysis.md`** (`mkdir -p` the dir). Never overwrite an existing entry — if today's already exists, suffix it (`-2`). The journal is the **append-only log**; `current.md` is a snapshot derived from it.
+
+Because of that, every entry MUST open with its own KPI row, verbatim in this shape, so the whole Audit History can be rebuilt from the journal alone if `current.md` is ever lost:
+
+```
+<!-- kpi --> | <YYYY-MM-DD> | <clicks> | <impressions> | <CTR> | <avg position> | <visitors/day> |
+```
+
+Then give a brief in-conversation summary linking the file. Suggested structure (adapt to the business):
 
 ```
 # SEO Audit Report — <domain>
@@ -118,11 +126,20 @@ Overwrite **`<workspace>/current.md`** — the living snapshot that persists bet
 ## Audit History         (Date | Clicks | Impressions | CTR | Pos | VU/day | Journal — accumulates all past rows)
 ```
 
-Rules for `current.md`: always overwrite the whole file (it is a snapshot; the journal is the append log). Carry forward completed actions; if a prior "Next Action" was done, move it to Completed, else keep it and flag its age. Accumulate the Audit History table from the previous `current.md`.
+Rules for `current.md`: overwrite the whole file (it is a snapshot; the journal is the append log). Carry forward completed actions; if a prior "Next Action" was done, move it to Completed, else keep it and flag its age. Accumulate the Audit History table from the previous `current.md`.
+
+**Overwrite only what you actually read.** This file is the only place the carried-forward state lives, and a regenerated copy is not a merge — anything you didn't load in Phase 0 is deleted, silently. So:
+
+- Phase 0 read it and parsed it → overwrite normally.
+- It genuinely does not exist (first audit) → create it.
+- It exists but Phase 0 didn't read it, or the Audit History didn't parse → **do not overwrite.** Write `<workspace>/current.next.md` beside it and tell the user which rows you could not carry, so they can reconcile the two by hand.
+
+Rebuilding Audit History from the journal's `<!-- kpi -->` rows is always a valid recovery — prefer it over dropping rows you can't find.
 
 ## Rules
 
-- **Read-only on the codebase.** Modify NO application/code files. The only files you write are the journal entry and `current.md` under the workspace.
+- **Read-only on the codebase.** Modify NO application/code files. The only files you write are the journal entry and `current.md` under the workspace. `allowed-tools` grants no `git` — this role never needs it, and a role that declares itself read-only should not hold the capability to reset a working tree.
+- **Nothing irreversible before it is durable.** The journal is append-only and never rewritten; `current.md` is derived and may be regenerated — but only from state you actually loaded this session. An unread file is not a backup.
 - **Be specific** — never "improve content"; say exactly what to add/change.
 - **Quantify everything** with real numbers from the dashboards; include trend deltas when prior audits exist.
 - **Prioritize by impact** toward the stated traffic goal — compute the gap (e.g. "+60 daily visitors needed — where do they come from?").
