@@ -107,15 +107,29 @@ lands, it lands here, and each role keeps only its own narrowing.
 
 ## Landing note
 
-This branch conflicts with exactly two of the sixteen open PRs — #9 (review) and
-#16 (design, ops) — and in each case the conflict is one line: they append to a
-role's `## Rules` list while this branch deletes that list's trailing restatement
-of C1. Resolve by taking their added lines and dropping the restatement:
+Re-measured against the current queue (`git merge-tree --write-tree` against every
+open head, plus every pushed `koan/*` branch — a branch with no PR is claimed
+ground too and appears in no PR-list measurement). Four conflicts, not the two
+first recorded here: the queue grew from 16 PRs to 23, and this branch is
+unchanged, so both new edges arrived from the other side.
+
+| with | file | shape |
+|---|---|---|
+| #9 `durable-before-destructive` | `anantys.review` | appends to `## Rules` where this branch deletes the trailing restatement of C1 |
+| #16 `evidence-redaction-contract` | `anantys.design`, `anantys.ops` | same shape |
+| #13 `auditor-independent-yardstick` | `anantys.code-auditor` | rewrites the closing verdict line where this branch appends an Authority boundary below it |
+| `own-your-diff` (pushed, **no PR**) | `anantys.design` | same `## Rules` tail |
+
+Resolve the three `## Rules` ones by taking their added lines and dropping the
+restatement:
 
 - `anantys.review` — drop *"Report what you actually verified … not what you assume."*
 - `anantys.design` — drop *"Report what the screenshot actually shows, not what you expect."*
 - `anantys.ops` — drop the trailing *"Never invent metrics."*
 
-The other fourteen merge clean. That this branch could not remove one duplicated
-line from three role files without meeting two of the three PRs that append to
-those same lists is the cost the contract exists to remove.
+For #13, keep both: its verdict line, then this branch's Authority boundary section.
+
+The other nineteen merge clean. That this branch could not remove one duplicated
+line from three role files without meeting every PR that appends to those same
+lists is the cost the contract exists to remove — and the count rising from two to
+four while this branch sat still is the same cost, charged by the clock.
