@@ -57,6 +57,28 @@ Go beyond "it compiles." Check, and report concisely:
 - **Conventions & safety** — matches the codebase's patterns? Any security/data-integrity/migration concern?
 - **Blind spots** — for a large or sensitive change, dispatch the `anantys.code-auditor` agent (fresh context) to surface what the agent *omitted* (implicit contracts, edge cases), and fold its findings in.
 
+### Step D2 — A dispatched agent's report is evidence, not raw material
+
+You choose whether to dispatch `anantys.code-auditor`, what you point it at, and what of its report
+reaches the human. Three controls, all held by the one context whose verdict the audit exists to
+challenge. "Fold its findings in" is the summarizing verb this whole skill is built on — right for a
+diff, wrong for a second opinion.
+
+- **Say whether you dispatched it, and if not, why not.** "Not large or sensitive" is your judgement
+  about the change you are already assessing; state it so the human can disagree. A review silent on
+  the audit reads as an audit that found nothing.
+- **Reproduce its 🔴 and 🟡 items verbatim**, above your verdict, attributed to the auditor. Each is
+  already one line carrying its own `file:line` and evidence — quotable by construction, so there is
+  nothing to compress. What a paraphrase destroys is the calibration: the auditor separates *certain*
+  from *suspected* by whether it can point at the caller, convention or requirement that makes the
+  gap a gap. Restate those items in your own voice and every one of them is silently re-graded by
+  your confidence instead of its anchor.
+- **An un-rebutted 🔴 forecloses Merge.** That tier is named *Must-fix before merge*: it is the
+  auditor's verdict on the same question as yours, from a context constituted to disagree with you.
+  Answer each one with evidence — the caller it names does not exist, the convention it cites was
+  superseded — or recommend **Audit** and let the human arbitrate. Settling a disagreement with your
+  own auditor by not reporting it is the one outcome that makes dispatching it worthless.
+
 ### Step E — Recommend, then STOP
 Give one clear recommendation with a one-line rationale:
 - **Merge** — solid; merge into base, close PR, delete branch.
