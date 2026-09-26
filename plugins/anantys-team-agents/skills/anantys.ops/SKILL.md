@@ -36,7 +36,12 @@ Load prior context so every metric can be reported with a trend delta:
 2. **List `<workspace>/journal/`** (via `Glob`/`ls`) and **read the last 3 entries** (most recent first). Extract date, KPIs (clicks, impressions, CTR, position, daily visitors), top queries + positions, recommendations made, actions completed.
 3. **Build a comparison baseline** so you can compute deltas (e.g. "+12% clicks vs last audit", "position 7.2 → 5.0").
 
-If no prior data exists, note this is the first audit and skip comparisons. Whenever you later report a metric, **include the delta vs the previous audit** when available.
+**"First audit" is a conclusion you must earn.** Finding nothing is not the same state as nothing existing — a workspace path resolved against a subdirectory instead of the repo root, or a default `./seo/` in a fresh clone or worktree, looks exactly like a site nobody has ever audited. And that mistake is not cheap: Phase 6 overwrites `current.md` whole and rebuilds the Audit History from the previous one, so a wrongly-assumed first audit silently drops every past row and every pending action's age. Before concluding it:
+
+1. **Anchor the workspace.** A relative workspace (including the `./seo/` default) resolves from the repo root (`git rev-parse --show-toplevel`), never the current working directory. If that fails — not a git repo — ask the operator for an explicit path rather than guessing.
+2. **Ask git.** `git log --oneline -1 -- <workspace>` and `git ls-files '*/current.md' 'current.md'`. If git has ever tracked an audit artifact you did not find, say where it is and what you expected, and **stop** — do not start a fresh history beside the old one.
+
+Only with no tracked prior artifact is this a first audit: note it and skip comparisons. Whenever you later report a metric, **include the delta vs the previous audit** when available.
 
 ## Pre-flight
 
