@@ -11,15 +11,21 @@ with no local stack. Each is one **kind**:
 - **`local`** — the developer's own stack. **Resettable**. Has a Reset block.
 - **`shared`** — a deployed env (staging / preview / prod). **Never reset**; test data is created
   additively; driven through the operator's already-signed-in browser. Has **no** Reset block — an
-  explicit "Reset: NONE" instead. Says whether it is production (`Production: yes | no`); on
-  production, scenarios that charge a card, record consent or notify a real person are BLOCKED.
+  explicit "Reset: NONE" instead. **Must** say whether it is production (`Production: yes | no`) —
+  a `shared` block missing the line is treated as production; on production, scenarios that charge
+  a card, record consent or notify a real person are BLOCKED.
 
 Every environment says **what drives the browser** in its `Driven by:` line — the operator's
-connected browser, or a named local command. A `shared` env is always the operator's browser.
+connected browser, or a named local command. A `shared` env is always the operator's browser. A
+declared env missing the line is not assumed to be: ask, then record the answer here.
 
 A file with **no** `## Environment:` blocks (the flat layout an earlier `init` wrote) is read as a
-single `local` environment named `local`, marked default — it keeps working unchanged. Re-run
-`init` to add a `shared` one: it first rewrites the flat sections as the `local` block below.
+single environment named `local`, marked default — every surface, preflight check, credential and
+drift note keeps working unchanged. Its **kind is undeclared**, so its Reset block is not run: the
+flat layout predates the `local`/`shared` distinction, so nothing in it was written under a rule
+that asked which kind it targets, and it carries neither a Target nor a probe. Re-run `init` to
+declare the kind (and to add a `shared` env): it first rewrites the flat sections as the `local`
+block below.
 
 > **No secrets.** Record the *command* that retrieves a credential, never the credential.
 > This file is committed.
@@ -33,6 +39,24 @@ single `local` environment named `local`, marked default — it keeps working un
 > project's only reset path is ambient (`make db-reset`), record a **target probe** beside it and
 > the rule is: probe, compare to the declared target, abort on mismatch. Never reset on a probe
 > that fails or returns something unexpected.
+
+> **An absent declaration is never a permission.** Every rule above gates an action on a field of
+> this file. A field that is *missing* — an older `init` wrote the file, a hand edit dropped a line,
+> the operator answered "skip" — must resolve to the **narrower** branch, and a field whose absence
+> would widen what an action may do is **asked, never inferred**: one question, then written into
+> the file so the next run does not ask again.
+>
+> The two fields that already fail this way are the two about *being able to verify* — no
+> build-identity probe means ask and stop, no payment instrument means every checkout case is
+> `BLOCKED`. The fields about *permission to act* are the ones to watch, because their permissive
+> branch is the one that looks like backward compatibility:
+>
+> | missing field | narrower branch — the one to take |
+> |---|---|
+> | `kind:` (a flat file, or a block whose kind you cannot establish) | readable, runnable, **not resettable** — no Reset block runs until `init` has declared the kind |
+> | `Driven by:` on a declared env | ask which drives it; do not fall back to the operator's connected browser, the widest capability here. A `shared` env needs no line — its kind *derives* the browser, which is a declaration, not an absence |
+> | `Production:` on a `shared` env | **treat it as production** until the operator says otherwise. The cost of being wrong that way is a handful of money / consent / notification assertions reported `BLOCKED`; the cost of being wrong the other way is a real charge, a real consent record, a real email to a real person |
+> | Reset `Target:` / probe | no reset — the file predates the rule; ask for the target rather than running the command that has none |
 
 ---
 
