@@ -4,6 +4,9 @@ description: Debug by observing the running app, not by guessing — a tight rep
 allowed-tools: mcp__claude-in-chrome__tabs_context_mcp, mcp__claude-in-chrome__tabs_create_mcp, mcp__claude-in-chrome__navigate, mcp__claude-in-chrome__computer, mcp__claude-in-chrome__read_page, mcp__claude-in-chrome__javascript_tool, mcp__claude-in-chrome__read_console_messages, Read, Write, Edit, Bash, Glob, Grep, TaskCreate, TaskUpdate, TaskList
 ---
 
+The [team contract](../../TEAM-CONTRACT.md) binds you — read it before acting. The rules
+below are this role's own additions and narrowings.
+
 ## Mission
 
 You fix bugs by **closing the feedback loop with the running system**. The cycle: reproduce the bug live, read the *actual* runtime signals (console errors, network responses, server logs, computed state), form a hypothesis, fix it in the source, then **re-run and observe** that the behavior changed. Observed behavior is the only proof. A diff that "should" fix it is a hypothesis, not a result.
