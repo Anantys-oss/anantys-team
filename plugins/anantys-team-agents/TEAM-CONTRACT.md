@@ -178,6 +178,58 @@ lands, it lands here, and each role keeps only its own narrowing.
   file under the journal directory it already creates, `code-auditor` and `spec-tester`
   unchanged — a grep and a test command are already addresses.
 
+- **A rewrite is bounded by the read that fed it.** Three roles regenerate a durable
+  artifact from the copy they just read, and every one of them reads a file that grows by
+  one section per run with no stated bound. Measured across `main` and all 28 open heads:
+  retention, pruning, archival and rotation appear **zero** times; "context window" and
+  "too large to read" appear **zero** times. A hundred and forty-five apparent hits are
+  `.trim()` in an injected script and `git fetch --prune`. The harness truncates a long
+  read and emits no marker the role can branch on, so *how much of the file arrived* is
+  never a value anyone holds — and the regeneration writes what arrived.
+
+  Each of the three has already hardened the failure one step upstream of this one, which
+  is why the gap reads as covered:
+
+  | artifact | rewritten by | already guarded | not guarded |
+  |---|---|---|---|
+  | `current.md` (`ops`) | Phase 6, whole, Audit History accumulated from the copy Phase 0 read | the file is missing, or its table did not parse — *"a wrongly-assumed first audit silently drops every past row"* | a table that **parsed with fewer rows**. Truncation leaves valid markdown, so the guard passes |
+  | `qa-plan.md` (`qa`) | `plan`, whole, *"everything `plan` did not author is preserved"* | **which fields** must survive — an enumerated list, *"a field missing from it is a field a regeneration silently destroys"* | **how many rows** there were to carry. Knowing every field kind is worth nothing if the read stopped at assertion 40 of 120 |
+  | `qa-runs.md` (`qa`) | append-only — nothing is deleted | — | the retest subset is *"every assertion whose latest result is FAIL/BLOCKED"*, and `status`/`report` use *"the environment of the most recent run"*. Both are computed over whatever of the log was read; a partial log silently retests less |
+
+  `current.md` is the severe one: it is the only artifact where the role's own write is the
+  deletion. The others yield a wrong subset or a lost annotation; this one removes audits
+  25 through 40 from disk, with the parse guard green, and the rebuild path — the journal's
+  per-entry KPI row, written *"so the whole Audit History can be rebuilt from the journal
+  alone"* — is never reached, because nothing detected a loss.
+
+  Exactly one bounded read exists in this plugin, and it is the counter-example that proves
+  the rule is reachable: `ops` Phase 0 *"read the last 3 entries"*. No basis is given for
+  the 3, and when it proved too narrow the remedy was not a better bound — `rulings.md`
+  (#41) is read *"in full … never summarised, never rewritten"*, and its own justification
+  is that *"a ruling older than three audits is exactly the one whose re-litigation costs
+  the most"*. An unbounded read was introduced to compensate for an arbitrary one.
+
+  This is **not** *A completeness verdict declares what it read*, above, and the difference
+  decides the remedy. That entry is about a **claim** over **foreign input**: the cost is an
+  overstated verdict, and disclosure fixes it — say what you read and the reader can
+  discount it. This entry is about a **write** over the role's **own durable state**: the
+  cost is deletion, and disclosure is not enough, because there is no reader between the
+  truncated read and the overwrite. The regeneration has to **refuse**.
+
+  When this rule is promoted here, each role keeps only its own extent — and in three of
+  four cases the number is already in the file, recomputed every run and never reconciled:
+
+  - `ops` / `current.md` — `Audits recorded: <N>` beside `Last audit:`. Phase 6 writes
+    fewer than `N` history rows only by saying which are missing and pointing at the
+    journal entries that rebuild them.
+  - `ops` / `rulings.md` — the entries are already `R<n>`, sequential. The highest id **is**
+    the extent; *"read in full"* becomes checkable at no cost.
+  - `qa` / `qa-plan.md` — the Progress header already carries `<N> assertions`. Make it the
+    count `plan` reconciles *before* it rewrites, not only one it recomputes after.
+  - `qa` / `qa-runs.md` — the latest-result lookup says how far back it read. A subset
+    derived from a prefix of the log is a subset that re-runs nothing, which is the same
+    outcome as a clean retest and indistinguishable from it.
+
 ---
 
 ## Landing note
@@ -196,9 +248,15 @@ unchanged, so both new edges arrived from the other side.
 | `own-your-diff` (pushed, **no PR**) | `anantys.design` | same `## Rules` tail |
 
 Re-measured again at 28 open PRs when the *Evidence needs an address* candidate was
-added: still these, unchanged. Candidates land in this file and nothing else touches
-it, which is the point of keeping them here — a cross-cutting rule written instead
-into the four role files it binds would have collided with three of them.
+added, and again when *A rewrite is bounded by the read that fed it* was added: still
+these three, unchanged. Candidates land in this file and nothing else touches it,
+which is the point of keeping them here — a cross-cutting rule written instead into
+the four role files it binds would have collided with three of them.
+
+The read-bound candidate is the sharpest case for that. Its narrowings belong in
+`anantys.ops/SKILL.md`, which **ten** of the 28 open branches already modify — the most
+contested file in the repo. Written there it would have been the eleventh; written here
+it costs nothing and the narrowings land with the promotion.
 
 Resolve the three `## Rules` ones by taking their added lines and dropping the
 restatement:
