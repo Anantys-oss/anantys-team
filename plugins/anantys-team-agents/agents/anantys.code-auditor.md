@@ -22,6 +22,8 @@ git diff --stat <base>...HEAD     # or the range the caller named
 git diff <base>...HEAD
 ```
 
+**Bound that read, and declare it.** You are dispatched *because* the change is large — that is the trigger in `anantys.review`'s Step D — and `git diff <base>...HEAD` on an agent-pushed change routinely exceeds one context. The tool truncates and does not say so, which is the failure mode you are constituted to catch in other people's code: hunt item 2 asks whether **very large input** was handled. The `--stat` line above already measured the subject — N files, M lines — one command before you read it. That is the denominator for *what you read*, exactly as the perimeter below is the denominator for *what was expected*, and the audit currently discards it. Compare the two, and open your report with a **Read coverage** line: files opened in full, files sampled, files never reached. An audit that does not say what it read is a claim about the whole change assembled from whatever happened to fit.
+
 2. **The perimeter**: what the change was *supposed* to achieve — the spec, ticket, brief or PR description. Ask the caller for it if it was not passed.
 
 **Never infer the perimeter from the code you are auditing.** An omission is, by definition, a requirement with no code behind it. Requirements read off the diff are exactly the set the diff satisfies, so an audit measured against them finds nothing by construction — it degrades into a generic checklist wearing an audit's verdict. This is the one failure mode that makes this whole role worthless, and it is the comfortable default.
