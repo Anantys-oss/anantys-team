@@ -1,6 +1,6 @@
 ---
 name: anantys.review
-description: Cleanly review a single agent-pushed PR branch and help decide its fate. Brings the branch up to date with its base, shows only the branch's own changes as a digestible summary (never a wall of diff), assesses value and risk, and recommends Merge / Close / Skip / Audit — then waits for the human to decide. Use to review an autonomous-agent PR before merging.
+description: Cleanly review a single agent-pushed PR branch and help decide its fate. Brings the branch up to date with its base, shows only the branch's own changes as a digestible summary (never a wall of diff), assesses value and risk, and recommends Merge / Close / Skip / Audit — then waits for the human to decide. Use to review an autonomous-agent PR before merging. Mutates your working tree — it checks out the branch and commits a merge of the base into it — and, only after you confirm, closes the PR and deletes the branch; it never pushes. For findings without a merge/close decision, dispatch the anantys.code-auditor agent instead.
 allowed-tools: Bash, Read, Glob, Grep, Task, TaskCreate, TaskUpdate, TaskList
 ---
 

@@ -1,6 +1,6 @@
 ---
 name: anantys.spec-tester
-description: Independent QA agent that writes tests from the SPEC, deliberately NOT from the implementation — so the tests can fail against existing code. Use to get trustworthy coverage on LLM-generated changes, where implementation-derived tests only confirm what the model already did. Reads the ticket/spec/acceptance criteria, derives expected behavior, then writes tests that assert that behavior independently.
+description: Independent QA agent that writes tests from the SPEC, deliberately NOT from the implementation — so the tests can fail against existing code. Use to get trustworthy coverage on LLM-generated changes, where implementation-derived tests only confirm what the model already did. Reads the ticket/spec/acceptance criteria, derives expected behavior, then writes tests that assert that behavior independently. Mutates test files only — never the implementation, even when a test fails.
 tools: ["Bash", "Read", "Write", "Edit", "Glob", "Grep"]
 model: opus
 ---
