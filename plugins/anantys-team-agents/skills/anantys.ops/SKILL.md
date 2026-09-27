@@ -62,9 +62,44 @@ A hub/index is rarely the page that earns clicks — the individual content page
 
 For each, navigate + screenshot + extract via JS: title (+length), meta description (+length), H1/H2/H3, structured data, canonical, word count (`document.body.innerText.split(/\s+/).length`), internal links, FAQ presence, OG image. Then evaluate: does the title match the target query and beat competitors? Is the meta description click-worthy (numbers/freshness)? Content depth, rich-snippet readiness, internal linking. Record per-page findings in a table — these pages have the highest CTR leverage.
 
-## Phase 2: Search Console (28 days)
+## Phase 1c: Fix the measurement window
 
-Navigate to the property's Search Console performance URL (28-day window, broken down by page). If not logged in, tell the user and wait. Screenshot, then extract:
+Every number you are about to collect is a value **over an interval**, and a delta between
+two such numbers is a period-over-period change only when their intervals are **equal and
+adjacent**. A dashboard's default range is a constant; your audit cadence is not. Take a
+28-day default audited fortnightly: consecutive windows share 14 days, so half of each total
+is literally the same rows. A real change is reported at half its size, and whatever moved
+inside the shared half cancels out of the delta entirely. The comparison looks quantified and
+measures almost nothing.
+
+So fix the window once, here, before any dashboard is read:
+
+1. **Compute the elapsed days `E`** — today minus the `Last audit:` date in `current.md` (or
+   the latest journal entry). No prior audit: `E` is undefined, take the default and skip the
+   comparisons Phase 0 already told you to skip.
+2. **Set every dashboard to the same `E`-day range ending today**, whenever the service can
+   express it. Consecutive audits then tile the timeline — adjacent, equal, no overlap, no
+   hole — and the delta means what the report says it means.
+3. **If you cannot** (`E` is a day or two and the shortest useful range is longer, or the
+   picker is out of reach): keep the default, and state the overlap in days next to every
+   delta computed from it. A diluted delta may be reported as a diluted delta; it may never be
+   restated as the change since the last audit.
+4. **If `E` exceeds the window** (overdue audit, or one was skipped): the `E − window` days
+   between the two windows are unmeasured. Say the delta spans a gap and name its length —
+   don't average across it or call it a trend.
+
+Then **record the window with every number, not just the date you read it** — `clicks 1,240
+(28d to 2026-03-14)`. A row carrying only a read-date pins neither endpoint of what it
+measured, which is why `current.md`'s KPI Dashboard and Audit History both need a **Window**
+column: without it, a year of tiled rows and a year of 75%-overlapping rows are the same
+table. A prior row with no window recorded has an *unknown* window — report its delta as
+unavailable rather than assuming the default.
+
+## Phase 2: Search Console
+
+Navigate to the property's Search Console performance URL, set the date range to the window
+fixed in Phase 1c, and break down by page. If not logged in, tell the user and wait.
+Screenshot, then extract (recording the window alongside):
 
 - Top cards: total clicks, impressions, CTR, average position.
 - Top ~20 queries (Queries tab): clicks, impressions, CTR, position.
@@ -73,7 +108,7 @@ Navigate to the property's Search Console performance URL (28-day window, broken
 
 ## Phase 3: Analytics
 
-Navigate to the Analytics (e.g. GA4) report URL. If not logged in, tell the user and wait. Screenshot, then extract: active users (daily/weekly/monthly trend), traffic-source breakdown (organic vs direct vs referral vs social), top pages by views, engagement (session duration, bounce/engagement rate), geographic split if shown.
+Navigate to the Analytics (e.g. GA4) report URL and set **the same window as Phase 2** — the report's own default is not Search Console's, and the KPI Dashboard stacks both services' numbers in one `Current` column under one `Delta`. If not logged in, tell the user and wait. Screenshot, then extract: active users (daily/weekly/monthly trend), traffic-source breakdown (organic vs direct vs referral vs social), top pages by views, engagement (session duration, bounce/engagement rate), geographic split if shown.
 
 ## Phase 4: SERP Analysis
 
@@ -108,9 +143,9 @@ Overwrite **`<workspace>/current.md`** — the living snapshot that persists bet
 # SEO — Current Status (<domain>)
 > Last audit: <YYYY-MM-DD>   Journal: <path to latest entry>
 
-## KPI Dashboard         (Metric | Current | Previous | Delta | Target)
+## KPI Dashboard         (Metric | Window | Current | Previous | Delta | Target — Delta blank when the two windows are not equal and adjacent; say why)
 ## SERP Positions        (Query | Position | Trend | Target)
-## Top Pages Performance (Page | Clicks 28d | Impressions | CTR | Position)
+## Top Pages Performance (Page | Window | Clicks | Impressions | CTR | Position)
 ## Completed Actions     (carried forward from previous current.md, marked [x])
 ## Next Actions          (priority-ordered; flag how many audits each has been pending)
 ## New Landing Pages     (Slug | Target Query | Priority | Status)
