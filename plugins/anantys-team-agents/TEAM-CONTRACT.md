@@ -128,6 +128,56 @@ lands, it lands here, and each role keeps only its own narrowing.
   line), `review` the same two commands one step earlier, `spec-tester` the
   enumerated spec points it already lists.
 
+- **Evidence needs an address.** C1 says the proof is the observation — the reload, the
+  screenshot, the console line, the dashboard number. Nothing in this plugin says where
+  an observation *goes*. Across `main` and all 28 open heads, "screenshot" appears 643
+  times and a place to put one appears zero times: no `.png`, no evidence directory, no
+  path in any report column. The proof is a tool result inside one transcript; what the
+  operator reads is prose asserting it existed.
+
+  So the rule protects the model from fooling itself and leaves the operator with the
+  thing C1 rejects — a claim to be taken on trust. Four roles report this way, and each
+  has a reader who cannot check it:
+
+  | role | the claim | who reads it, and with what |
+  |---|---|---|
+  | `design` | `Proof (computed / screenshot)` column | a table cell describing an image nobody kept |
+  | `debug` | `Re-proof (after)` — *console clean / 200 / right value* | four words standing in for a runtime state |
+  | `qa` | `qa-runs.md` Evidence cell — `<what was observed — … screenshot>` | append-only, built *for* a later reader, citing a file that was never written |
+  | `ops` | **"Take screenshots at each phase to document the audit trail."** | a persisted journal entry; the audit trail it documents is discarded at session end |
+
+  `ops` is the clearest: the line's stated purpose is documentation, the role already
+  holds `Write` and `Bash(mkdir:*)` and already uses them for the prose beside it.
+
+  Two of the four are unreproducible *by construction*, so the operator cannot fall back
+  on re-deriving: `qa --env shared` never resets and writes additively, and `ops` reads
+  third-party dashboards whose 28-day window moves daily. For those, the observation is
+  the only copy.
+
+  The record is also strongest where it matters least. `qa` spells out a FAIL — what was
+  seen, what was expected, the URL, the console error — and gives a PASS `<observation>`.
+  A failure is going to be re-examined anyway; a pass is the load-bearing claim nobody
+  revisits. Same inversion in `design`, where `blocked` gets a reason and `completed`
+  gets a sentence.
+
+  One role already has this right, and it is again the one with no browser:
+  `code-auditor`'s evidence is `file:line` plus `<grep/caller proof>` — an address and a
+  command anyone can re-run. That is the generalisation: **an observation is recorded as
+  a saved artifact or as the exact derivation that reproduces it. A description of an
+  observation is neither.**
+
+  Redaction (the entry above) is the constraint, not the objection: a screenshot is an
+  un-redactable blob, and on a `shared` env it captures real customer data. So the rule
+  cannot be "always save". It is *name the artifact, or name the derivation, or say at
+  the point of the claim that neither was possible* — the third being a declared gap,
+  which C1 already requires and which is strictly better than prose that reads like proof.
+
+  When this rule is promoted here, each role keeps only what an address means for it:
+  `design` a saved region shot per completed TODO, `debug` the re-run command beside the
+  signal it produced, `qa` a path in the Evidence cell of both tables, `ops` a per-phase
+  file under the journal directory it already creates, `code-auditor` and `spec-tester`
+  unchanged — a grep and a test command are already addresses.
+
 ---
 
 ## Landing note
@@ -144,6 +194,11 @@ unchanged, so both new edges arrived from the other side.
 | #16 `evidence-redaction-contract` | `anantys.design`, `anantys.ops` | same shape |
 | #13 `auditor-independent-yardstick` | `anantys.code-auditor` | rewrites the closing verdict line where this branch appends an Authority boundary below it |
 | `own-your-diff` (pushed, **no PR**) | `anantys.design` | same `## Rules` tail |
+
+Re-measured again at 28 open PRs when the *Evidence needs an address* candidate was
+added: still these, unchanged. Candidates land in this file and nothing else touches
+it, which is the point of keeping them here — a cross-cutting rule written instead
+into the four role files it binds would have collided with three of them.
 
 Resolve the three `## Rules` ones by taking their added lines and dropping the
 restatement:
