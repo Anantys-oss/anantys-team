@@ -32,8 +32,8 @@ says nothing about whether the combined tree still passes the repo's own checks.
 Every checker in this queue was written against `main` and validated against the
 one branch that carries it, so the assembled result — the thing `main` actually
 becomes — is the one state no checker has ever run in. `--verify` builds that
-state (fold the branches with `merge-tree`, extract with `git archive`, never
-touch a branch or the working tree) and runs every gate found inside it — the
+state (fold the branches with `merge-tree`, check it out as a detached worktree,
+never touch a branch or the working tree) and runs every gate found inside it — the
 `scripts/check_*.py`, and the unit-test suite CI discovers over the whole
 `scripts/` tree. Both are gates because both turn `main` red; the suite is the
 one whose contents the union changes, since discovery picks up every branch's
@@ -64,6 +64,7 @@ Exit 0 always — this is an operator report, not a gate.
 """
 
 import argparse
+import contextlib
 import json
 import subprocess
 import sys
@@ -273,6 +274,35 @@ def checker_scripts(scripts_dir, only=None):
 SUITE = "unittest discover -s scripts"
 
 
+@contextlib.contextmanager
+def checkout(commit):
+    """The union as a real repository, not an extracted tree.
+
+    `git archive | tar -x` is cheaper and was the obvious choice, but it yields
+    a directory with no `.git` — and a checker that asks git a question cannot
+    ask it there. `check_version_bump.py` is exactly that checker: with no ref
+    to resolve, `resolve_base` returns None, it prints "no base ref to compare
+    against — skipping" and exits 0. So the one gate whose subject is the
+    freshness of the version the union ships was reported `OK` on every round
+    without once having run. A skip that exits 0 is indistinguishable from a
+    pass, and this report exists to be trusted with seventeen merges.
+
+    A detached worktree costs a checkout and gives the checkers the refs they
+    need — `origin/main` among them, which is the base the union is measured
+    against and the comparison the operator is actually asking for. It touches
+    no branch and not the working tree; it is registered under `.git/worktrees`
+    and removed on the way out.
+    """
+    with tempfile.TemporaryDirectory(prefix="pr-union-") as parent:
+        tree = Path(parent) / "tree"
+        run("git", "worktree", "add", "--detach", str(tree), commit)
+        try:
+            yield tree
+        finally:
+            subprocess.run(["git", "worktree", "remove", "--force", str(tree)],
+                           capture_output=True)
+
+
 def run_checkers(commit, only=None):
     """{gate name: (exit code, error lines)} for every gate in `commit`.
 
@@ -291,9 +321,7 @@ def run_checkers(commit, only=None):
     asked. `SUITE` is a name like any other there.
     """
     out = {}
-    with tempfile.TemporaryDirectory(prefix="pr-union-") as tmp:
-        subprocess.run(f"git archive {commit} | tar -x -C {tmp}",
-                       shell=True, check=True)
+    with checkout(commit) as tmp:
         for script in checker_scripts(Path(tmp) / "scripts", only):
             done = subprocess.run([sys.executable, str(script), tmp],
                                   capture_output=True, text=True, cwd=tmp)

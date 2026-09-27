@@ -363,5 +363,46 @@ class SuiteIsAGate(unittest.TestCase):
         self.assertEqual(p.run_checkers("HEAD"), {})
 
 
+class AGitAwareGateCanAskGit(unittest.TestCase):
+    """A real tree whose checker asks git a question, and gets an answer.
+
+    `check_version_bump.py` is git-aware by design — freshness is a claim about
+    a diff, not about a tree — and when it cannot resolve a base ref it prints
+    "skipping" and exits 0. Under an extracted tree that is every round, so the
+    gate reads `OK` having never run. The checker here is inverted (red exactly
+    when git answers) so the assertion fails against a tree with no `.git`
+    rather than passing for the wrong reason.
+    """
+
+    def git(self, *args):
+        subprocess.run(("git",) + args, check=True, capture_output=True)
+
+    def setUp(self):
+        self.dir = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.dir)
+        self.addCleanup(os.chdir, os.getcwd())
+        os.chdir(self.dir)
+        self.git("init", "-q", "-b", "main")
+        self.git("config", "user.email", "t@example.com")
+        self.git("config", "user.name", "t")
+        Path("scripts").mkdir()
+        Path("scripts/check_git.py").write_text(
+            "import subprocess, sys\n"
+            "asked = subprocess.run(['git', 'rev-parse', 'HEAD'],\n"
+            "                       capture_output=True).returncode\n"
+            "sys.exit(1 if asked == 0 else 0)\n")
+        self.git("add", "-A")
+        self.git("commit", "-qm", "a git-aware gate")
+
+    def test_the_gate_reaches_git_and_its_red_reaches_the_operator(self):
+        self.assertNotEqual(p.run_checkers("HEAD")["check_git.py"][0], 0)
+
+    def test_the_checkout_is_not_left_registered_behind(self):
+        p.run_checkers("HEAD")
+        listed = subprocess.run(("git", "worktree", "list"),
+                                capture_output=True, text=True, check=True)
+        self.assertEqual(len(listed.stdout.strip().splitlines()), 1)
+
+
 if __name__ == "__main__":
     unittest.main()
