@@ -88,7 +88,47 @@ For **each** task, in order:
    tasks you completed. A `blocked` task that leaves three dead overrides in the stylesheet hands
    the next person a worse page than it found.
 
-### 5. Global audit pass
+### 5. Scope the proof to the edit, before marking anything done
+
+A screenshot is a fact about **one rendered page**. A change to a stylesheet, a design token, or a
+shared component is a fact about **every page that renders it**. CSS has no local scope and neither
+does a component, so those two scopes coincide only when you have checked that they do — and this
+skill points you at the shared ones by design: step 4.3 prefers *removing the framework class from
+the markup*, and the DS rules send you to the project's tokens.
+
+You already hold both halves. The per-task file list from the preconditions says what you changed;
+one `grep` per touched file says who else consumes it. Run it before you mark the task `completed`:
+
+```bash
+# a template / component — who renders or imports it?
+grep -rn 'ComponentName\|path/to/component' --include='*.tsx' --include='*.jsx' --include='*.vue' \
+  --include='*.html' --include='*.erb' --include='*.py' .
+# a class you removed from markup, or a token whose value you retuned
+grep -rn 'the-class-you-removed\|--the-token-you-changed' .
+```
+
+Classify each touched file and **say which it was**:
+
+- **Page-local** — the only consumer is the route behind your dev URL. The screenshot is the whole
+  proof. Done.
+- **Shared** — there are other consumers, and your screenshot proves the fix *on one of them*. The
+  pages most at risk are exactly the ones you never loaded: retuning `--space-md` fixes the page you
+  are watching and moves every page you are not.
+
+A shared edit ends one of two ways, never silently as the first:
+
+1. **Ask for the other surfaces.** Name the other consumers and ask the operator for a dev URL for
+   each one you should check — a second surface is a URL you are given, not a tab you go open.
+   Re-verify there and the proof is complete.
+2. **Report the reach.** With no second URL available the row can still be `completed` — the issue
+   *is* fixed — but the Proof column must name what went unverified: "verified on `/checkout`;
+   `--space-md` is also read by 11 other templates, unchecked."
+
+An unqualified `completed` on a shared edit is a claim about pages you never opened. It is the same
+error as calling a fix done from a diff, one level up: the diff you did not read is the page you did
+not load.
+
+### 6. Global audit pass
 
 Before finishing, run a DOM scan on the main content region for DS violations and fix any leftovers. Adapt the selector to the page's main content container, and adapt the "allowed" exceptions to the project's legitimate semantic classes. Example scan (flags low-contrast grey text and stray green text):
 
@@ -112,7 +152,7 @@ zone.querySelectorAll('*').forEach(el=>{
 
 An empty result (`[]`) is the goal. Anything returned is a new fix.
 
-### 6. Mobile + edge states
+### 7. Mobile + edge states
 
 If relevant, resize to 360–390px (`resize_window`) and re-screenshot to confirm no overflow. Check graceful/empty states (no data, error, loading) when they apply.
 
@@ -143,6 +183,9 @@ List the source files touched. Note anything deliberately left as-is (with reaso
   by lowering what counts as proof.
 - **Record the tree before you edit it, and say where you are.** Clean tree, named branch, both
   reported, and a per-task file list. A loop that must undo cannot start from a state it never read.
+- **The screenshot's scope is one page; the edit's scope is every consumer.** Grep each touched file
+  for its other consumers before `completed`. Page-local, and the screenshot is the whole proof;
+  shared, and you either get a dev URL per surface or name the unverified ones in the Proof column.
 - Respect the project's existing design system and tokens; never invent new color tokens, gradients, glows, or AI-cliché iconography.
 - **Never commit, push, or open a PR** unless the user explicitly asks — stop at validated local edits.
 - Report what the screenshot actually shows, not what you expect.
