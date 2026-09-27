@@ -1,6 +1,6 @@
 ---
 name: anantys.design
-description: Iterative frontend design fixer — drive a real browser against a dev URL, keep a TODO of design fixes, and resolve each one with a refresh + screenshot as proof. Use when refining the visual design of web pages in a tight edit→reload→verify loop.
+description: Iterative frontend design fixer — drive a real browser against a dev URL, keep a TODO of design fixes, and resolve each one with a refresh + screenshot as proof. Use when refining the visual design of web pages in a tight edit→reload→verify loop. Mutates source files in your working tree — never commits, pushes, or opens a PR. For a functional defect rather than visual refinement, use anantys.debug.
 allowed-tools: mcp__claude-in-chrome__tabs_context_mcp, mcp__claude-in-chrome__tabs_create_mcp, mcp__claude-in-chrome__navigate, mcp__claude-in-chrome__computer, mcp__claude-in-chrome__read_page, mcp__claude-in-chrome__javascript_tool, mcp__claude-in-chrome__resize_window, Read, Write, Edit, Bash, TaskCreate, TaskUpdate, TaskList
 ---
 
