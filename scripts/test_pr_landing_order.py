@@ -296,5 +296,72 @@ class Rounds(unittest.TestCase):
         self.assertEqual(p.rounds([], self.refs), [])
 
 
+class SuiteIsAGate(unittest.TestCase):
+    """A real tree: one checker, one test beside it. CI runs both.
+
+    The suite is asserted through `run_checkers` rather than a discovery helper
+    because that is where the gate set is decided, and the question is whether a
+    red test reaches the operator at all.
+    """
+
+    def git(self, *args):
+        subprocess.run(("git",) + args, check=True, capture_output=True)
+
+    def commit(self, body):
+        Path("scripts").mkdir(exist_ok=True)
+        Path("scripts/check_a.py").write_text("")
+        Path("scripts/test_check_a.py").write_text(
+            "import unittest\n\n"
+            "class T(unittest.TestCase):\n"
+            f"    def test_a(self):\n        {body}\n")
+        self.git("add", "-A")
+        self.git("commit", "-qm", "gates")
+
+    def setUp(self):
+        self.dir = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.dir)
+        self.addCleanup(os.chdir, os.getcwd())
+        os.chdir(self.dir)
+        self.git("init", "-q", "-b", "main")
+        self.git("config", "user.email", "t@example.com")
+        self.git("config", "user.name", "t")
+
+    def test_a_passing_suite_is_reported_green_beside_the_checkers(self):
+        self.commit("pass")
+        results = p.run_checkers("HEAD")
+        self.assertEqual(sorted(results), ["check_a.py", p.SUITE])
+        self.assertEqual(results[p.SUITE][0], 0)
+
+    def test_a_failing_test_makes_the_round_red(self):
+        # The checker still passes: without the suite the round reads green.
+        self.commit("self.fail('boom')")
+        results = p.run_checkers("HEAD")
+        self.assertEqual(results["check_a.py"][0], 0)
+        self.assertNotEqual(results[p.SUITE][0], 0)
+
+    def test_a_failing_test_is_named_so_the_operator_can_find_it(self):
+        self.commit("self.fail('boom')")
+        self.assertTrue(any("test_a" in line
+                            for line in p.run_checkers("HEAD")[p.SUITE][1]))
+
+    def test_only_can_re_test_the_suite_alone(self):
+        self.commit("pass")
+        self.assertEqual(sorted(p.run_checkers("HEAD", only=[p.SUITE])),
+                         [p.SUITE])
+
+    def test_only_a_checker_does_not_drag_the_suite_along(self):
+        self.commit("self.fail('boom')")
+        self.assertEqual(sorted(p.run_checkers("HEAD", only=["check_a.py"])),
+                         ["check_a.py"])
+
+    def test_a_tree_with_no_scripts_has_no_gates(self):
+        # `unittest discover -s scripts` errors on a missing directory; an empty
+        # tree must report nothing to verify, not a failure to verify.
+        Path("README.md").write_text("no scripts here\n")
+        self.git("add", "-A")
+        self.git("commit", "-qm", "no scripts")
+        self.assertEqual(p.run_checkers("HEAD"), {})
+
+
 if __name__ == "__main__":
     unittest.main()

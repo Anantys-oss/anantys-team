@@ -33,8 +33,11 @@ Every checker in this queue was written against `main` and validated against the
 one branch that carries it, so the assembled result — the thing `main` actually
 becomes — is the one state no checker has ever run in. `--verify` builds that
 state (fold the branches with `merge-tree`, extract with `git archive`, never
-touch a branch or the working tree) and runs every `scripts/check_*.py` found
-inside it.
+touch a branch or the working tree) and runs every gate found inside it — the
+`scripts/check_*.py`, and the unit-test suite CI discovers over the whole
+`scripts/` tree. Both are gates because both turn `main` red; the suite is the
+one whose contents the union changes, since discovery picks up every branch's
+tests at once and none of them has ever run beside another's.
 
 It does so **per landing round**, not once for the whole queue. Waves land one at
 a time, so `main` passes through every prefix of them, and a checker in an early
@@ -254,6 +257,11 @@ def union_tree(base, refs):
 def checker_scripts(scripts_dir, only=None):
     """Every checker in a tree: `check_*.py`, never their `test_*` siblings.
 
+    A `test_check_a.py` is not excluded because it does not matter — it is a CI
+    gate too — but because invoking it as a script is not how CI runs it. It is
+    discovered, alongside every other branch's tests, by the suite `run_checkers`
+    runs once over the whole tree.
+
     `only` narrows the set by name, for re-testing a tree against a checker
     already known to fail — the other verdicts are not the question being asked.
     """
@@ -262,12 +270,25 @@ def checker_scripts(scripts_dir, only=None):
                   and (only is None or p.name in only))
 
 
-def run_checkers(commit, only=None):
-    """{checker name: (exit code, error lines)} for every checker in `commit`.
+SUITE = "unittest discover -s scripts"
 
-    `only` restricts the run to checkers of that name — used when re-testing a
-    tree against a known failure, where the other checkers' verdicts are not
-    the question being asked.
+
+def run_checkers(commit, only=None):
+    """{gate name: (exit code, error lines)} for every gate in `commit`.
+
+    A gate is anything whose red turns `main` red, which is the tree's
+    `check_*.py` *and* its unit-test suite: CI runs `unittest discover -s
+    scripts`, so a failing test blocks a merge exactly like a failing checker.
+    Reporting a round green on the checkers alone answers a narrower question
+    than the operator asked — and narrower in the direction that matters, since
+    discovery is tree-wide. Each branch's tests have only ever run beside their
+    own; the union is the first process to import them all together, and a
+    module-level fixture, a `sys.path` entry or a chdir that two of them share
+    is visible nowhere else.
+
+    `only` restricts the run to gates of that name — used when re-testing a tree
+    against a known failure, where the other verdicts are not the question being
+    asked. `SUITE` is a name like any other there.
     """
     out = {}
     with tempfile.TemporaryDirectory(prefix="pr-union-") as tmp:
@@ -279,6 +300,13 @@ def run_checkers(commit, only=None):
             out[script.name] = (done.returncode, [
                 ln for ln in (done.stdout + done.stderr).strip().splitlines()
                 if ln.startswith(("ERROR", "error"))])
+        if (only is None or SUITE in only) and (Path(tmp) / "scripts").is_dir():
+            done = subprocess.run(
+                [sys.executable, "-m", "unittest", "discover", "-s", "scripts"],
+                capture_output=True, text=True, cwd=tmp)
+            out[SUITE] = (done.returncode, [
+                ln for ln in done.stderr.strip().splitlines()
+                if ln.startswith(("FAIL:", "ERROR:"))])
     return out
 
 
@@ -300,7 +328,7 @@ def verify(base, refs):
 
     results = run_checkers(commit)
     if not results:
-        lines.append("  no checkers in the union — nothing to verify")
+        lines.append("  no gates in the union — nothing to verify")
     for name, (code, errors) in sorted(results.items()):
         lines.append(f"  {'OK  ' if code == 0 else 'FAIL'} {name}")
         lines += [f"       {ln}" for ln in errors]
