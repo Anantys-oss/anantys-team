@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Fixture tests for pr_landing_order — run: python3 -m unittest discover scripts"""
 
+import os
 import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -161,6 +163,113 @@ class Unverifiable(unittest.TestCase):
         # The rebase exists only after the round below lands — inviting a
         # resolution now sends the operator at work that is not theirs to do.
         self.assertNotIn("must first resolve", p.unverifiable(3))
+
+
+MOVED = ("- **An adjudication** is the single highest-value artifact a "
+         "campaign produces, and it is never re-derived.")
+KEPT = ("A case the runner could not reach is BLOCKED and never PASS, "
+        "whatever the rest of the scenario did.")
+
+
+class RelocatedText(unittest.TestCase):
+    """A real repo: one branch splits a file, another edits what it moved.
+
+    This is the shape the queue actually has — a progressive-disclosure refactor
+    open alongside content PRs on the file it empties.
+    """
+
+    def git(self, *args):
+        subprocess.run(("git",) + args, check=True, capture_output=True)
+
+    def setUp(self):
+        self.dir = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.dir)
+        self.addCleanup(os.chdir, os.getcwd())
+        os.chdir(self.dir)
+        self.git("init", "-q", "-b", "main")
+        self.git("config", "user.email", "t@example.com")
+        self.git("config", "user.name", "t")
+        Path("doc.md").write_text(f"# Doc\n\n{MOVED}\n\n{KEPT}\n")
+        self.git("add", "doc.md")
+        self.git("commit", "-qm", "base")
+
+        self.git("checkout", "-qb", "split")
+        Path("doc.md").write_text(f"# Doc\n\nSee reference.\n\n{KEPT}\n")
+        Path("ref.md").write_text(f"# Reference\n\n{MOVED}\n")
+        self.git("add", "-A")
+        self.git("commit", "-qm", "split the doc")
+
+        self.git("checkout", "-q", "main")
+        self.git("checkout", "-qb", "edit")
+        Path("doc.md").write_text(
+            f"# Doc\n\n{MOVED}\nIt is written back into the plan.\n\n{KEPT}\n")
+        self.git("commit", "-qam", "edit what split moved")
+
+        self.git("checkout", "-q", "main")
+        self.git("checkout", "-qb", "elsewhere")
+        Path("doc.md").write_text(
+            f"# Doc\n\n{MOVED}\n\n{KEPT}\nSay so in the blocker list.\n")
+        self.git("commit", "-qam", "edit what split kept")
+        self.git("checkout", "-q", "main")
+
+    def test_an_edited_line_is_an_anchor(self):
+        self.assertIn(MOVED, p.anchors("main", "edit", "doc.md"))
+
+    def test_a_short_line_is_not_an_anchor(self):
+        # "# Doc" matches anywhere; resolving it would name every file.
+        self.assertNotIn("# Doc", p.anchors("main", "edit", "doc.md"))
+
+    def test_the_destination_is_the_file_the_text_moved_to(self):
+        # MOVED is a markdown bullet, so it opens with "- " — a search that
+        # reads it as an option reports no destination and looks like a clean
+        # rebase. Most prose lines in this repo are bullets.
+        self.assertTrue(MOVED.startswith("- "))
+        self.assertEqual(
+            p.moved("split", "doc.md", p.anchors("main", "edit", "doc.md")),
+            ["ref.md"])
+
+    def test_an_edit_to_text_that_stayed_reports_no_destination(self):
+        # Same shared file, same conflicting pair — but a plain rebase fixes it.
+        self.assertEqual(
+            p.moved("split", "doc.md", p.anchors("main", "elsewhere", "doc.md")),
+            [])
+
+    def test_the_shared_file_is_never_offered_as_its_own_destination(self):
+        self.assertNotIn(
+            "doc.md",
+            p.moved("split", "doc.md", p.anchors("main", "edit", "doc.md")))
+
+    def test_a_path_the_branch_does_not_have_reports_no_destination(self):
+        self.assertEqual(p.moved("split", "gone.md", [MOVED]), [])
+
+
+class Relocations(unittest.TestCase):
+    """Both directions of every edge, and silence when nothing moved."""
+
+    prs = [(1, "splitter", "", {"doc.md"}), (2, "editor", "", {"doc.md"})]
+    edge = {frozenset((1, 2)): ["doc.md"]}
+
+    def stub(self, *destinations):
+        """Only `origin/splitter` moved anything; nobody's anchors are read."""
+        self.addCleanup(setattr, p, "moved", p.moved)
+        self.addCleanup(setattr, p, "anchors", p.anchors)
+        p.anchors = lambda *a, **k: ["a line long enough to be an anchor"]
+        p.moved = lambda ref, path, needles, probes=5: (
+            list(destinations) if ref == "origin/splitter" else [])
+
+    def test_it_names_the_loser_the_winner_and_the_destination(self):
+        self.stub("ref.md")
+        self.assertEqual(p.relocations("main", self.prs, self.edge),
+                         {(2, 1): {"doc.md": ["ref.md"]}})
+
+    def test_a_pair_with_nothing_moved_is_absent_not_empty(self):
+        # An empty entry would print a relocation warning for a plain rebase.
+        self.stub()
+        self.assertEqual(p.relocations("main", self.prs, self.edge), {})
+
+    def test_a_clean_queue_has_no_relocations(self):
+        self.stub("ref.md")
+        self.assertEqual(p.relocations("main", self.prs, {}), {})
 
 
 class Rounds(unittest.TestCase):

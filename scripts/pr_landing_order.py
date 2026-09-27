@@ -16,6 +16,17 @@ Output is a set of waves. A wave is a set of PRs that are mutually clean: land
 them in any order, no rebase between them. Only crossing a wave boundary costs
 a rebase, so N waves means N-1 rebase rounds for the whole queue.
 
+A rebase is the cheap case, and not every boundary is one. When a PR in an
+earlier wave *restructures* a file that a later one edits — a split into
+`reference/*.md`, a rule hoisted into a shared contract — the later PR's hunks
+do not merely move, they lose their anchors: the lines they patch are no longer
+in that file. Git reports the conflict in the shared path anyway, and the file
+intersection reported below names that same path, so both point at the one file
+the change must not be applied to. The destination lives only on the
+restructurer's side of the diff. Each conflicting pair is therefore classified,
+and a relocated one is named as what it is — a re-authoring by hand that no
+ordering of the queue avoids.
+
 Mergeable is not green. A wave says the trees combine without a conflict; it
 says nothing about whether the combined tree still passes the repo's own checks.
 Every checker in this queue was written against `main` and validated against the
@@ -112,6 +123,91 @@ def conflicts(prs):
             if merged.returncode != 0:
                 found[frozenset((a, b))] = sorted(files_a & files_b)
     return found
+
+
+def anchors(base, ref, path, minimum=30):
+    """The text in `path` that `ref`'s edits are attached to.
+
+    Not the whole context window: a hunk carries three lines either side, and
+    at that width an edit near an untouched paragraph looks attached to it. The
+    attachment points are the lines a change actually rewrites and the context
+    immediately abutting each run of them — those are what say *where* the edit
+    belongs. Short lines (a heading, a list marker, a lone fence) match
+    anywhere, so they name every file and are dropped.
+    """
+    out, previous, inside = [], None, False
+    for line in run("git", "diff", f"{base}...{ref}", "--", path).splitlines():
+        if line.startswith("@@"):
+            previous, inside = None, False
+        elif line.startswith(("+++", "---")):
+            continue
+        elif line[:1] in ("+", "-"):
+            if not inside and previous:
+                out.append(previous)
+            inside = True
+            if line.startswith("-"):
+                out.append(line[1:].strip())
+        elif line[:1] == " ":
+            if inside:
+                out.append(line[1:].strip())
+                inside = False
+            previous = line[1:].strip()
+    return [anchor for anchor in out if len(anchor) >= minimum]
+
+
+def moved(ref, path, needles, probes=5):
+    """Files in `ref` that hold `needles` after `ref` removed them from `path`.
+
+    Only the absent needles are searched, so a PR that restructures nothing
+    costs no `git grep` at all.
+    """
+    try:
+        body = run("git", "show", f"{ref}:{path}")
+    except subprocess.CalledProcessError:
+        return []
+    destinations = set()
+    for needle in sorted(set(needles), key=len, reverse=True):
+        if probes <= 0:
+            break
+        if needle in body:
+            continue
+        probes -= 1
+        # -e, because a prose line routinely starts with "- " and would
+        # otherwise be read as an option and silently match nothing.
+        found = subprocess.run(["git", "grep", "-lF", "-e", needle, ref],
+                               capture_output=True, text=True)
+        destinations.update(line.split(":", 1)[1]
+                            for line in found.stdout.splitlines() if ":" in line)
+    return sorted(d for d in destinations if d != path)
+
+
+def relocations(base, prs, edges):
+    """{(loser, winner): {path: [destinations]}} — conflicts a rebase cannot fix.
+
+    A shared filename is where the conflict *is*. It is not always where the
+    resolution *goes*. When one PR of a pair restructures a file — splitting
+    prose into new ones, as a progressive-disclosure refactor does — the other's
+    hunks lose their anchors: the lines they patch are no longer in the shared
+    file at all. Git still reports the conflict there, and the intersection this
+    report prints names that same file, so both send the resolver to the one
+    place the change must not be applied. The destination only ever appears on
+    the restructurer's side of the diff, never in the intersection.
+
+    The distinction is the operator's cost, not a detail: a same-file conflict is
+    a rebase, and a relocated one is a re-authoring by hand that no ordering of
+    the queue avoids.
+    """
+    refs = {n: f"origin/{ref}" for n, ref, _, _ in prs}
+    out = {}
+    for pair, shared in edges.items():
+        a, b = sorted(pair)
+        for loser, winner in ((a, b), (b, a)):
+            for path in shared:
+                destinations = moved(refs[winner], path,
+                                     anchors(base, refs[loser], path))
+                if destinations:
+                    out.setdefault((loser, winner), {})[path] = destinations
+    return out
 
 
 def waves(numbers, edges):
@@ -295,6 +391,7 @@ def main():
     contained = stacked(prs)
     if contained:
         prs = [pr for pr in prs if pr[0] not in contained]
+    base = run("git", "rev-parse", "main").strip()
     edges = conflicts(prs)
     order = waves([n for n, _, _, _ in prs], edges)
 
@@ -309,13 +406,21 @@ def main():
             print(f"  #{n:<4} {titles[n]}")
         print()
     if edges:
+        relocated = relocations(base, prs, edges)
         print("Conflicting pairs and the files they share:")
         for pair, shared in sorted(edges.items(), key=lambda kv: sorted(kv[0])):
             a, b = sorted(pair)
             print(f"  #{a} <-> #{b}: {', '.join(shared) or '(no shared path)'}")
+            for loser, winner in ((a, b), (b, a)):
+                for path, destinations in sorted(
+                        relocated.get((loser, winner), {}).items()):
+                    print(f"    #{winner} moves that text out of {path} — "
+                          f"#{loser}'s hunks belong in "
+                          f"{', '.join(destinations)}, not there. "
+                          f"Re-authored by hand; a rebase cannot move a hunk "
+                          f"across files.")
 
     if args.verify:
-        base = run("git", "rev-parse", "main").strip()
         print("\nVerifying the next landing round — a wave is not a tree:")
         for i, cumulative in enumerate(rounds(order, refs), 1):
             print(f"\nAfter wave {i} lands:")
