@@ -286,6 +286,18 @@ fields about *being able to verify* fail closed (no build-identity probe ⇒ ask
 instrument ⇒ every checkout case `BLOCKED`). The fields about *permission to act* are the ones to
 watch, because their permissive branch reads like backward compatibility.
 
+**And a present declaration is not an observation** — the complement, also stated once in
+`templates/qa-config.md`. `kind:` and `Production:` are typed at `init` and read forever after as if
+they described the host; they describe a URL, and the URL is what moves — a retired staging hostname
+repointed at prod, a repointed dev box behind a `local` block (whose surface is *expected* not to be
+`localhost`), a `shared` block copied with only the name changed. No field is missing in any of
+those, so every rule above passes while the campaign resets real data or walks the money assertions
+it was meant to `BLOCK`. Each environment therefore records an **`Answers as:`** line beside its
+build-identity probe — an identity in the probe's own response, never the commit, since staging and
+production serve the same commit right after a deploy — and `run` step 1 compares it, free, because
+the probe already ran. No match, or no identity in the response, ⇒ `kind:`/`Production:`
+**unconfirmed** ⇒ the narrower branch above: not reset, treated as production.
+
 **Results are per environment**, since an assertion can pass on one and fail on another (a fix
 deployed to staging but not the local stack, or the reverse):
 
@@ -363,17 +375,30 @@ operator's go before any write.
 
    The line is absent for a merged/deployed feature, and then there is nothing extra to check.
 
+   **The same probe response also says which host answered — read it.** Compare it to the
+   environment's `Answers as:` line (Environments). A match confirms this block's `kind:` and
+   `Production:` for this run; a mismatch, or a response carrying no identity, leaves both
+   **unconfirmed** — no reset in step 2, and the environment is treated as production. Record
+   `Identity: confirmed` or `Identity: unconfirmed — <what answered> ≠ <declared>` in the run
+   section next to `Subject:`, and never edit `Answers as:` to match. This check is free: the probe
+   already ran above, and the commit it returns is what `Answers as:` exists to supplement — the
+   same commit is served by staging and production between deploys.
+
    **On a `shared` env, confirm the target before anything is written:** echo the environment name,
-   its base URL, the build it serves, whether it is production, and the scenarios that will create
-   data there — then wait for the operator's explicit go. No go, no run.
-2. **Reset — a declared `local` env only.** On an environment whose block declares `kind: local`,
-   apply its reset procedure and confirm it took effect (a stale auth cookie or leftover cache
+   its base URL, the build it serves, whether it is production **and whether that was confirmed or
+   declared**, and the scenarios that will create data there — then wait for the operator's explicit
+   go. No go, no run. Reading `Production: no` back as fact is how a mistyped block gets confirmed
+   by the person who mistyped it; an unconfirmed env is presented as production, and the question is
+   whether to proceed at all.
+2. **Reset — a confirmed `local` env only.** On an environment whose block declares `kind: local`
+   *and* whose identity step 1 confirmed, apply its reset procedure and confirm it took effect (a stale auth cookie or leftover cache
    silently invalidates every assertion that follows) — verify by observing the app, not by trusting
    the command's exit code. On a **`shared`** environment there is **NO reset**: never reset staging /
    preview / prod — reuse the operator's session and create any needed test data additively. On an
-   environment whose kind is **undeclared** (a flat legacy file) there is also no reset: ask the
-   operator to re-run `init` and declare it, or walk the plan with whatever subject state exists and
-   mark anything the leftover state invalidates `BLOCKED` (see Environments).
+   environment whose kind is **undeclared** (a flat legacy file) or **unconfirmed** (step 1 found a
+   different host, or none) there is also no reset: ask the operator to re-run `init`, or walk the
+   plan with whatever subject state exists and mark anything the leftover state invalidates
+   `BLOCKED` (see Environments).
 3. **Walk the scenarios in order**, in a real browser driven as the environment's `Driven by:`
    line says (see Environments). On production, skip the unsafe scenario classes and record them
    `BLOCKED`. Per scenario: establish the precondition,

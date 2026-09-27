@@ -58,6 +58,33 @@ block below.
 > | `Production:` on a `shared` env | **treat it as production** until the operator says otherwise. The cost of being wrong that way is a handful of money / consent / notification assertions reported `BLOCKED`; the cost of being wrong the other way is a real charge, a real consent record, a real email to a real person |
 > | Reset `Target:` / probe | no reset — the file predates the rule; ask for the target rather than running the command that has none |
 
+> **And a present declaration is not an observation.** The rule above catches the field nobody
+> wrote. Its complement is the field somebody wrote *once*: `kind:` and `Production:` are answers
+> the operator typed at `init`, and from then on every guard that matters — no reset on `shared`,
+> money / consent / notification assertions `BLOCKED` on production — reads them as though they
+> were measurements of the host. They are not. They are a label on a URL, and the URL is the part
+> that moves: staging decommissioned and its hostname pointed at the prod app, a `local` block
+> whose dev-box URL was repointed (a `local` surface is *expected* not to be `localhost`), a
+> `shared` block copied to declare a second env with only the name edited.
+>
+> One observation already reaches the host on every run and is thrown away: the **build-identity
+> probe**. `run` reads a commit out of its response and discards everything else about *who
+> answered*. So each environment records what it answers as, and every run compares:
+>
+> - `Answers as:` in the Build identity block — an identity in the probe's own response, captured
+>   at `init`: the resolved host of the probe URL, an `env`/`environment` field in a `/version`
+>   payload, a deployed-env banner. Not the commit: prod and staging serve the same commit between
+>   deploys, so a matching commit is no evidence of which host produced it.
+> - **Two environments in one file may not share an `Answers as:` value.** That collision *is* the
+>   copy-paste case, and it is the one this catches for free.
+> - On mismatch, or when the response carries no identity at all, the environment's `kind:` and
+>   `Production:` are **unconfirmed** — which is the table above, reached from a falsified field
+>   instead of a missing one: not resettable, treated as production. Say so in the run header, so
+>   the record shows what the campaign could and could not confirm.
+> - **Never rewrite `Answers as:` to match what you just saw.** A mismatch is the finding; updating
+>   the file launders it. Report it and let the operator re-run `init` — repointed DNS and a typo
+>   are indistinguishable from here, and only one of them is safe to accept.
+
 ---
 
 ```markdown
@@ -95,9 +122,15 @@ forwarder, an unseeded reference table. Nothing errors; the product just waits o
 <command or URL that returns the branch/commit actually running — a /version or /healthz
 endpoint, a deployed-SHA banner, `docker inspect <container>`, a `git -C <deploy path> rev-parse`>
 ```
+Answers as: `<what in that response identifies the host — the resolved hostname, an `env` field,
+a banner string — and the value seen at init, e.g. `hostname: dev.box.lan`>`
+
 Leave this blank only if the project genuinely has no way to tell. `run` needs it to enforce a
 plan's `**Under test:**` line; with no probe it must ask the operator and stop, never infer from
-the local checkout — a local branch says nothing about what a remote stack runs.
+the local checkout — a local branch says nothing about what a remote stack runs. `Answers as:` is
+what makes this block's `kind: local` an observation rather than a label: a non-`localhost` dev
+surface is normal here, so the name proves nothing about which host is behind it, and it is the
+reset below that pays for getting that wrong.
 
 ### Reset — how to get a fresh test subject
 
@@ -161,8 +194,12 @@ Production: no
 ```bash
 <the deployed-SHA endpoint or banner of THIS env — e.g. `curl -s https://api.staging.<domain>/version`>
 ```
+Answers as: `<the identity in that response, and the value seen at init — e.g. `"env": "staging"`>`
+
 Per environment, never shared with `local`: staging lags `main` between deploys, and a plan's
-`**Under test:**` line is only enforceable against what *this* env actually serves.
+`**Under test:**` line is only enforceable against what *this* env actually serves. And the commit
+alone cannot tell staging from production — right after a deploy they are the same commit — so it is
+`Answers as:` that carries the `Production: no` above from a typed answer to a checked one.
 
 ### Reset — NONE
 Shared, persistent environment — **never reset it** and never run a destructive command against it.
