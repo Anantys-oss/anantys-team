@@ -103,6 +103,31 @@ lands, it lands here, and each role keeps only its own narrowing.
   the partial report it wrote, the `agents/` pair inherits it unchanged — they already
   run with no operator in the loop, so for them every gate is this gate.
 
+- **A completeness verdict declares what it read.** Three roles end on a coverage
+  claim: `review` ("does the diff actually do what the PR claims?"), `code-auditor`
+  ("Implicit perimeter: 3 of 7 expected items handled"), `spec-tester` (its coverage
+  map). Each reaches its subject through a command whose output the harness truncates
+  with no marker the reader can act on, so the verdict is computed over a prefix and
+  reported over the whole. Two of the three **already measure the size and throw it
+  away** — `git diff --stat <base>...HEAD` runs one line above `git diff
+  <base>...HEAD` in both `review`'s Step C and `code-auditor`'s Inputs. The
+  denominator is in the transcript; nothing compares the read to it.
+
+  Exactly one role declares the shortfall, and it is the one whose subject is
+  smallest: `spec-tester`'s **Not covered (and why)**. The field exists, in one of
+  three files — the generalisation nobody made, which is the same shape as every
+  other entry in this list.
+
+  Size is also the one trigger that escalates: `review` Step D dispatches
+  `code-auditor` *"for a large or sensitive change"*. The remedy for a read that did
+  not fit is a fresh context with the same unstated bound, returning a narrower
+  artifact. Neither end of that handoff says how much it saw.
+
+  When this rule is promoted here, each role keeps only its own denominator:
+  `code-auditor` the `--stat` line (landed on its branch as a **Read coverage**
+  line), `review` the same two commands one step earlier, `spec-tester` the
+  enumerated spec points it already lists.
+
 ---
 
 ## Landing note
