@@ -109,7 +109,7 @@ Production: no
 |---|---|---|
 | S1 | App reachable | `curl -sk -o /dev/null -w '%{http_code}' <app-url>` → 200/307, not 000 |
 | S2 | Signed in | the operator's browser is signed in; the agent reuses that session and never signs in |
-| S3 | The feature has real DATA | the behaviour under test exists on a real record — a shared env has no fixtures, so a campaign against one with no such data can only report BLOCKED |
+| S3 | The feature has real DATA **the campaign did not create** | the behaviour under test exists on a real record, and that record appears in no prior run's "Created in the environment this run" table — a shared env has no fixtures and is never reset, so run 1 creating a record additively is what makes run 2's S3 pass. A campaign that finds only its own leftovers has verified nothing. No qualifying record: BLOCKED |
 
 ### Build identity — how this environment reports the code it is serving
 ```bash

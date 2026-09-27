@@ -116,6 +116,23 @@ Environment: `<name>` (`local` | `shared`). Subject: <account/fixture id>. Build
 | A4 | ❌ | <what was seen> vs <what was expected> — <url> |
 | C2 | ⛔ BLOCKED | <why unreachable> |
 
+### Created in the environment this run
+
+| What | How to find it | How to remove it |
+|----|----|----|
+| <record / account / order / upload> | <id, or the query that finds it> | <command, or "operator only"> |
+
+This is the same list `run` echoed to get the operator's go before writing anything (SKILL.md,
+`run` step 1). The consent is spent in one prompt; the data is not. On a `local` env "the reset
+covers it" is a complete answer. On a **`shared`** env the environment is never reset, so this
+table is the only record that the campaign's footprint exists at all — every run's rows persist,
+and nobody can remove what no artifact names.
+
+An assertion whose precondition is satisfied by a row in **any** prior run's table is standing on
+state the campaign created, not on the product's own data: record it `BLOCKED`, never PASS. "A
+defect you caused is not a defect" cuts both ways, and across runs this table is the only way to
+tell the difference.
+
 ### Defects opened this run
 - **<id>** — <one line>
 
