@@ -230,6 +230,66 @@ lands, it lands here, and each role keeps only its own narrowing.
     derived from a prefix of the log is a subset that re-runs nothing, which is the same
     outcome as a clean retest and indistinguishable from it.
 
+- **An instrument that failed still returns a value.** C1 forbids reporting a result you
+  did not see. It cannot help here, because from inside the role these two are the same
+  event: the tool was called, it returned, the role read what came back. A browser that
+  served a consent wall, a `gh` that is not installed, a page that never finished loading
+  — each produces an ordinary-looking answer, and the answer is *negative*. Measured
+  across `main` and all 30 open heads: "degraded", "partial observation", "best effort"
+  appear **zero** times; "if the tool/command/browser fails" **zero**; timeout, hangs,
+  unresponsive **zero**. The vocabulary for *the instrument, not the subject* does not
+  exist in this plugin.
+
+  Three shapes, in rising severity, and the severity runs opposite to where the care is:
+
+  | role | the instrument fails | what the role reads |
+  |---|---|---|
+  | `review` | `gh` unavailable | **substitution** — Discovery falls back to `git branch -r`, a *wider, staler population* than open PRs; Pre-flight step 2 falls through four levels to "the first of `main`, `master`, `develop`, `staging` that exists", a guess that sets the merge base every later step diffs against; Step B is *"fallback: skip if no `gh`"*, so Step E recommends Merge or Close for a PR whose `state` and `isDraft` were never read |
+  | `ops` | the SERP page did not render | **coercion** — Phase 4 says *"Record: the site's position (or absence)"*. `find` returns no match, absence is recorded, and it is a measurement from there on: report §5 *Uncovered Queries*, §7 *SERP Positioning vs Competitors*, §8 roadmap, and §1's delta against the previous audit. A fetch that failed becomes a ranking loss becomes prioritized work |
+  | `debug` | the console is empty because nothing loaded | **inversion** — step 4's re-proof is *"the console error is gone, the network call returns 200"*. The success criterion **is** an absence, and an absence is exactly what a failed observation manufactures. The role whose identity is *"observed behavior is the only proof"* is the one that declares a fix when the instrument goes dark |
+
+  `review`'s three are the mildest only because a human reads the verdict; nothing in the
+  output says which level supplied the base or which population the candidates came from,
+  so the human cannot discount what they were not told. `ops`'s and `debug`'s have no
+  reader in the loop at all — the value is consumed by the next phase of the same run.
+
+  Both halves of the remedy are already in this repo, in the two roles that have met the
+  failure and written it down:
+
+  - **A liveness check before the first measurement.** `anantys.design` pre-flight step 3:
+    *"Confirm the dev URL actually serves your local file edits … If edits don't show up,
+    surface it — do not keep editing into the void."* That is an instrument check, not a
+    subject check: it asks whether the thing answering is answering the question asked,
+    and it runs before any observation is trusted. `debug` drives the same browser against
+    the same kind of URL and has no equivalent.
+  - **A verdict value meaning *could not observe*.** `anantys.qa`'s `BLOCKED`, and its
+    rule that *"a step a browser cannot reach"* is `BLOCKED`, **not a FAIL**. `BLOCKED`
+    appears 17 times in `anantys.qa/SKILL.md` and **zero** times in the other five role
+    files. `review`'s four verdicts are Merge / Close / Skip / Audit — `Audit` is chosen
+    on the *content* of the diff, not on how much of it the role managed to see. `ops`
+    reports a number or a wait; there is no third thing to write in the cell.
+
+  Note that `ops`'s *"if not logged in, tell the user and wait"* (Phases 2 and 3) is not
+  this rule — it is the *gate that waits*, two entries above, and it covers the one
+  instrument failure that announces itself. Phase 4 needs no login, so it has no gate, and
+  it is the phase whose failure is silent. Handling the detectable case is what makes the
+  undetectable one read as covered.
+
+  When this rule is promoted here, each role keeps only its own answer to "how do I know
+  the instrument answered?":
+
+  - `debug` — a liveness assertion in the re-proof, borrowed from `design`: the page
+    reloaded and served the edit. A clean console is a fix only once something positive
+    confirms the console belongs to the run under test.
+  - `ops` — Phase 4 distinguishes *not in the results* from *no results were read*. The
+    screenshot it already takes is the check: no organic result block, no measurement.
+    An unread query is `BLOCKED`, never a zero, and never a delta.
+  - `review` — name the source in the output, at the point of the claim: which of the four
+    levels supplied the base, and whether the candidate list came from `gh` or from
+    `git branch -r`. A fallback that is declared is a discount the human can apply; a
+    fallback that is silent changes what the verdict means without changing how it reads.
+  - `qa`, `design` — unchanged. They are where this rule is being read from.
+
 ---
 
 ## Landing note
