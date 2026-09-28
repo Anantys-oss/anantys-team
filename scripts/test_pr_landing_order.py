@@ -406,3 +406,101 @@ class AGitAwareGateCanAskGit(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Convergence(unittest.TestCase):
+    """What a round risks on `main`, which is a property of paths, not of PRs."""
+
+    tracked = {"live.md", "also-live.md"}
+
+    def test_a_pr_of_only_new_paths_is_additive(self):
+        additive, converged = p.convergence(self.tracked, [(1, {"new.md"})])
+        self.assertEqual((additive, converged), ([1], {}))
+
+    def test_one_existing_path_is_enough_to_stop_being_additive(self):
+        additive, converged = p.convergence(
+            self.tracked, [(1, {"new.md", "live.md"})])
+        self.assertEqual(additive, [])
+        self.assertEqual(converged, {"live.md": [1]})
+
+    def test_a_new_path_of_an_editing_pr_is_not_listed(self):
+        _, converged = p.convergence(self.tracked, [(1, {"new.md", "live.md"})])
+        self.assertNotIn("new.md", converged)
+
+    def test_a_shared_path_names_every_pr_that_reaches_it(self):
+        _, converged = p.convergence(
+            self.tracked,
+            [(3, {"live.md"}), (1, {"live.md"}), (2, {"also-live.md"})])
+        self.assertEqual(converged["live.md"], [3, 1])
+        self.assertEqual(converged["also-live.md"], [2])
+
+    def test_an_empty_main_makes_the_whole_round_additive(self):
+        additive, converged = p.convergence(
+            set(), [(1, {"live.md"}), (2, {"new.md"})])
+        self.assertEqual((additive, converged), ([1, 2], {}))
+
+
+class Folds(unittest.TestCase):
+    """A real round: two PRs converge on one live file, a third only adds."""
+
+    def git(self, *args):
+        return subprocess.run(("git",) + args, check=True, capture_output=True,
+                              text=True).stdout
+
+    def branch(self, name, path, text):
+        self.git("checkout", "-q", "main")
+        self.git("checkout", "-qb", name)
+        Path(path).write_text(text)
+        self.git("add", "-A")
+        self.git("commit", "-qm", name)
+        self.git("update-ref", f"refs/remotes/origin/{name}", "HEAD")
+        self.git("checkout", "-q", "main")
+
+    def setUp(self):
+        self.dir = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.dir)
+        self.addCleanup(os.chdir, os.getcwd())
+        os.chdir(self.dir)
+        self.git("init", "-q", "-b", "main")
+        self.git("config", "user.email", "t@example.com")
+        self.git("config", "user.name", "t")
+        Path("role.md").write_text("# Role\n\ntop\n\nbottom\n")
+        self.git("add", "role.md")
+        self.git("commit", "-qm", "base")
+        self.base = self.git("rev-parse", "main").strip()
+        self.branch("one", "role.md", "# Role\n\ntop\nfirst rule\n\nbottom\n")
+        self.branch("two", "role.md", "# Role\n\ntop\n\nbottom\nsecond rule\n")
+        self.branch("three", "new.md", "# New\n")
+        self.landing = [(1, "one"), (2, "two"), (3, "three")]
+        self.files = {1: {"role.md"}, 2: {"role.md"}, 3: {"new.md"}}
+
+    def report(self):
+        return "\n".join(p.folds(self.base, self.landing, self.files))
+
+    def test_the_additive_pr_is_named_and_its_path_is_not_a_risk(self):
+        out = self.report()
+        self.assertIn("#3", out.split("\n")[0])
+        self.assertNotIn("new.md", out)
+
+    def test_the_shared_file_names_both_prs_that_edit_it(self):
+        self.assertIn("role.md  +2 -0  <- #1, #2", self.report())
+
+    def test_the_named_commit_still_resolves_after_the_run(self):
+        # The point of printing a command instead of 5,000 lines of diff: the
+        # union has to survive the process that built it. A fold nobody can
+        # read afterwards is the same as no report.
+        sha = self.report().rsplit("git diff ", 1)[1].split()[1]
+        fold = self.git("diff", self.base, sha, "--", "role.md")
+        self.assertIn("+first rule", fold)
+        self.assertIn("+second rule", fold)
+
+    def test_a_round_that_does_not_assemble_reports_no_folds(self):
+        # Same line, both sides: merge-tree refuses, and a refused round has no
+        # tree to read. Reporting the smaller union as the round would name a
+        # fold the operator is not landing.
+        self.branch("clash", "role.md", "# Role\n\nrewritten\n\nbottom\n")
+        self.landing.append((4, "clash"))
+        self.files[4] = {"role.md"}
+        report = self.report()
+        self.assertIn("nothing is verifiable", report)
+        self.assertNotIn("role.md  +", report)

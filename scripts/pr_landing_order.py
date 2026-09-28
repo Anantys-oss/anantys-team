@@ -59,7 +59,21 @@ no way to tell that from a tree that is simply broken. Each remaining PR is
 folded into the round (minus whichever members it conflicts with, since those are
 exactly the resolutions a human would make) and the failing checkers re-run.
 
-Usage: python3 scripts/pr_landing_order.py [--limit N] [--verify]
+Green is not reviewed, and `--contracts` reports the gap between them. Everything
+above is a claim about the tree: it combines, it passes. What the operator has to
+decide is a claim about the *content* — whether what the round makes `main` say is
+coherent — and the report's unit for that decision is wrong. It is the PR; the
+unit of risk is the file. A PR whose every path is new to `main` cannot regress
+behaviour that exists, so it is read once, in any order, against nothing. A path
+that several of the round's PRs edit is the opposite case: every one of those
+hunks was argued for against the `main` it was cut from, and none of those
+arguments is about the fold the round actually lands. So `--contracts` separates
+the two and lists the shared paths most-converged first, with the PRs that reach
+each one. It renders no judgement — the fold is prose, and a script has no
+opinion about prose. It puts the whole fold on one screen, which is the only form
+in which a human has one.
+
+Usage: python3 scripts/pr_landing_order.py [--limit N] [--verify] [--contracts]
 Exit 0 always — this is an operator report, not a gate.
 """
 
@@ -382,6 +396,60 @@ def unverifiable(round_number):
             f"`main`, re-run: round {round_number} becomes round 1.")
 
 
+def convergence(tracked, members):
+    """Split a round by what it risks: (additive PRs, {path: [PRs that edit it]}).
+
+    `tracked` is what `main` already ships. A member whose every path is absent
+    from it adds only new files, so nothing on `main` changes shape and no
+    ordering among such members exists to get wrong. Everything else edits a
+    contract that is already live, and a path reached by more than one member is
+    where the round says something no PR does.
+    """
+    additive, converged = [], {}
+    for number, paths in members:
+        existing = sorted(paths & tracked)
+        if not existing:
+            additive.append(number)
+        for path in existing:
+            converged.setdefault(path, []).append(number)
+    return additive, converged
+
+
+def folds(base, landing, files):
+    """What the next round changes, ordered by file rather than by PR.
+
+    The union is built the same way `verify` builds it and for the same reason:
+    the fold is the artifact under review, and it exists in no branch. The commit
+    is left in the object store so the per-path diff it names can be run
+    afterwards — printing 5,000 lines of diff here would reproduce the problem
+    this is meant to solve.
+    """
+    commit, joined, refused = union_tree(base, landing)
+    if refused:
+        return [unverifiable(1)]
+    tracked = set(run("git", "ls-tree", "-r", "-z", "--name-only",
+                      base).split("\0")) - {""}
+    additive, converged = convergence(tracked, [(n, files[n]) for n in joined])
+    lines = []
+    if additive:
+        lines += [f"  {len(additive)} of {len(joined)} add new paths only — "
+                  + ", ".join(f"#{n}" for n in additive),
+                  "    Nothing on `main` changes; read each once, in any order."]
+    if not converged:
+        return lines + ["  the round edits nothing `main` already ships"]
+    lines.append(f"\n  {len(converged)} paths `main` already ships, "
+                 f"most-converged first:")
+    for path, numbers in sorted(converged.items(),
+                                key=lambda kv: (-len(kv[1]), kv[0])):
+        stat = run("git", "diff", "--numstat", base, commit, "--", path).split()
+        delta = f"+{stat[0]} -{stat[1]}" if stat else "+0 -0"
+        lines.append(f"    {len(numbers)}  {path}  {delta}  <- "
+                     + ", ".join(f"#{n}" for n in numbers))
+    lines.append(f"\n  Read a fold: git diff {base[:12]} {commit[:12]} "
+                 f"-- <path>")
+    return lines
+
+
 def blockers(candidate, landed, edges):
     """Members of `landed` that `candidate` cannot merge alongside."""
     return sorted(n for n in landed if frozenset((candidate, n)) in edges)
@@ -436,6 +504,8 @@ def main():
     ap.add_argument("--limit", type=int, default=50)
     ap.add_argument("--verify", action="store_true",
                     help="build the merged tree and run its checkers in it")
+    ap.add_argument("--contracts", action="store_true",
+                    help="what the next round changes, by file rather than PR")
     args = ap.parse_args()
 
     prs = open_prs(args.limit)
@@ -444,6 +514,7 @@ def main():
         return 0
     titles = {n: t for n, _, t, _ in prs}
     refs = {n: ref for n, ref, _, _ in prs}
+    files = {n: paths for n, _, _, paths in prs}
     contained = stacked(prs)
     if contained:
         prs = [pr for pr in prs if pr[0] not in contained]
@@ -475,6 +546,12 @@ def main():
                           f"{', '.join(destinations)}, not there. "
                           f"Re-authored by hand; a rebase cannot move a hunk "
                           f"across files.")
+
+    if args.contracts and order:
+        print("\nWhat the next round changes, read by file rather than by PR "
+              "— mergeable is not coherent:")
+        for line in folds(base, [(n, refs[n]) for n in order[0]], files):
+            print(line)
 
     if args.verify:
         print("\nVerifying the next landing round — a wave is not a tree:")
