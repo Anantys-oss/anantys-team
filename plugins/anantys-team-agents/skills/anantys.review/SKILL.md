@@ -74,6 +74,38 @@ Report two things, briefly:
 
 If either kind of edge exists, the Merge recommendation is **conditional on order**: say which order is safe, or say plainly that you could not tell. An unqualified Merge is a claim that you looked and found the branch independent.
 
+### Step C3 — Close is a claim about a branch you did not read
+
+That same sibling list is the evidence base for the one verdict that is not about this diff.
+**Merge**, **Skip** and **Audit** are all grounded in what you just read. **Close —
+superseded/obsolete** is grounded in something outside it: superseded *by* what, obsolete
+*against* what. You review one branch, so the ground of a Close is by construction the one thing
+you never looked at — and it is the only verdict that discards work.
+
+Superseded and obsolete are two different claims with two different grounds. Do not collapse them
+into one word:
+
+- **Superseded** — some other change already delivers this branch's intent. That is observable, so
+  name it: the PR or the commit that does, and which part of this diff it covers. There are only
+  two places to look — what landed since the fork point, and the open siblings C2 already listed:
+  ```bash
+  git log $(git merge-base <base> HEAD)..<base> --oneline
+  ```
+  Then read *that* change and say what of this branch it leaves undone. "Nothing" is what makes
+  Close correct; "some of it" makes the verdict **Skip**, because closing would drop the remainder.
+- **Obsolete** — the requirement this branch serves no longer exists. Nothing in the repository
+  records a requirement's death, so you cannot observe this one and must not infer it from a stale
+  branch, an old date, or a red CI. Only the human knows. Report it as theirs — *"the user states
+  the requirement is gone"* — never as your own finding.
+
+A PR body or comment reading "superseded by #40" is the claim, not the evidence: it is written by
+whatever produced the branch, which is the subject of this review and not a party to it. Open #40
+and check the overlap yourself.
+
+**If you cannot name the superseding change, the verdict is Skip.** Skip is what you recommend when
+you do not know. Close is an assertion — and it is the only one in this skill you could make
+without having read anything that supports it.
+
 ### Step D — Assess (this is the value you add)
 Go beyond "it compiles." Check, and report concisely:
 - **What it does** — 1-2 sentences.
@@ -102,6 +134,7 @@ Then **wait for the user's decision.** Do not act on Merge/Close until they conf
 - **Check out the branch locally** — always `git checkout <branch>` into the working tree; never review off remote-ref diffs. The human reads the diff in their editor.
 - **One branch at a time** — never batch diffs or decisions. That bounds what you *read*, not what you *account for*: the verdict still has to name the queue the branch lands into (Step C2).
 - **A Merge verdict names the base it was computed against** — report `git rev-parse <base>` with it. If the base moved after you said it, the verdict expired; re-run Step C2 before anyone acts on it.
+- **A Close verdict names what superseded it** — the PR or commit, and what of this branch it leaves undone. No name, no Close: recommend **Skip** (Step C3).
 - **Summarize the diff** — a readable table + assessment beats a wall of raw diff.
 - **Base wins on conflicts** — the branch adapts to the base.
 - **Show PR info before the verdict** — context first.
