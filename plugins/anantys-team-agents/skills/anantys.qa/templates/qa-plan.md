@@ -133,6 +133,14 @@ state the campaign created, not on the product's own data: record it `BLOCKED`, 
 defect you caused is not a defect" cuts both ways, and across runs this table is the only way to
 tell the difference.
 
+**A prior run with no such table wrote nothing that can be ruled out.** It predates this section;
+it is not a run that created nothing. So on a `shared` env, every record is trivially absent from
+every prior table, and a check reading that absence as clearance — staging preflight S3, and this
+rule — passes on exactly the leftovers it exists to reject. Until each prior run in `qa-runs.md`
+either carries this table or is struck as unaccounted, treat the campaign's footprint as unknown:
+S3 is `BLOCKED`, and so is any assertion whose precondition needs data the campaign did not create.
+An unaccounted footprint is the one thing a later run cannot reconstruct by looking.
+
 ### Defects opened this run
 - **<id>** — <one line>
 
