@@ -27,6 +27,12 @@ statuses would assert that the new rules scored results they never saw. `status`
 mismatch in the ship sentence; nothing invalidates or blocks on it, since the version also moves for
 changes that touch no scoring rule.
 
+The value is the `version` field of the running plugin's `.claude-plugin/plugin.json` — **read it,
+never recall it**, since a version you remember is the one you were trained on, not the one scoring
+this campaign. If it cannot be read, write `unknown`: never omit the line, never guess a number.
+`unknown` **never matches** any version, so a reader declares a mismatch exactly as it would for a
+real one. A stamp that goes quiet when it cannot be produced restores the gap it was added to close.
+
 **How to use.** Preflight first — stop if it fails. Reset (a `local` env only — never a `shared`
 one). Then walk §2 in order. Each scenario states its **precondition**, its **steps**, and what to
 **assert**. Record PASS/FAIL/BLOCKED **per assertion and per environment**, never one verdict per
@@ -117,8 +123,8 @@ recognises a re-occurrence instead of re-diagnosing it from scratch.
 
 Environment: `<name>` (`local` | `shared`). Subject: <account/fixture id>. Build observed:
 <branch/commit the env was serving, from its build-identity check — omit only when the plan has no
-**Under test:** line>. Recorded under: anantys-team-agents v<running version>. Path walked:
-<one line>.
+**Under test:** line>. Recorded under: anantys-team-agents v<running version, read from
+`.claude-plugin/plugin.json`; `unknown` if unreadable>. Path walked: <one line>.
 
 | ID | Result | Evidence |
 |----|--------|----------|

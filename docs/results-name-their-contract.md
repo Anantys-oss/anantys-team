@@ -47,6 +47,38 @@ Three properties make it cheap:
 3. **The run log needs no preservation rule at all.** A run's results are scored as they are written,
    so the header's version is exact by construction.
 
+## Where the value comes from, and what it is when it cannot be got
+
+A provenance field is only as good as its source, and a role has no privileged knowledge of its own
+version. Nothing in this plugin — not one skill, not one agent — tells a role where to find it.
+Left unsaid, `v<running plugin version>` resolves the way every unsourced placeholder resolves: from
+recall. A recalled version is the one the model was trained on, not the one scoring this campaign,
+and it is wrong in the one direction that defeats the stamp — it is *plausible*, so it matches.
+
+So the source is named: the `version` field of the running plugin's `.claude-plugin/plugin.json`.
+Read, never recalled. That file is the same scalar `check_version_bump.py` gates, which is what makes
+the stamp worth trusting at all — the value moves because a checker forces it to, not because a role
+remembered to.
+
+The second half is the absence. A read can fail — the plugin installed by a path this role cannot
+reach, a truncated manifest, a sandbox that denies it. The failure must not be free to ignore:
+
+| what a run writes | how a reader must take it |
+|---|---|
+| a version read from the manifest | compare against the running version |
+| `unknown` | **a mismatch** — declare it exactly as a real one |
+| no `Recorded under:` line at all | a plan written before this rule; same declaration |
+
+`unknown` never matches any version, including another `unknown`. This is the asymmetry that makes
+the mechanism honest: the states are *these results were scored under a named contract* and *nobody
+knows what scored these results*, and the second is the pre-stamp state this page exists to end.
+Omitting the line on a failed read, or filling it with a guess, collapses the second into the first —
+a stamp whose failure mode is silence restores the gap it was added to close, while looking like it
+closed it.
+
+This is the same shape as `BLOCKED` in the run itself, and it resolves the same way. A case the run
+could not reach is never `PASS`; a version the run could not read is never a match.
+
 ## What this deliberately does not do
 
 **It does not invalidate on mismatch.** The plugin version bumps on every content change, including
@@ -60,6 +92,9 @@ be precise enough to invalidate on, and hand-maintained with no gate — a fourt
 checker owns. Revisit if a change ever needs to invalidate rather than declare: the stamp is the
 prerequisite for naming a threshold, and nothing can name one until results carry a version at all.
 
-**It does not stamp the other roles' artifacts.** `anantys.qa` is the only role whose durable output
-is a *scored verdict* read back as truth by a later invocation. Extend it to any role that acquires
-one.
+**It does not stamp the other roles' artifacts.** `anantys.qa` is the only role on `main` whose
+durable output is a *scored verdict* read back as truth by a later invocation. It is not the only one
+in the queue: the open work that gives `anantys.ops` a ruling outliving its run, and a later audit
+that scores the recommendation an earlier one made, gives `ops` an artifact of exactly this kind.
+When that lands, `.anantys/ops/current.md` needs the header and this section's absence rule with it —
+the mechanism is the role-independent half, and it transfers unchanged.
