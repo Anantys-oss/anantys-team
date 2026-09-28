@@ -47,6 +47,34 @@ Rules already known to bind three or more roles, not yet stated here. Each is
 currently written — or being written — into every role file separately. When one
 lands, it lands here, and each role keeps only its own narrowing.
 
+**A candidate does not bind.** Every role file opens with *"the team contract binds
+you — read it before acting"*, and what follows that instruction is eleven candidates
+against one promoted rule — 308 of this file's 392 lines. Their bodies are findings
+but read as instructions (*"make the work durable, then ask"*; *"an unread query is
+`BLOCKED`, never a zero, and never a delta"*), and several state the opposite of the
+role file they describe, because the gap **is** the finding: `ops` Phase 4 records
+an absence a candidate calls unmeasurable, `review` Step E waits on a mutated tree a
+candidate says to unwind first. Each role file also calls itself a set of
+*"narrowings"* of this one, which reads as a promise that no such disagreement
+exists.
+
+So, explicitly: **where a candidate and a role file disagree, the role file
+governs.** A candidate is evidence for the operator who decides the promotion, never
+a step for the role that reads it. A role blocked by one has found the argument for
+promoting it and says so, rather than picking a side on its own authority.
+
+**Promotion is the only thing that removes the disagreement, and it is not one edit
+to this file.** The threshold above is an entry trigger with no matching exit, which
+is how eleven accumulated; and every entry below ends *"each role keeps only its own
+narrowing"*, so landing one rewrites the statement in each role it binds. The eleven
+together bind all seven. Deferring does not avoid that change — it batches it, and
+each pass that adds a candidate instead of promoting one makes the batch wider. The
+*"costs nothing"* above is true of parking a candidate here; it was never a claim
+about the rule.
+
+A candidate is therefore promotable when its narrowings are drafted, not when its
+argument is finished. Eleven finished arguments are what this section already is.
+
 - **The authority boundary.** A role's default is read-only on what it does not own;
   irreversible acts (push, merge, close, delete, reset) need the operator to ask.
   Present in all seven role files at four different strengths, from "unless the user
