@@ -247,14 +247,18 @@ def waves(numbers, edges):
     return out
 
 
-def union_tree(base, refs):
+def union_tree(base, refs, start=None):
     """Fold `refs` onto `base` in memory. Returns (commit, joined, refused).
 
     Refused refs are the ones that conflict with the accumulation so far — they
     are reported, not forced, because a resolved conflict is a human's call and
     guessing one would verify a tree nobody is going to land.
+
+    `start` folds onto an accumulation that already exists while still measuring
+    every ref against `base` — the merge base a branch cut from `main` actually
+    has. Used to add one member to a tree built from other members.
     """
-    acc, joined, refused = base, [], []
+    acc, joined, refused = start or base, [], []
     for number, ref in refs:
         merged = subprocess.run(
             ["git", "merge-tree", "--write-tree", "--merge-base", base,
@@ -394,6 +398,78 @@ def unverifiable(round_number):
             f"are in a later one, and their rebased content does not exist "
             f"yet. Land round {round_number - 1}, rebase them onto the new "
             f"`main`, re-run: round {round_number} becomes round 1.")
+
+
+def introduced(base, commit):
+    """Gate names in `commit` that `base` does not have.
+
+    A gate already on `main` has judged every open branch — CI ran it on each
+    push. One arriving in this round has judged nothing but the branch that
+    wrote it, and `--verify` does not close that gap: it asks each gate once,
+    about the union. For a gate whose subject is a *tree* that is the right
+    question. For one whose subject is a *diff* it is a question nobody will
+    ever be asked — `check_version_bump.py` reads the union as a single change,
+    so one member's version bump answers for the round's entire content.
+    """
+    def gates(ref):
+        listed = run("git", "ls-tree", "-r", "--name-only", ref, "scripts/")
+        return {name for name in (Path(p).name for p in listed.splitlines())
+                if name.startswith("check_") and name.endswith(".py")}
+
+    return sorted(gates(commit) - gates(base))
+
+
+def per_member(base, refs, gates):
+    """Each member of the round judged by the round's new gates, one at a time.
+
+    The subject is not the member's own head: a gate is only present once its
+    own PR lands, and these gates read the tree they sit in. The honest tree is
+    the round's tooling plus this one member — what `refs/pull/N/merge` becomes
+    the moment the tooling is on `main`, and the verdict CI will actually print.
+
+    Members that carry tooling are folded into that base and reported as the one
+    group they are; judging them individually would need a base that already
+    holds the gate a member is bringing. The rest are judged against it singly.
+
+    A wave is advertised as landing "in any order, no rebase between them".
+    That holds for conflicts, which is all `waves` measured. It does not survive
+    a gate whose remedy is one shared location: the second member to land finds
+    the first has already spent it.
+    """
+    carriers, judged = [], []
+    for number, ref in refs:
+        changed = run("git", "diff", "--name-only", base,
+                      f"origin/{ref}").splitlines()
+        bucket = carriers if any(
+            f.startswith(("scripts/", ".github/workflows/"))
+            for f in changed) else judged
+        bucket.append((number, ref))
+
+    landing, folded, refused = union_tree(base, carriers)
+    if refused:
+        return ["  the round's tooling does not assemble — "
+                + ", ".join(f"#{n}" for n in refused)
+                + " conflict with it; no member can be judged as CI will"]
+
+    lines = [f"  gates this round introduces: {', '.join(gates)}"]
+    subjects = [(", ".join(f"#{n}" for n in folded) + " (the tooling itself)",
+                 landing)] if folded else []
+    for number, ref in judged:
+        commit, _, denied = union_tree(base, [(number, ref)], start=landing)
+        subjects.append((f"#{number}", None if denied else commit))
+
+    for label, commit in subjects:
+        if commit is None:
+            lines.append(f"  {label:<26}  conflicts with the round's tooling "
+                         f"— not judgeable")
+            continue
+        results = run_checkers(commit, only=gates)
+        red = sorted(name for name, (code, _) in results.items() if code)
+        lines.append(f"  {label:<26}  "
+                     + ("RED  " + ", ".join(red) if red else "green"))
+        for name in red:
+            lines += [f"      {line}" for line in results[name][1]]
+    return lines
 
 
 def convergence(tracked, members):
@@ -569,6 +645,12 @@ def main():
             if refused:
                 print(unverifiable(i))
                 break
+            gates = introduced(base, union_tree(base, cumulative)[0])
+            if gates:
+                print("\n  A gate landing with the content it judges has judged "
+                      "none of it — the union answers it once, CI asks per PR:")
+                for line in per_member(base, cumulative, gates):
+                    print(line)
     return 0
 
 

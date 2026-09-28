@@ -404,6 +404,104 @@ class AGitAwareGateCanAskGit(unittest.TestCase):
         self.assertEqual(len(listed.stdout.strip().splitlines()), 1)
 
 
+class AGateLandsWithItsSubject(unittest.TestCase):
+    """A round that brings its own gate, and one member's bump for everyone.
+
+    `check_stamp.py` is `check_version_bump.py` in miniature: a change to the
+    content owes a bump to one shared file. Three members — the gate, a member
+    that bumps, a member that does not. The union holds both a content change
+    and a bump, so the gate passes there; neither member pushes the union.
+    """
+
+    def git(self, *args):
+        return subprocess.run(("git",) + args, check=True, capture_output=True,
+                              text=True).stdout
+
+    def branch(self, name, files):
+        self.git("checkout", "-qb", name, "main")
+        for path, text in files.items():
+            Path(path).parent.mkdir(parents=True, exist_ok=True)
+            Path(path).write_text(text)
+        self.git("add", "-A")
+        self.git("commit", "-qm", name)
+        self.git("update-ref", f"refs/remotes/origin/{name}", "HEAD")
+        self.git("checkout", "-q", "main")
+
+    GATE = (
+        "import subprocess, sys\n"
+        "def g(*a):\n"
+        "    return subprocess.run(['git', *a], capture_output=True,\n"
+        "                          text=True).stdout.strip()\n"
+        "base = g('merge-base', 'origin/main', 'HEAD')\n"
+        "changed = g('diff', '--name-only', base, 'HEAD').split()\n"
+        "if 'role.md' in changed and 'stamp.txt' not in changed:\n"
+        "    sys.exit('error: role.md changed without a stamp bump')\n")
+
+    def setUp(self):
+        self.dir = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.dir)
+        self.addCleanup(os.chdir, os.getcwd())
+        os.chdir(self.dir)
+        self.git("init", "-q", "-b", "main")
+        self.git("config", "user.email", "t@example.com")
+        self.git("config", "user.name", "t")
+        Path("role.md").write_text("# Role\n\ntop\n\nbottom\n")
+        Path("stamp.txt").write_text("0\n")
+        self.git("add", "-A")
+        self.git("commit", "-qm", "base")
+        self.git("update-ref", "refs/remotes/origin/main", "main")
+        self.base = self.git("rev-parse", "main").strip()
+        self.branch("gate", {"scripts/check_stamp.py": self.GATE})
+        self.branch("bump", {"role.md": "# Role\n\ntop\nbumped\n\nbottom\n",
+                             "stamp.txt": "1\n"})
+        self.branch("plain", {"role.md": "# Role\n\ntop\n\nbottom\nplain\n"})
+        self.landing = [(1, "gate"), (2, "bump"), (3, "plain")]
+
+    def gates(self):
+        union = p.union_tree(self.base, self.landing)[0]
+        return p.introduced(self.base, union)
+
+    def report(self):
+        return "\n".join(p.per_member(self.base, self.landing, self.gates()))
+
+    def test_the_gate_the_round_brings_is_the_one_reported_as_new(self):
+        self.assertEqual(self.gates(), ["check_stamp.py"])
+
+    def test_a_gate_already_on_main_is_not_new(self):
+        self.git("checkout", "-q", "main")
+        Path("scripts").mkdir(exist_ok=True)
+        Path("scripts/check_stamp.py").write_text(self.GATE)
+        self.git("add", "-A")
+        self.git("commit", "-qm", "gate on main")
+        self.git("update-ref", "refs/remotes/origin/main", "main")
+        self.assertEqual(p.introduced(self.git("rev-parse", "main").strip(),
+                                      self.git("rev-parse", "gate").strip()),
+                         [])
+
+    def test_the_union_is_green_on_the_gate_the_round_brings(self):
+        # The defect this report exists for: one member's bump answers for the
+        # round's whole content, so the union cannot see what CI will see.
+        union = p.union_tree(self.base, self.landing)[0]
+        self.assertEqual(p.run_checkers(union)["check_stamp.py"][0], 0)
+
+    def test_the_member_that_does_not_bump_is_red_beside_it(self):
+        out = self.report()
+        self.assertRegex(out, r"#3\s+RED\s+check_stamp\.py")
+        self.assertIn("without a stamp bump", out)
+
+    def test_the_member_that_bumps_is_green(self):
+        self.assertRegex(self.report(), r"#2\s+green")
+
+    def test_the_tooling_is_judged_as_the_one_group_it_is(self):
+        self.assertIn("#1 (the tooling itself)", self.report())
+
+    def test_a_member_that_conflicts_with_the_tooling_is_not_judged(self):
+        self.branch("clash", {"scripts/check_stamp.py": "import sys\n"})
+        self.landing.append((4, "clash"))
+        # #4 carries tooling too, so it refuses inside the tooling base itself.
+        self.assertIn("does not assemble", self.report())
+
+
 if __name__ == "__main__":
     unittest.main()
 
