@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Fixture tests for check_version_bump.py. Stdlib only: `python3 scripts/test_check_version_bump.py`.
 
-Each case builds a throwaway git repo shaped like this one, commits a base, then
-commits a branch change, and asserts the exit code. The checker reads git history,
-so a real repo is the only honest fixture.
+Each case builds a throwaway git repo shaped like this one, commits a base, tags
+it as the last release, then commits a branch change and asserts the exit code.
+The checker reads git history, so a real repo is the only honest fixture.
 """
 
 import json
@@ -29,6 +29,7 @@ class VersionBumpCase(unittest.TestCase):
         self.write_plugin("0.1.0")
         self.write(f"{PLUGIN}/skills/demo/SKILL.md", "---\nname: demo\n---\n\nbody\n")
         self.commit("base")
+        self.sh("git", "tag", "v0.1.0")  # the released baseline the version is measured against
 
     def sh(self, *args: str) -> subprocess.CompletedProcess:
         return subprocess.run(args, cwd=self.repo, capture_output=True, text=True, check=True)
@@ -117,6 +118,66 @@ class VersionBumpCase(unittest.TestCase):
         self.write("plugins/fresh/skills/fresh/SKILL.md", "---\nname: fresh\n---\n\nbody\n")
         self.commit("add a second plugin")
         self.assertEqual(self.check().returncode, 0)
+
+    # --- the baseline is the release, not the merge-base ---------------------
+
+    def test_siblings_may_name_the_same_next_version(self) -> None:
+        """Two independent PRs naming 0.2.0 both pass, even after the first lands.
+
+        The second is branched from the updated main — the state any rebase puts a
+        queued branch in. Measured against the merge-base it would fail: its base
+        already says 0.2.0, so it would owe a further, distinct bump, and the
+        sibling behind it a further one still. Measured against the release it is
+        simply the same unreleased version, which is what it is.
+        """
+        self.branch()
+        self.write(f"{PLUGIN}/skills/demo/SKILL.md", "---\nname: demo\n---\n\nby A\n")
+        self.write_plugin("0.2.0")
+        self.commit("A: edit skill + name 0.2.0")
+        self.assertEqual(self.check().returncode, 0)
+
+        self.sh("git", "checkout", "-q", "main")
+        self.sh("git", "merge", "-q", "--no-edit", "topic")  # A lands; no release cut yet
+
+        self.sh("git", "checkout", "-qb", "topic-b")
+        self.write(f"{PLUGIN}/skills/demo/reference/b.md", "by B\n")
+        self.write_plugin("0.2.0")
+        self.commit("B: edit skill + name the same 0.2.0")
+        self.assertEqual(self.check().returncode, 0)
+
+    def test_no_release_tag_falls_back_to_the_merge_base(self) -> None:
+        """A repo that has never published still gets the original gate, not a free pass."""
+        self.sh("git", "tag", "-d", "v0.1.0")
+        self.branch()
+        self.write(f"{PLUGIN}/skills/demo/SKILL.md", "---\nname: demo\n---\n\nrewritten\n")
+        self.commit("edit skill")
+        result = self.check()
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("no release tag", result.stdout)
+
+    def test_non_semver_tags_are_not_release_baselines(self) -> None:
+        self.sh("git", "tag", "-d", "v0.1.0")
+        self.sh("git", "tag", "nightly")
+        self.branch()
+        self.write(f"{PLUGIN}/skills/demo/SKILL.md", "---\nname: demo\n---\n\nrewritten\n")
+        self.commit("edit skill")
+        result = self.check()
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("no release tag", result.stdout)
+
+    def test_newest_release_tag_wins(self) -> None:
+        """v0.10.0 is newer than v0.9.0 — version order, not string order."""
+        for version in ("0.9.0", "0.10.0"):
+            self.write_plugin(version)
+            self.commit(f"ship {version}")
+            self.sh("git", "tag", f"v{version}")
+        self.branch()
+        self.write(f"{PLUGIN}/skills/demo/SKILL.md", "---\nname: demo\n---\n\nrewritten\n")
+        self.write_plugin("0.9.5")  # ahead of v0.9.0, behind v0.10.0
+        self.commit("edit skill + name a version the last release already passed")
+        result = self.check()
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("v0.10.0", result.stderr)
 
     # --- a bump must be a real one ------------------------------------------
 

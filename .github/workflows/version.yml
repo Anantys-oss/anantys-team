@@ -9,6 +9,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # the check compares against the merge-base
+          fetch-depth: 0 # full history for the merge-base, and tags for the released version
       - run: python3 scripts/test_check_version_bump.py
       - run: python3 scripts/check_version_bump.py
