@@ -356,6 +356,33 @@ def run_checkers(commit, only=None):
     return out
 
 
+def scope(base, tree, refs):
+    """Per ref, the files a rebase onto `tree` will have to re-author.
+
+    A refusal is where this report stops, and `unverifiable` turns that into one
+    instruction: land the round below, rebase, re-run. But the rebase is the
+    work, and the operator is handed PR numbers with no idea what any of them
+    costs — a version-scalar collision and a hand re-authored contract read
+    identically as "conflicts with an earlier round". `merge-tree` names the
+    conflicted paths on the fold that produced the refusal, and `union_tree`
+    drops them on the floor; this asks again and keeps them.
+
+    Measured against the *assembled* tree rather than the accumulation at the
+    moment each ref was refused. That is the tree the operator is going to land,
+    so it is the one their rebase will actually meet — and it makes the answer
+    independent of the order the fold happened to visit the refs in.
+    """
+    out = {}
+    for number, ref in refs:
+        done = subprocess.run(
+            ["git", "merge-tree", "--write-tree", "--merge-base", base,
+             tree, f"origin/{ref}"], capture_output=True, text=True)
+        out[number] = sorted(
+            {ln.split(" in ", 1)[1] for ln in done.stdout.splitlines()
+             if ln.startswith("CONFLICT") and " in " in ln})
+    return out
+
+
 def verify(base, refs):
     """Checkers inside the union of `refs`. Returns (lines, refused, failing).
 
@@ -367,10 +394,18 @@ def verify(base, refs):
     lines = [f"Union of {len(joined)} PRs: "
              + (", ".join(f"#{n}" for n in joined) or "(none)")]
     if refused:
-        return ["not assembled — "
-                + ", ".join(f"#{n}" for n in refused)
-                + " conflict with an earlier round, which is why they are in "
-                  "this one; their rebased content does not exist yet"], refused, []
+        held = set(refused)
+        lines = ["not assembled — "
+                 + ", ".join(f"#{n}" for n in refused)
+                 + " conflict with an earlier round, which is why they are in "
+                   "this one; their rebased content does not exist yet",
+                 "  what each one will owe once the round below lands:"]
+        for number, paths in scope(
+                base, commit, [r for r in refs if r[0] in held]).items():
+            lines.append(f"    #{number}  " + (", ".join(paths) or
+                                               "(clean against the assembled "
+                                               "tree — refused by fold order)"))
+        return lines, refused, []
 
     results = run_checkers(commit)
     if not results:

@@ -620,3 +620,47 @@ class Folds(unittest.TestCase):
         report = self.report()
         self.assertIn("nothing is verifiable", report)
         self.assertNotIn("role.md  +", report)
+
+
+    def late(self):
+        """A PR that rewrites the line `one` edits, plus a file nobody shares.
+
+        The shape of every deferred wave member: one contended file it will have
+        to re-author, and content the round below never sees.
+        """
+        self.branch("late", "role.md", "# Role\n\nrewritten\n\nbottom\n")
+        self.git("checkout", "-q", "late")
+        Path("other.md").write_text("# Other\n")
+        self.git("add", "-A")
+        self.git("commit", "-qm", "late-second-file")
+        self.git("update-ref", "refs/remotes/origin/late", "HEAD")
+        self.git("checkout", "-q", "main")
+        return "\n".join(
+            p.verify(self.base, [(1, "one"), (2, "two"), (4, "late")])[0])
+
+    def test_the_refused_pr_names_the_file_its_rebase_will_re_author(self):
+        report = self.late()
+        self.assertIn("not assembled", report)
+        self.assertIn("#4  role.md", report)
+
+    def test_a_file_the_round_does_not_touch_is_not_reported_as_owed(self):
+        # `other.md` exists only on the refused branch, so it merges clean and
+        # is no part of the rebase cost. Naming it would inflate the estimate.
+        self.assertNotIn("other.md", self.late())
+
+    def test_a_round_that_assembles_reports_no_scope_at_all(self):
+        lines, refused, _ = p.verify(self.base, [(1, "one"), (2, "two")])
+        self.assertEqual([], refused)
+        self.assertNotIn("will owe", "\n".join(lines))
+
+    def test_scope_is_measured_against_the_tree_not_the_fold_position(self):
+        # The answer is a property of what lands, so reversing the order the
+        # assembled members were folded in must not change what #4 owes.
+        self.late()
+
+        def owed(members):
+            return [ln for ln in p.verify(self.base, members)[0]
+                    if ln.startswith("    #")]
+
+        self.assertEqual(owed([(1, "one"), (2, "two"), (4, "late")]),
+                         owed([(2, "two"), (1, "one"), (4, "late")]))
