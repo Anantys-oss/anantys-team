@@ -290,6 +290,65 @@ lands, it lands here, and each role keeps only its own narrowing.
     fallback that is silent changes what the verdict means without changing how it reads.
   - `qa`, `design` — unchanged. They are where this rule is being read from.
 
+- **An absence has two causes, and a default may only be applied to one.** Every durable
+  artifact in this plugin is a schema that grows. `qa-plan.md` gains a section in four open
+  branches; `.anantys/qa.md` gained environment blocks in a merged one; `ops`'s `current.md`
+  gains a measurement window and an `Applied, No Effect` state. The files already on the
+  operator's disk do not grow with them, so a role routinely reads a record written by an
+  earlier version of itself and finds a field that is not there.
+
+  This is handled — five times, each time for one field, each time by the branch that added
+  it:
+
+  | field | absent means | added by |
+  |---|---|---|
+  | `## Environment:` blocks in `.anantys/qa.md` | a single `local` env, and it is the default | merged |
+  | a run header's environment in `qa-runs.md` | a run on the default environment | merged |
+  | an annotation's `env:` | scoped to the default environment | merged |
+  | a Reset `Target:` | no reset — ask for the target rather than running the command that has none | `reset-targets-are-declared` |
+  | a ruling's **Observed then** | scoped to its target, not to a state | `a-ruling-outlives-the-run` |
+  | a KPI row's **Window** | an *unknown* window; report the delta as spanning one | `a-metric-is-a-value-over-an-interval` |
+
+  Six rules, six phrasings, and the count grows with the schema — the shape C1 exists to
+  prevent, arriving one field at a time instead of one role at a time. But the defect is not
+  the duplication. **It is that every one of these reads absence as *the file is old* and
+  supplies a default, when absence has a second cause: the run that wrote the file could not
+  observe the value.** C1 is explicit that those are different things — *"a result you did not
+  see is not a result; name it as unreached, unverified, or blocked — never fold it into a
+  pass."* A per-field default folds precisely that into a pass, and the two cases are the same
+  blank cell.
+
+  The clearest instance is `record-what-you-created`'s staging precondition S3, because it
+  inverts the failure its own branch was written to fix. S3 passes when a real record *"appears
+  in no prior run's Created in the environment this run table"*; a campaign whose earlier runs
+  predate that table has no such table, so every record qualifies — including the campaign's
+  own leftovers, which is the self-satisfying precondition the branch opens by naming. Absence
+  read as a default turns the check into its own opposite.
+
+  The mechanism that decides between the two causes is also already here, built by
+  `results-name-their-contract` and left inert: a **`Recorded under: anantys-team-agents
+  v<version>`** line in the artifact, of which there are three occurrences in the repo, all in
+  `qa-plan.md`, and *"nothing invalidates or blocks on it."* With a stamp the question is no
+  longer a guess — a field absent from an artifact whose stamp predates that field is a
+  generation artifact and takes the default; absent from an artifact stamped current, the run
+  held the field and left it empty, which is an unobserved value and C1 governs it. Without a
+  stamp the default is the only available answer, which is why each branch reached for one.
+
+  When this rule is promoted here, the stamp generalises from one artifact to every artifact a
+  role reads back, and each role keeps only its own default:
+
+  - `qa` — the six rules above collapse to one reading of the stamp; the per-field defaults
+    stay as what a pre-stamp generation means, and `BLOCKED` is what a current-stamp blank
+    means. S3 is the first to need it.
+  - `ops` — `current.md` and the ruling file carry the stamp. It already has the harder half
+    written: an unread dashboard query is `BLOCKED`, never a zero and never a delta. The rule
+    is that a blank cell is that same `BLOCKED` unless the stamp says otherwise.
+  - `design`, `debug` — nothing to do until they gain the `.anantys/<skill>.md` that
+    `project-config-is-a-convention` designs them into. The stamp is a line in the template;
+    adding it there costs nothing and is the only moment it is free.
+  - The `agents/` pair — unaffected. They hold no artifact across runs, which is the one
+    property that exempts a role from this rule.
+
 ---
 
 ## Landing note
