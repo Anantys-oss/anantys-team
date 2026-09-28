@@ -253,7 +253,7 @@ by the state of the requirement it cites:
 |---|---|
 | unchanged | annotation and result suffixes carried over verbatim |
 | text changed | ruling → `STALE`, suffixes → `not run` — as for a reworded assertion |
-| absent from the source | struck through `REMOVED (<date>, source: <rev>)`, excluded from `N` |
+| absent from the source | struck through `REMOVED (<date>, source: <rev>)`, excluded from `N` — **only if the absence is answerable**, below |
 
 `REMOVED (source: …)` is the existing mechanism with the witness the ruling rules already demand:
 the revision that dropped the requirement *is* where the product decision was made. It is not an
@@ -266,6 +266,46 @@ today's source while the suffixes it counts were observed against earlier ones. 
 changes `**Derived from:**` says so in the preservation diff, and names the requirements that moved
 — every result carried across that line is an observation against a superseded revision.
 
+#### An absent requirement is not a product decision `plan` can make
+
+Two rows of that table fail safe: a `STALE` ruling suppresses nothing, and `not run` costs one
+re-walk. The third does not. `REMOVED` is the widest ruling the skill has — `env: all`, permanent,
+excluded from `N`, and it instructs every later run not to report the behaviour's absence as a
+defect. So absence is the one signal that has to be **earned**, and it is also the one a partial
+read manufactures:
+
+| what happened | what `plan` sees |
+|---|---|
+| the requirement was dropped from the product | cited id gone from the source ✅ |
+| `plan --from linear:SKU-12` re-run on a plan built from `SKU-12,SKU-13` | **same** |
+| the tracker fetch degraded and returned fewer issues | **same** |
+| the regeneration resolved a different spec dir than the recorded one | **same** |
+
+Only the first row is a product decision. This skill already carries the rule for exactly this
+shape — **an absent declaration is never a permission**, and missing resolves to the *narrower*
+branch (see the `.anantys/qa.md` gates). A `plan`-written `REMOVED` resolves it to the widest one.
+
+So `plan` may strike `REMOVED` only when the absence is **answerable** — when this regeneration
+read the same source the recorded one did. That is what `**Derived from:**` has to record: the
+source *set*, not only its revision.
+
+```markdown
+**Derived from:** `.anantys/qa/sku-231/brief.md` @ 9f8e7d6 — from `linear:SKU-12,SKU-13`
+```
+
+When the set differs from the recorded one, or the recorded revision is `uncommitted` (there is
+nothing to diff against), **no requirement is absent** — the ones outside this read were never
+asked for. Each such assertion keeps its id and its annotations, its suffixes reset to `not run`,
+and it is routed into §4 with the reason `cited requirement not in this read (<recorded set> →
+<this set>)`: `BLOCKED`, counted in `N`, reported as loudly as a FAIL. That is the route a brief's
+known gap already takes, and it leaves the product decision where it belongs — an operator `note`,
+which can still strike `REMOVED` from that state.
+
+One reading rule makes the answerable case reviewable: in the preservation diff, name removed and
+added requirement ids **together**. A renumbering — `FR-030` out, `FR-041` in, same behaviour —
+satisfies every precondition above and is a removal only to `plan`. Paired, it reads as one line
+the operator can veto; split across two lists, it reads as coverage that shrank on purpose.
+
 If the source carries an **under-test precondition** — a `--from pr:` head branch, or a brief's
 `_Under test:_` line — copy it into the plan header as `**Under test:** <branch> @ <head commit> —
 <environment>` (plus `pr: <ref>` for a PR source). Record the head **commit**, not only the branch:
@@ -273,10 +313,11 @@ once the PR merges, `run` can only recognise the shipped code by commit ancestry
 brief is never enforced: a PR-derived campaign would run green against a stack serving `main`.
 
 Show the operator the scenario list and the blocker list before writing. On a regeneration, show
-the preservation diff too — the `**Derived from:**` revision before and after, assertions added,
-assertions whose text or whose cited requirement changed (and so whose annotations go stale),
-requirements gone from the source, and results carried over. A regeneration is a destructive write
-to recorded observations; the operator sees what it costs before it happens.
+the preservation diff too — the `**Derived from:**` source set and revision before and after,
+assertions added, assertions whose text or whose cited requirement changed (and so whose annotations
+go stale), requirements gone from the source *paired with the ones added*, and results carried over.
+A regeneration is a destructive write to recorded observations; the operator sees what it costs
+before it happens.
 
 ### `--from pr:` — assembling the brief from pull requests
 
@@ -552,7 +593,10 @@ for the life of the feature on the strength of its own say-so.
 `note` is not its only writer: `plan` marks REMOVED too, when a regeneration finds the assertion's
 cited requirement gone from the source (see "The requirement is the third axis"). Those cite
 `source: <rev>` rather than an operator, and the distinction is reported, never flattened — one is a
-product ruling, the other is a source diff, and only the first one a person made.
+product ruling, the other is a source diff, and only the first one a person made. And a source diff
+is a witness only when the two sources are comparable: `plan` strikes nothing on a read whose source
+set differs from the recorded one ("An absent requirement is not a product decision `plan` can
+make"). An unanswerable absence is `BLOCKED` in §4, never a strike.
 
 After any ruling, refresh **every** progress table in `qa-plan.md` — a REMOVED assertion leaves N
 for all environments (see "Progress table").

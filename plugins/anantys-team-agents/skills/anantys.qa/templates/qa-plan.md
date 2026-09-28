@@ -26,13 +26,18 @@ against a stack serving `main`, reports green having verified nothing. Once the 
 deployed, a deployed commit that contains it satisfies the line; there is no need to edit it. Omit
 it for a feature that was already merged and deployed when the plan was written.
 
-**Derived from:** `<source>` @ <rev | uncommitted>. The revision the requirements were read at — the
-third axis of every result, and the only one the plan used not to record. `**Under test:**` pins the
-code and each suffix pins the environment; without this line a regeneration can only guess at a
-changed requirement from the assertion's wording, which is exactly the part a well-written assertion
-keeps stable. On a regeneration this line moves, the requirements are diffed, and each assertion is
-carried over, marked `STALE`, or REMOVED accordingly — see SKILL.md, "The requirement is the third
-axis".
+**Derived from:** `<source>` @ <rev | uncommitted> — from `<the refs that assembled it>`. The
+requirements' revision **and the source set they were read from** — the third axis of every result,
+and the only one the plan used not to record. `**Under test:**` pins the code and each suffix pins
+the environment; without this line a regeneration can only guess at a changed requirement from the
+assertion's wording, which is exactly the part a well-written assertion keeps stable. On a
+regeneration this line moves, the requirements are diffed, and each assertion is carried over,
+marked `STALE`, or REMOVED accordingly — see SKILL.md, "The requirement is the third axis".
+
+The **set** is what makes a `REMOVED` strike answerable: a re-run over fewer refs, or a degraded
+tracker fetch, is indistinguishable from a product decision if only the revision is recorded. When
+the set differs from the one recorded here, nothing is struck — see SKILL.md, "An absent requirement
+is not a product decision `plan` can make".
 
 **How to use.** Preflight first — stop if it fails. Reset (a `local` env only — never a `shared`
 one). Then walk §2 in order. Each scenario states its **precondition**, its **steps**, and what to
@@ -95,7 +100,12 @@ untested by construction, and the blocker list is where untested money paths get
       `all`, decided in <spec §/issue/PR>). Do not report its absence as a defect.
 - [ ] ~~A5 <behaviour whose requirement left the source>~~ — **REMOVED from the product** (<date>,
       source: <rev>, env: `all`). Written by `plan`, not by an operator: FR-0ww is gone from the
-      source as of that revision. Excluded from `N`; never renumbered, never deleted.
+      source as of that revision, read over the **same source set** the plan records. Excluded from
+      `N`; never renumbered, never deleted.
+- [ ] A6 <behaviour whose requirement this read did not cover> (FR-0vv). — `local`: not run
+      ⛔ *BLOCKED — cited requirement not in this read (`linear:SKU-12,SKU-13` → `linear:SKU-12`).*
+      Not struck: an absence a narrower read produced is not a product decision. Counted in `N`,
+      listed in §4, and still open to an operator `note`.
 - [ ] A4 <observable outcome, reworded by a regeneration> (FR-0zz). — `local`: not run
       ⚠️ *STALE — re-adjudicate: Adjudicated <date> (operator, run <n>, env: `local`): <original
       ruling + reason>.* Written about the previous wording of A4; suppresses nothing until `note`
