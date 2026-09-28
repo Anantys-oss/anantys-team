@@ -427,9 +427,19 @@ def per_member(base, refs, gates):
     the round's tooling plus this one member — what `refs/pull/N/merge` becomes
     the moment the tooling is on `main`, and the verdict CI will actually print.
 
-    Members that carry tooling are folded into that base and reported as the one
-    group they are; judging them individually would need a base that already
-    holds the gate a member is bringing. The rest are judged against it singly.
+    One member cannot be judged that way: the one bringing a gate is inside its
+    own subject tree, so it is folded into the base and the fold is reported as
+    the single verdict it is. What decides the fold is whether the member adds
+    or edits one of `gates` — not whether it happens to touch `scripts/` or
+    `.github/workflows/`. Those paths hold plenty that no gate reads: a report
+    generator, a docs job, a gate's own tests. Folding by path swept them in and
+    then printed the fold's colour against each of their numbers, which is this
+    report's own indictment turned inward — "the union answers it once, CI asks
+    per PR" is exactly what a fold of six does to five PRs that are individually
+    green. A member that brings no gate is judged singly like any other.
+
+    The fold's verdict still answers for none of its own members, and says so:
+    it is one tree, and the tree each carrier lands in holds the others.
 
     A wave is advertised as landing "in any order, no rebase between them".
     That holds for conflicts, which is all `waves` measured. It does not survive
@@ -441,8 +451,7 @@ def per_member(base, refs, gates):
         changed = run("git", "diff", "--name-only", base,
                       f"origin/{ref}").splitlines()
         bucket = carriers if any(
-            f.startswith(("scripts/", ".github/workflows/"))
-            for f in changed) else judged
+            Path(f).name in gates for f in changed) else judged
         bucket.append((number, ref))
 
     landing, folded, refused = union_tree(base, carriers)
@@ -452,8 +461,9 @@ def per_member(base, refs, gates):
                 + " conflict with it; no member can be judged as CI will"]
 
     lines = [f"  gates this round introduces: {', '.join(gates)}"]
-    subjects = [(", ".join(f"#{n}" for n in folded) + " (the tooling itself)",
-                 landing)] if folded else []
+    fold = (", ".join(f"#{n}" for n in folded) + " (the gates themselves)"
+            if folded else None)
+    subjects = [(fold, landing)] if folded else []
     for number, ref in judged:
         commit, _, denied = union_tree(base, [(number, ref)], start=landing)
         subjects.append((f"#{number}", None if denied else commit))
@@ -469,6 +479,11 @@ def per_member(base, refs, gates):
                      + ("RED  " + ", ".join(red) if red else "green"))
         for name in red:
             lines += [f"      {line}" for line in results[name][1]]
+        if label == fold:
+            lines.append("      one verdict about one tree, and it is not any "
+                         "of theirs: a gate cannot judge the PR that brings it. "
+                         "CI asks each of them separately, against a `main` "
+                         "that holds the others.")
     return lines
 
 

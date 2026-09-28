@@ -492,14 +492,32 @@ class AGateLandsWithItsSubject(unittest.TestCase):
     def test_the_member_that_bumps_is_green(self):
         self.assertRegex(self.report(), r"#2\s+green")
 
-    def test_the_tooling_is_judged_as_the_one_group_it_is(self):
-        self.assertIn("#1 (the tooling itself)", self.report())
+    def test_the_gate_is_judged_as_the_one_group_it_is(self):
+        self.assertIn("#1 (the gates themselves)", self.report())
 
-    def test_a_member_that_conflicts_with_the_tooling_is_not_judged(self):
+    def test_the_folds_verdict_disclaims_its_own_members(self):
+        self.assertIn("it is not any of theirs", self.report())
+
+    def test_a_member_that_conflicts_with_the_gate_is_not_judged(self):
         self.branch("clash", {"scripts/check_stamp.py": "import sys\n"})
         self.landing.append((4, "clash"))
-        # #4 carries tooling too, so it refuses inside the tooling base itself.
+        # #4 brings the gate too, so it refuses inside the gate base itself.
         self.assertIn("does not assemble", self.report())
+
+    def test_a_script_no_gate_reads_is_judged_singly_not_folded(self):
+        self.branch("tool", {"scripts/make_report.py": "print('hi')\n"})
+        self.landing.append((4, "tool"))
+        out = self.report()
+        self.assertNotIn("#4", out.splitlines()[1])  # absent from the fold label
+        self.assertRegex(out, r"#4\s+green")
+
+    def test_a_scripts_pr_that_also_changes_content_is_red_on_its_own(self):
+        # Folded by path it hid behind the gate's verdict; the bump it owes is
+        # its own, and CI will ask it for one.
+        self.branch("tool-and-role", {"scripts/make_report.py": "print('hi')\n",
+                                      "role.md": "# Role\n\ntop\n\nbottom\nx\n"})
+        self.landing.append((4, "tool-and-role"))
+        self.assertRegex(self.report(), r"#4\s+RED\s+check_stamp\.py")
 
 
 if __name__ == "__main__":
