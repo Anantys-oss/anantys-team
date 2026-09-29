@@ -33,6 +33,17 @@ this campaign. If it cannot be read, write `unknown`: never omit the line, never
 `unknown` **never matches** any version, so a reader declares a mismatch exactly as it would for a
 real one. A stamp that goes quiet when it cannot be produced restores the gap it was added to close.
 
+**Exercised as:** `<subject class>` per declared environment — the permission level the statuses
+below are claims about (`owner`, `member`, `anonymous`, …), never the account identifier, which is
+a credential. An environment's block may list several accounts; this line says which of them the
+plan speaks for. §3's Money, Legal and Data blockers are the classes whose behaviour *is* the
+permission, so a blocker green as an owner has been tested for nobody else. Where a campaign's
+results span more than one class the per-assertion suffix keys on both — `` `staging`/`member`:
+PASS `` — exactly as it already keys on the environment, and a run rewrites only the entry for the
+pair it used. A run whose class this line does not name may not overwrite another class's verdict:
+add the key, or record `BLOCKED`. Unlike **Recorded under:**, this is not a staleness question —
+a member's FAIL written into an owner's slot does not date the record, it falsifies it.
+
 **How to use.** Preflight first — stop if it fails. Reset (a `local` env only — never a `shared`
 one). Then walk §2 in order. Each scenario states its **precondition**, its **steps**, and what to
 **assert**. Record PASS/FAIL/BLOCKED **per assertion and per environment**, never one verdict per
@@ -69,14 +80,15 @@ environment that has results — who writes and refreshes each: SKILL.md, "Progr
 
 - [ ] A1 <observable outcome> (FR-0xx). — `local`: PASS · `staging`: not run
 - [ ] A2 <observable outcome> (FR-0yy). — `local`: FAIL · `staging`: not run
-      ⚠️ *Adjudicated <date> (operator, env: `<name>` | `all`): <ruling + reason>. Only <narrowed
-      condition> is a real A2 failure.*
+      ⚠️ *Adjudicated <date> (operator, env: `<name>` | `all`, as: `<class>` | `all`): <ruling +
+      reason>. Only <narrowed condition> is a real A2 failure.*
 - [ ] ~~A3 <dropped behaviour>~~ — **REMOVED from the product** (<date>, operator, env:
       `all`). Do not report its absence as a defect.
 
-The per-environment suffix (`` `<env>`: PASS | FAIL | BLOCKED | not run ``) is the authoritative
+The per-environment suffix (`` `<env>`: PASS | FAIL | BLOCKED | not run ``, or ``
+`<env>`/`<class>`: `` where **Exercised as:** declares more than one) is the authoritative
 result, required on every assertion that has run on any environment; a run rewrites only its own
-environment's entry. The checkbox is checked only when **every** declared environment is PASS.
+key's entry. The checkbox is checked only when **every** declared key is PASS.
 
 ### B — <journey name>
 
