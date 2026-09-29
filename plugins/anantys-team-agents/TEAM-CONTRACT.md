@@ -27,6 +27,26 @@ stated once here so there is nothing to drift from.
 
 ---
 
+## C2 — A stop is a result
+
+**A run that stops before it finishes records the stop where its result would have gone.**
+
+C1 governs a result you did not observe; this governs the run you did not finish. Every
+role here gates — no browser, a dirty tree, consent withheld, a precondition you must not
+work around. Stopping there is correct. Stopping there *silently* is not.
+
+- **Name the stop as the verdict**, with the gate that fired and what passing it needs.
+- **Write that into the artifact a finished run would have written.** A file a stopped run
+  left untouched is byte-identical to one a finished run had no reason to change, and the
+  next reader — often the next run — cannot tell those apart. A snapshot gains a dated
+  line saying no run refreshed it; an append-only log gains a stopped entry, not nothing.
+- **Recording the stop publishes nothing else** — not the partial result as a whole one.
+
+A missing record is not a smaller failure than a wrong one. It is the same failure with
+nobody looking for it.
+
+---
+
 ## What belongs here
 
 A rule belongs in this file when it binds **three or more roles** and is not
