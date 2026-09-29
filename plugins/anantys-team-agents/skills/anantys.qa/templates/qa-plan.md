@@ -18,6 +18,32 @@ against a stack serving `main`, reports green having verified nothing. Once the 
 deployed, a deployed commit that contains it satisfies the line; there is no need to edit it. Omit
 it for a feature that was already merged and deployed when the plan was written.
 
+**Recorded under:** anantys-team-agents v<running plugin version>. The rules that scored the
+statuses below — what counts as PASS, when a green retest closes a defect, what an adjudication
+annotation authorises. The other header lines pin the code and the requirements; this one pins the
+contract, so a later reader is not silently applying today's rules to an older campaign's results.
+`plan` **preserves** this line on a regeneration rather than refreshing it: restamping carried-over
+statuses would assert that the new rules scored results they never saw. `status` and `report` name a
+mismatch in the ship sentence; nothing invalidates or blocks on it, since the version also moves for
+changes that touch no scoring rule.
+
+The value is the `version` field of the running plugin's `.claude-plugin/plugin.json` — **read it,
+never recall it**, since a version you remember is the one you were trained on, not the one scoring
+this campaign. If it cannot be read, write `unknown`: never omit the line, never guess a number.
+`unknown` **never matches** any version, so a reader declares a mismatch exactly as it would for a
+real one. A stamp that goes quiet when it cannot be produced restores the gap it was added to close.
+
+**Exercised as:** `<subject class>` per declared environment — the permission level the statuses
+below are claims about (`owner`, `member`, `anonymous`, …), never the account identifier, which is
+a credential. An environment's block may list several accounts; this line says which of them the
+plan speaks for. §3's Money, Legal and Data blockers are the classes whose behaviour *is* the
+permission, so a blocker green as an owner has been tested for nobody else. Where a campaign's
+results span more than one class the per-assertion suffix keys on both — `` `staging`/`member`:
+PASS `` — exactly as it already keys on the environment, and a run rewrites only the entry for the
+pair it used. A run whose class this line does not name may not overwrite another class's verdict:
+add the key, or record `BLOCKED`. Unlike **Recorded under:**, this is not a staleness question —
+a member's FAIL written into an owner's slot does not date the record, it falsifies it.
+
 **How to use.** Preflight first — stop if it fails. Reset (a `local` env only — never a `shared`
 one). Then walk §2 in order. Each scenario states its **precondition**, its **steps**, and what to
 **assert**. Record PASS/FAIL/BLOCKED **per assertion and per environment**, never one verdict per
@@ -54,14 +80,15 @@ environment that has results — who writes and refreshes each: SKILL.md, "Progr
 
 - [ ] A1 <observable outcome> (FR-0xx). — `local`: PASS · `staging`: not run
 - [ ] A2 <observable outcome> (FR-0yy). — `local`: FAIL · `staging`: not run
-      ⚠️ *Adjudicated <date> (operator, env: `<name>` | `all`): <ruling + reason>. Only <narrowed
-      condition> is a real A2 failure.*
+      ⚠️ *Adjudicated <date> (operator, env: `<name>` | `all`, as: `<class>` | `all`): <ruling +
+      reason>. Only <narrowed condition> is a real A2 failure.*
 - [ ] ~~A3 <dropped behaviour>~~ — **REMOVED from the product** (<date>, operator, env:
       `all`). Do not report its absence as a defect.
 
-The per-environment suffix (`` `<env>`: PASS | FAIL | BLOCKED | not run ``) is the authoritative
+The per-environment suffix (`` `<env>`: PASS | FAIL | BLOCKED | not run ``, or ``
+`<env>`/`<class>`: `` where **Exercised as:** declares more than one) is the authoritative
 result, required on every assertion that has run on any environment; a run rewrites only its own
-environment's entry. The checkbox is checked only when **every** declared environment is PASS.
+key's entry. The checkbox is checked only when **every** declared key is PASS.
 
 ### B — <journey name>
 
@@ -108,7 +135,8 @@ recognises a re-occurrence instead of re-diagnosing it from scratch.
 
 Environment: `<name>` (`local` | `shared`). Subject: <account/fixture id>. Build observed:
 <branch/commit the env was serving, from its build-identity check — omit only when the plan has no
-**Under test:** line>. Path walked: <one line>.
+**Under test:** line>. Recorded under: anantys-team-agents v<running version, read from
+`.claude-plugin/plugin.json`; `unknown` if unreadable>. Path walked: <one line>.
 
 | ID | Result | Evidence |
 |----|--------|----------|
