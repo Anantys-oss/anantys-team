@@ -14,7 +14,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-SKILL_MAX_LINES = 200  # see README "Skill size" — a SKILL.md loads in full, every invocation
+ROLE_MAX_LINES = 200  # see README "Skill size" — a role loads in full, every invocation
 
 errors: list[str] = []
 warnings: list[str] = []
@@ -36,6 +36,35 @@ def frontmatter(path: Path) -> dict[str, str]:
 
 def rel(path: Path) -> str:
     return str(path.relative_to(ROOT))
+
+
+def check_load(path: Path) -> None:
+    """Warn when a role's *pre-action load* exceeds the ceiling.
+
+    The ceiling exists because a role file is loaded in full before the first
+    action — so it must be measured over everything that load includes, not just
+    the file the glob happened to find. A role's preamble (everything above its
+    first `## ` heading) is where it names what binds it before it acts; every
+    local `.md` it links there is read on the same invocation and counts.
+
+    Discovered from the links, never from a filename, so a role that points
+    somewhere else is measured against what it actually points at.
+    """
+    text = path.read_text(encoding="utf-8")
+    linked = [
+        target for link in re.findall(r"\]\(([^)]+\.md)\)", text.split("\n## ", 1)[0])
+        if (target := (path.parent / link).resolve()).is_file()
+    ]
+    parts = [(path, len(text.splitlines()))] + [
+        (p, len(p.read_text(encoding="utf-8").splitlines())) for p in linked
+    ]
+    total = sum(n for _, n in parts)
+    if total > ROLE_MAX_LINES:
+        breakdown = " + ".join(f"{n} {rel(p)}" for p, n in parts)
+        warnings.append(
+            f"{rel(path)}: loads {total} lines (> {ROLE_MAX_LINES}) — {breakdown}; "
+            "move detail a given action does not need into reference/ and link it there"
+        )
 
 
 def require(path: Path, fm: dict[str, str], keys: tuple[str, ...], expected_name: str) -> None:
@@ -74,15 +103,11 @@ def main() -> int:
                 errors.append(f"{rel(skill_dir)}: no SKILL.md")
                 continue
             require(skill, frontmatter(skill), ("name", "description"), skill_dir.name)
-            lines = len(skill.read_text(encoding="utf-8").splitlines())
-            if lines > SKILL_MAX_LINES:
-                warnings.append(
-                    f"{rel(skill)}: {lines} lines (> {SKILL_MAX_LINES}) — "
-                    "move per-action detail into reference/ and link it from the actions table"
-                )
+            check_load(skill)
 
         for agent in agents:
             require(agent, frontmatter(agent), ("name", "description", "tools", "model"), agent.stem)
+            check_load(agent)
 
         # The description advertises counts ("5 skills … 2 review agents") to users browsing
         # the marketplace, and nothing keeps them true when a role is added.
