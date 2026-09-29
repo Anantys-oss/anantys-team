@@ -15,10 +15,11 @@ emits, and a recurring audit scheduled unattended halts on input it could have r
 
 The test is **what the fact is a property of**:
 
-| property of | example | persists |
-|---|---|---|
-| the project | site domain, hub paths, dashboard URL, dev URL, test-run command | yes |
-| the run | this audit's traffic goal, the scope the operator approved today, the bug being chased | no |
+| property of | example | persists | here |
+|---|---|---|---|
+| the project | site domain, hub paths, dashboard URL, dev URL, test-run command | yes | yes |
+| the run | this audit's traffic goal, the scope the operator approved today, the bug being chased | no | no |
+| an observation | "we know about that, don't re-file it"; "won't fix until the redesign" | yes | **no** |
 
 The second row is the one that matters, because it looks like configuration and is not.
 `ops` Pre-flight asks the operator to approve **the exact list of domains this run will
@@ -26,6 +27,16 @@ visit**. That approval is consent for one run. Written into `.anantys/ops.md` it
 standing grant, renewed by nobody, and the gate that produced it never fires again. A
 per-run approval may be *informed* by the file — the file may say which domains are usually
 in scope — but the approval itself is asked every time.
+
+The third row is the same failure wearing the opposite disguise: it *should* outlive the run,
+so a config file looks like the obvious home. It is not, because the two rows above it are
+facts and this one is a **judgement about a value**. It lapses when the value moves — rewrite
+the page and the ruling has lost its subject — and a bullet in a config file records neither
+the value it was ruled against nor a date, so nothing can ever decide that it lapsed. Parked
+here it is a standing grant again: a finding suppressed once and renewed by nobody. An
+adjudication persists in a file built to pin it, which a role reconciles against before it
+reports; `ops` has one. The test that sorts the rows is not *does this survive the run* but
+*is this a fact or a verdict* — only the first kind is configuration.
 
 **Never a credential.** The file names *which* property, dashboard or environment; never how
 to authenticate to it. The browser is the operator's own and is already signed in. Where a

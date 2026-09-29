@@ -39,15 +39,15 @@ property. **This is not an approval.** Pre-flight still presents the exact list 
 waits; this section only means the operator will not be surprised by the ask.
 
 - <domain> — <why>
-
-## Known and not a finding
-
-Things a previous audit already adjudicated, so they are not re-filed every run.
-
-- <observation> — <why it is expected>
 ```
 
 ---
 
 **Not in this file:** the traffic goal for this audit, the scope approved today, and anything the
 operator decides per run. Those are the run's, and asking for them is the point.
+
+**Nor an adjudicated finding.** "We know about that, don't re-file it" is a judgement about one
+observation, not a property of the project, and it expires when the observation moves. A bullet
+here would carry neither the value it was ruled against nor a condition under which it lapses —
+a suppression renewed by nobody, exactly the shape this file refuses for a scope approval. It
+belongs in the standing-rulings file the role reconciles against before it writes a report.
