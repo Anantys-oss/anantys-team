@@ -108,15 +108,34 @@ def stacked(prs):
     head) but folding the contained tree first and then merging the container
     against `main` re-reads the shared files as two independent edits. Landing
     the container closes both, so the contained PR leaves the graph.
+
+    Containment is asymmetric everywhere except one case: two PRs opened on the
+    *same* head are each other's ancestor. Recorded both ways, the caller drops
+    both and the queue loses the change outright — and the report tells the
+    operator to land each in order to close the other, which closes neither.
+    That pair is a duplicate, not a stack, so the tie is broken on number: the
+    lower one is the original and carries the review history, and it survives.
     """
+    def ancestor(child, parent):
+        return subprocess.run(
+            ["git", "merge-base", "--is-ancestor",
+             f"origin/{child}", f"origin/{parent}"],
+            capture_output=True).returncode == 0
+
     out = {}
     for a, ref_a, _, _ in prs:
         for b, ref_b, _, _ in prs:
-            if a != b and subprocess.run(
-                    ["git", "merge-base", "--is-ancestor",
-                     f"origin/{ref_a}", f"origin/{ref_b}"],
-                    capture_output=True).returncode == 0:
-                out[a] = b
+            if a == b or not ancestor(ref_a, ref_b):
+                continue
+            if a < b and ancestor(ref_b, ref_a):
+                continue
+            out[a] = b
+    # A container that is itself contained has already left the plan, so naming
+    # it sends the operator to land a PR the same report just dropped. Follow
+    # the chain to the one that survives.
+    for pr in out:
+        while out[pr] in out:
+            out[pr] = out[out[pr]]
     return out
 
 

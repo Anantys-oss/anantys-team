@@ -664,3 +664,87 @@ class Folds(unittest.TestCase):
 
         self.assertEqual(owed([(1, "one"), (2, "two"), (4, "late")]),
                          owed([(2, "two"), (1, "one"), (4, "late")]))
+
+
+class Stacked(unittest.TestCase):
+    """A real repo: a stack, a duplicate, and an unrelated branch.
+
+    `stacked` is the one function that *removes* PRs from the plan, so a wrong
+    answer here is a change the landing order never mentions again.
+    """
+
+    def git(self, *args):
+        subprocess.run(("git",) + args, check=True, capture_output=True)
+
+    def head(self, name, ref="HEAD"):
+        """Publish `ref` as origin/<name> — `stacked` only reads remote refs."""
+        oid = subprocess.run(["git", "rev-parse", ref], check=True,
+                             capture_output=True, text=True).stdout.strip()
+        self.git("update-ref", f"refs/remotes/origin/{name}", oid)
+
+    def setUp(self):
+        self.dir = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.dir)
+        self.addCleanup(os.chdir, os.getcwd())
+        os.chdir(self.dir)
+        self.git("init", "-q", "-b", "main")
+        self.git("config", "user.email", "t@example.com")
+        self.git("config", "user.name", "t")
+        Path("doc.md").write_text("# Doc\n")
+        self.git("add", "doc.md")
+        self.git("commit", "-qm", "base")
+
+        self.git("checkout", "-qb", "lower")
+        Path("doc.md").write_text("# Doc\n\nFirst.\n")
+        self.git("commit", "-qam", "first")
+        self.head("lower")
+        # Same commit, opened twice — the duplicate the queue actually produces.
+        self.head("copy")
+
+        self.git("checkout", "-qb", "upper")
+        Path("doc.md").write_text("# Doc\n\nFirst.\nSecond.\n")
+        self.git("commit", "-qam", "second")
+        self.head("upper")
+
+        self.git("checkout", "-q", "main")
+        self.git("checkout", "-qb", "apart")
+        Path("other.md").write_text("Unrelated.\n")
+        self.git("add", "other.md")
+        self.git("commit", "-qm", "apart")
+        self.head("apart")
+        self.git("checkout", "-q", "main")
+
+    def pr(self, *pairs):
+        return [(n, ref, f"pr {n}", set()) for n, ref in pairs]
+
+    def test_an_independent_pr_is_contained_by_nobody(self):
+        self.assertEqual(p.stacked(self.pr((1, "lower"), (2, "apart"))), {})
+
+    def test_the_ancestor_is_the_one_that_leaves_the_graph(self):
+        self.assertEqual(p.stacked(self.pr((1, "lower"), (2, "upper"))), {1: 2})
+
+    def test_arrival_order_does_not_decide_who_contains_whom(self):
+        # #9 is cut from #3's head: the stack is the ancestry, not the numbering.
+        self.assertEqual(p.stacked(self.pr((9, "lower"), (3, "upper"))), {9: 3})
+
+    def test_a_duplicate_head_leaves_one_pr_standing(self):
+        # Both directions of ancestry hold. Recorded both ways the caller drops
+        # both and the change vanishes from every wave.
+        self.assertEqual(p.stacked(self.pr((1, "lower"), (2, "copy"))), {2: 1})
+
+    def test_the_survivor_of_a_duplicate_is_the_original(self):
+        contained = p.stacked(self.pr((7, "copy"), (4, "lower")))
+        self.assertEqual(contained, {7: 4})
+
+    def test_a_duplicate_survivor_stays_in_the_queue(self):
+        prs = self.pr((1, "lower"), (2, "copy"))
+        contained = p.stacked(prs)
+        kept = [n for n, _, _, _ in prs if n not in contained]
+        self.assertEqual(kept, [1])
+
+    def test_the_container_named_is_one_that_survives(self):
+        # #2 duplicates #1 and #1 is contained in #3. Naming #1 as #2's
+        # container points at a PR this same report has already dropped.
+        contained = p.stacked(self.pr((1, "lower"), (2, "copy"), (3, "upper")))
+        self.assertEqual(contained, {1: 3, 2: 3})
+
