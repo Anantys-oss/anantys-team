@@ -353,24 +353,56 @@ argument is finished. Eleven finished arguments are what this section already is
   own leftovers, which is the self-satisfying precondition the branch opens by naming. Absence
   read as a default turns the check into its own opposite.
 
-  The mechanism that decides between the two causes is also already here, built by
+  The mechanism that narrows the two causes is also already here, built by
   `results-name-their-contract` and left inert: a **`Recorded under: anantys-team-agents
   v<version>`** line in the artifact, of which there are three occurrences in the repo, all in
-  `qa-plan.md`, and *"nothing invalidates or blocks on it."* With a stamp the question is no
-  longer a guess — a field absent from an artifact whose stamp predates that field is a
-  generation artifact and takes the default; absent from an artifact stamped current, the run
-  held the field and left it empty, which is an unobserved value and C1 governs it. Without a
-  stamp the default is the only available answer, which is why each branch reached for one.
+  `qa-plan.md`, and *"nothing invalidates or blocks on it."*
+
+  **It answers one of the two, and this entry earlier claimed both.** The wrong version of
+  the test asked whether *"the stamp predates that field"* — which needs a map from field to
+  introducing version, and there is none: the only recorded version is the one scalar
+  `check_version_bump.py` gates, and that scalar bumps on every content change, including one
+  that touches no schema. `results-name-their-contract` says so in its own *deliberately does
+  not do* section, and closes with the opposite of the claim made here: the version is *"a
+  pointer to a question, not an answer."* Grepped across `main` and all 31 refs, *"predates
+  that field"* and *"pointer to a question"* each appear exactly once, in these two files.
+  Two artifacts in one landing round, disagreeing about what the same line decides.
+
+  The stamp has two reader states, not three — `results-name-their-contract` enumerates them,
+  and `unknown` and a missing line are both the second:
+
+  | stamp | what it establishes | what a blank field means |
+  |---|---|---|
+  | equals the running version | the writing run held the schema this reader holds | **not** a generation artifact — the run had the field and left it empty. C1 governs: `BLOCKED` |
+  | anything else — older, newer, `unknown`, absent | nothing about the generation | undecidable. The per-field default may be applied, and is **declared at the point of use** |
+
+  So the asymmetry, which is what makes the mechanism honest rather than merely available:
+  only the equality branch licenses the stricter reading. The other branch keeps today's
+  behaviour and adds one word — *declared* — because a silently applied default is the exact
+  collapse that page warns about, *"a stamp whose failure mode is silence restores the gap it
+  was added to close, while looking like it closed it."*
+
+  S3 lands in the second row, and that is the point: a campaign predating the table has a
+  mismatched stamp, so the precondition reports that it could not be evaluated against prior
+  runs, instead of passing because it found nothing. The silent default is the defect there,
+  and it is the branch this entry had written off as the easy one.
+
+  A finer version, precise enough to invalidate on, is what the *"predates"* test wanted, and
+  `results-name-their-contract` declines to add it — *"a fourth copy of a fact no checker
+  owns"* — naming the condition to revisit: a change that needs to **invalidate** rather than
+  declare. This candidate is the first change to reach that line and it does not cross it.
+  Equality is enough, and it costs no new field.
 
   When this rule is promoted here, the stamp generalises from one artifact to every artifact a
   role reads back, and each role keeps only its own default:
 
-  - `qa` — the six rules above collapse to one reading of the stamp; the per-field defaults
-    stay as what a pre-stamp generation means, and `BLOCKED` is what a current-stamp blank
-    means. S3 is the first to need it.
+  - `qa` — the six rules above collapse to one reading of the stamp: they stay exactly as
+    written for a mismatched or absent one, now declared rather than silent, and `BLOCKED` is
+    what a blank under an equal stamp means. S3 is the first to need it.
   - `ops` — `current.md` and the ruling file carry the stamp. It already has the harder half
     written: an unread dashboard query is `BLOCKED`, never a zero and never a delta. The rule
-    is that a blank cell is that same `BLOCKED` unless the stamp says otherwise.
+    is that a blank cell is that same `BLOCKED` when the stamp is equal, and a declared
+    default when it is not.
   - `design`, `debug` — nothing to do until they gain the `.anantys/<skill>.md` that
     `project-config-is-a-convention` designs them into. The stamp is a line in the template;
     adding it there costs nothing and is the only moment it is free.
