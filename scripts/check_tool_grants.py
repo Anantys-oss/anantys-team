@@ -9,6 +9,14 @@ directions, and each direction fails differently:
   * a tool granted but never referenced -> an unaudited capability sitting on a
     role that has no use for it.
 
+The second direction is only as good as what counts as a reference. Matching the
+grant name as a case-folded substring makes any grant whose name is also an
+ordinary word self-discharging, and the prose that *does* exercise a grant does
+not always spell it: a role dispatches `anantys.code-auditor`, never `Task`. Both
+errors landed on the same grant and pointed opposite ways — `qa` held an
+unexercised `Task` in silence because it writes about `tasks.md`, while `review`,
+the one role that dispatches, was reported as not mentioning it.
+
 Errors that predate this gate are declared in `tool-grants-baseline.txt` rather
 than fixed here — see `baseline()` for why the gate may not fix its own subject.
 
@@ -96,9 +104,10 @@ def permitted(command, prefixes):
     return any(command == p or command.startswith(p + " ") for p in prefixes)
 
 
-def check(path, grants, body, known_mcp):
+def check(path, grants, body, known_mcp, agents=()):
     errors, warnings = [], []
     lowered = body.lower()
+    dispatched = sorted(a for a in agents if a in body)
 
     mcp_used = {a or b for a, b in MCP_IN_PROSE.findall(body)}
     mcp_granted = {g.rsplit("__", 1)[-1] for g in grants if g.startswith("mcp__")}
@@ -118,13 +127,27 @@ def check(path, grants, body, known_mcp):
             if not permitted(cmd, bash_grants):
                 errors.append(f"prose runs `{cmd}` but only {sorted(bash_grants)} are granted")
 
+    # Dispatching an agent needs `Task`, and the prose names the agent, never the
+    # tool — so this direction is invisible to the mention check below. It is the
+    # direction that matters most: a dispatched agent runs with the dispatcher's
+    # grants, so `Task` is not one capability but the whole union, delegated.
+    if dispatched and "Task" not in grants:
+        errors.append(f"prose dispatches {', '.join(dispatched)} but `Task` is not granted")
+
     # Browser primitives are used implicitly ("take a screenshot" is `computer`),
     # so only named, discretionary grants are held to being mentioned.
     for grant in grants:
         if grant in GENERIC or grant.startswith("mcp__"):
             continue
         name = grant[5:-1].split(":", 1)[0] if grant.startswith("Bash(") else grant
-        if name.lower() not in lowered:
+        # Case-sensitively, on a word boundary. A case-folded substring test lets
+        # an ordinary English word discharge a grant that shares its spelling:
+        # `Task` was satisfied by "tasks.md", `Bash(ls:*)` by "tools". Those are
+        # the two grants here whose names are also common words, and both were
+        # silent on roles that never exercise them.
+        if not re.search(rf"\b{re.escape(name)}\b", body) and not (
+            grant == "Task" and dispatched
+        ):
             warnings.append(f"grants `{grant}` but the prose never mentions it")
 
     return errors, warnings
@@ -167,6 +190,10 @@ def main(root):
         for g in p[0]
         if g.startswith("mcp__")
     }
+    # Dispatch targets, from the tree — an agent that exists is the only thing a
+    # role can dispatch. A body never names its own file's agent (the `name:`
+    # field is frontmatter, which `parse` strips), so this needs no self-exclusion.
+    agents = {p.stem for p in root.glob("plugins/*/agents/*.md")}
 
     declared, matched = baseline(), set()
     failed = False
@@ -177,7 +204,7 @@ def main(root):
             failed = True
             continue
         body, orphans = prose_surface(path, p[1])
-        errors, warnings = check(path, p[0], body, known_mcp)
+        errors, warnings = check(path, p[0], body, known_mcp, agents)
         warnings += orphans
         for e in errors:
             entry = f"{rel}: {e}"

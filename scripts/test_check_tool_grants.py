@@ -9,8 +9,8 @@ sys.path.insert(0, str(Path(__file__).parent))
 import check_tool_grants as c  # noqa: E402
 
 
-def role(grants, body):
-    return c.check(Path("role.md"), grants, body, {"navigate", "tabs_context_mcp"})
+def role(grants, body, agents=()):
+    return c.check(Path("role.md"), grants, body, {"navigate", "tabs_context_mcp"}, agents)
 
 
 class ToolGrants(unittest.TestCase):
@@ -57,6 +57,39 @@ class ToolGrants(unittest.TestCase):
     def test_generic_grants_are_never_unreferenced(self):
         _, warnings = role(["Read", "Write", "Glob"], "Do the thing.")
         self.assertEqual(warnings, [])
+
+
+class MentionIsNotSpelling(unittest.TestCase):
+    """What counts as referencing a grant. Both cases here were live in this tree."""
+
+    AUDITOR = "anantys.code-auditor"
+
+    def test_an_ordinary_word_does_not_discharge_a_grant_that_shares_it(self):
+        """`qa` held an unexercised `Task` in silence because it writes about tasks."""
+        _, warnings = role(["Task"], "Read tasks.md, then group by task, not by concern.")
+        self.assertIn("`Task`", warnings[0])
+
+    def test_a_substring_of_another_word_does_not_discharge_a_command_grant(self):
+        _, warnings = role(["Bash(ls:*)"], "Use whichever tools the role was granted.")
+        self.assertIn("`Bash(ls:*)`", warnings[0])
+
+    def test_the_grant_named_as_written_still_passes(self):
+        _, warnings = role(["AskUserQuestion"], "Confirm with AskUserQuestion first.")
+        self.assertEqual(warnings, [])
+
+    def test_a_dispatch_discharges_the_task_grant(self):
+        """`review` names the agent, never the tool — and it is the role that dispatches."""
+        _, warnings = role(["Task"], f"Dispatch the `{self.AUDITOR}` agent.", {self.AUDITOR})
+        self.assertEqual(warnings, [])
+
+    def test_dispatching_without_the_task_grant_is_an_error(self):
+        errors, _ = role(["Read"], f"Dispatch the `{self.AUDITOR}` agent.", {self.AUDITOR})
+        self.assertIn(self.AUDITOR, errors[0])
+        self.assertIn("`Task` is not granted", errors[0])
+
+    def test_a_name_that_is_no_agent_in_the_tree_is_not_a_dispatch(self):
+        errors, _ = role(["Read"], f"Dispatch the `{self.AUDITOR}` agent.", set())
+        self.assertEqual(errors, [])
 
 
 class ProseSurface(unittest.TestCase):
