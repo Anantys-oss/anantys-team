@@ -14,7 +14,7 @@ The user names the branch to review (a branch name, a PR number/URL, or "the cur
 
 ## Pre-flight
 
-1. **Clean working tree.** `git status --porcelain` — if there are uncommitted changes, STOP and ask the user to commit or stash first. Never review on top of dirty state.
+1. **Clean working tree — and sort what made it dirty.** `git status --porcelain` — if there are uncommitted changes, STOP. Never review on top of dirty state. But read the paths before offering a remedy: a pending change under `.anantys/` is another role's artifact, not review state, and *commit or stash* is the wrong pair for it. A QA or ops log is append-only, so a stash is the only copy — ask for a commit instead, on the branch the artifact describes. If the path is **untracked**, say so plainly: it follows your `git checkout` into every branch you touch and is still sitting there after the PR is closed. See [`docs/artifacts-declare-their-git-status.md`](../../../../docs/artifacts-declare-their-git-status.md).
 2. **Detect the base branch** — do not assume `main`. In order: an explicit base the user gave; the PR's base from `gh pr view <n> --json baseRefName`; the repo default (`git symbolic-ref refs/remotes/origin/HEAD`); else fall back to the first of `main`, `master`, `develop`, `staging` that exists.
 3. **Update the base.** `git fetch origin --prune` then bring the base up to date.
 
