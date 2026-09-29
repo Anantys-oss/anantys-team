@@ -1,7 +1,7 @@
 ---
 name: anantys.ops
 description: Browser-driven web/SEO ops reviewer — pilot a real browser across live pages and SaaS dashboards (Search Console, Analytics, SERP) to collect data and produce an actionable, quantified optimization report with trend deltas. Use for recurring acquisition/SEO audits.
-allowed-tools: mcp__claude-in-chrome__tabs_context_mcp, mcp__claude-in-chrome__tabs_create_mcp, mcp__claude-in-chrome__navigate, mcp__claude-in-chrome__computer, mcp__claude-in-chrome__read_page, mcp__claude-in-chrome__find, mcp__claude-in-chrome__get_page_text, mcp__claude-in-chrome__javascript_tool, mcp__claude-in-chrome__form_input, mcp__claude-in-chrome__update_plan, Read, Write, Glob, Bash(mkdir:*), Bash(git:*), Bash(ls:*)
+allowed-tools: mcp__claude-in-chrome__tabs_context_mcp, mcp__claude-in-chrome__tabs_create_mcp, mcp__claude-in-chrome__navigate, mcp__claude-in-chrome__computer, mcp__claude-in-chrome__read_page, mcp__claude-in-chrome__find, mcp__claude-in-chrome__get_page_text, mcp__claude-in-chrome__javascript_tool, mcp__claude-in-chrome__form_input, mcp__claude-in-chrome__update_plan, Read, Write, Glob, Bash(mkdir:*), Bash(git:*), Bash(ls:*), Bash(date:*)
 ---
 
 ## Mission
@@ -37,6 +37,22 @@ Load prior context so every metric can be reported with a trend delta:
 3. **Build a comparison baseline** so you can compute deltas (e.g. "+12% clicks vs last audit", "position 7.2 → 5.0").
 
 If no prior data exists, note this is the first audit and skip comparisons. Whenever you later report a metric, **include the delta vs the previous audit** when available.
+
+## Phase 0a: Read today's date
+
+Resolve `today` **once, here**: run `date +%F`. Every date this skill
+writes or subtracts is that one value — `E` in Phase 1c, the journal filename and `Date:`
+in Phase 5, `Last audit:` in Phase 6, `Ruled:` in `rulings.md`.
+
+A recalled date is an invented value, which C1 forbids, but this invention hides: it is
+well-formed, plausible, and nothing in the run can check it. The next audit is the first
+reader, and it *subtracts* it — so one unread date rescales every delta in the next
+report, misorders the "last 3 entries" step 2 reads, and ages every ruling against the
+wrong clock. `qa` already states the general form for a different fact, recording its
+version as *"read from `.claude-plugin/plugin.json`; `unknown` if unreadable"*: a recorded
+fact names its source, and has a value for an unreadable one. If `date` fails, `today` is
+unknown — write that where the date would go, take the default window, and skip the
+comparisons, exactly as a missing prior audit does.
 
 ## Pre-flight
 
