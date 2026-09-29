@@ -115,7 +115,7 @@ argument is finished. Eleven finished arguments are what this section already is
 
   | when the gate fires | what the operator is left with |
   |---|---|
-  | before any work (`ops` pre-flight step 3; `design`'s dev-URL ask; `qa`'s run-mode question, which is asked *before preflight* and carries **"Never pick a mode yourself"**) | nothing done, no record that anything was attempted |
+  | before any work (`ops` pre-flight step 3; `design`'s dev-URL ask; `qa`'s run-mode question, which is asked *before preflight* and carries **"Never pick a mode yourself"** — in `anantys.qa/reference/run.md` since the skill was split, not in its `SKILL.md`) | nothing done, no record that anything was attempted |
   | mid-work, tree mutated (`review` Step E waits for Merge/Close/Skip/Audit while checked out on the PR branch with the base merged in and the resolution committed) | a foreign branch and an unpushed merge commit, on a tree that reports clean — the next role's pre-flight passes and it works on the wrong code |
   | mid-work, artifact partially written (`qa`'s interactive stop at the first DEFECT) | **handled** — it closes the run and writes `qa-report.md` *before* it stops |
 
@@ -136,10 +136,19 @@ argument is finished. Eleven finished arguments are what this section already is
   ("Implicit perimeter: 3 of 7 expected items handled"), `spec-tester` (its coverage
   map). Each reaches its subject through a command whose output the harness truncates
   with no marker the reader can act on, so the verdict is computed over a prefix and
-  reported over the whole. Two of the three **already measure the size and throw it
-  away** — `git diff --stat <base>...HEAD` runs one line above `git diff
-  <base>...HEAD` in both `review`'s Step C and `code-auditor`'s Inputs. The
-  denominator is in the transcript; nothing compares the read to it.
+  reported over the whole. One of the three **already measures the size and throws it
+  away** — `code-auditor`'s Inputs run `git diff --stat <base>...HEAD` one line above
+  `git diff <base>...HEAD`. The denominator is in the transcript; nothing compares the
+  read to it.
+
+  **This entry first said two of the three, naming `review`'s Step C as the second, and
+  `review` is worse than that.** Step C's two commands are `git log <base>..HEAD
+  --oneline --no-merges` and `git diff $(git merge-base <base> HEAD)...HEAD --stat`. The
+  full diff is not a command there at all — it is the prose instruction *"Read the actual
+  diff"*. So `review` holds a denominator and has no numerator: no transcript line records
+  what was read, and the extent is whatever the role chose, unbid and unrecorded. The
+  remedy is therefore the opposite of reusing a pair it has — it is to **give** it the
+  second command, so the read has a bound to be measured against.
 
   Exactly one role declares the shortfall, and it is the one whose subject is
   smallest: `spec-tester`'s **Not covered (and why)**. The field exists, in one of
@@ -152,9 +161,10 @@ argument is finished. Eleven finished arguments are what this section already is
   artifact. Neither end of that handoff says how much it saw.
 
   When this rule is promoted here, each role keeps only its own denominator:
-  `code-auditor` the `--stat` line (landed on its branch as a **Read coverage**
-  line), `review` the same two commands one step earlier, `spec-tester` the
-  enumerated spec points it already lists.
+  `code-auditor` the `--stat` line it already runs (a **Read coverage** line, on
+  `auditor-independent-yardstick` — a later round than this one, so the wave-1 tree does
+  not contain it), `review` a full-diff command beside its `--stat`, plus the same
+  declaration, `spec-tester` the enumerated spec points it already lists.
 
 - **Evidence needs an address.** C1 says the proof is the observation — the reload, the
   screenshot, the console line, the dashboard number. Nothing in this plugin says where
@@ -244,12 +254,21 @@ argument is finished. Eleven finished arguments are what this section already is
   cost is deletion, and disclosure is not enough, because there is no reader between the
   truncated read and the overwrite. The regeneration has to **refuse**.
 
-  When this rule is promoted here, each role keeps only its own extent — and in three of
+  When this rule is promoted here, each role keeps only its own extent — and in **two** of
   four cases the number is already in the file, recomputed every run and never reconciled:
 
-  - `ops` / `current.md` — `Audits recorded: <N>` beside `Last audit:`. Phase 6 writes
-    fewer than `N` history rows only by saying which are missing and pointing at the
-    journal entries that rebuild them.
+  - `ops` / `current.md` — **the extent is the one that does not exist yet.** This entry
+    first read it as *"`Audits recorded: <N>` beside `Last audit:`"*, already in the file;
+    Phase 6's header is `Last audit: <YYYY-MM-DD>   Journal: <path>` and there is no such
+    field anywhere in the repo. So the severe case — the only artifact where the role's own
+    write is the deletion — is also the only one whose remedy adds a field rather than
+    reconciling one. That changes the promotion cost, and it lands this entry inside the
+    next one: an operator's existing `current.md` has no `Audits recorded:`, so the first
+    read of it is an absence with two causes, and under the stamp's equality test a
+    pre-stamp file mismatches and takes the declared default. The refusal this entry
+    demands is therefore unreachable until one stamped generation has written the count —
+    and the rebuild path it falls back on, the journal's per-entry KPI row, is what has to
+    carry the first run. Two candidates, interlocking; neither said so.
   - `ops` / `rulings.md` — the entries are already `R<n>`, sequential. The highest id **is**
     the extent; *"read in full"* becomes checkable at no cost.
   - `qa` / `qa-plan.md` — the Progress header already carries `<N> assertions`. Make it the
@@ -292,8 +311,10 @@ argument is finished. Eleven finished arguments are what this section already is
     the same kind of URL and has no equivalent.
   - **A verdict value meaning *could not observe*.** `anantys.qa`'s `BLOCKED`, and its
     rule that *"a step a browser cannot reach"* is `BLOCKED`, **not a FAIL**. `BLOCKED`
-    appears 17 times in `anantys.qa/SKILL.md` and **zero** times in the other five role
-    files. `review`'s four verdicts are Merge / Close / Skip / Audit — `Audit` is chosen
+    appears 21 times across the `anantys.qa` tree — 8 in its `SKILL.md`, the rest in the
+    templates and `reference/` pages `qa-skill-progressive-disclosure` split out — and
+    **zero** times in the other five role files. (Counted at 17-in-`SKILL.md` before that
+    split; see the citation note below.) `review`'s four verdicts are Merge / Close / Skip / Audit — `Audit` is chosen
     on the *content* of the diff, not on how much of it the role managed to see. `ops`
     reports a number or a wait; there is no third thing to write in the cell.
 
@@ -408,6 +429,35 @@ argument is finished. Eleven finished arguments are what this section already is
     adding it there costs nothing and is the only moment it is free.
   - The `agents/` pair — unaffected. They hold no artifact across runs, which is the one
     property that exempts a role from this rule.
+
+---
+
+## Citation note
+
+Every candidate above argues from a quotation: a step in a role file, a field in a
+template, a count. Those are not claims about this file — they are claims about a **file
+on another open head**, and nothing in this repo checks one. All seventeen were re-read
+against the assembled wave-1 tree. Four were wrong, in three distinct ways, and the shape
+of each is worth keeping because it will recur every time the queue moves:
+
+| citation | what it said | what the tree says |
+|---|---|---|
+| the stamp decides *"whether the stamp predates that field"* | a mechanism that is already here | needs a field→version map that does not exist; the page that built the stamp calls it *"a pointer to a question, not an answer"*. **Two artifacts in one round, disagreeing about the same line** |
+| `--stat` runs above the full diff in *"both `review`'s Step C and `code-auditor`'s Inputs"* | a pair to reuse | only `code-auditor` has it. `review`'s full diff is prose, not a command — **so the remedy inverts**: give it the command rather than reuse it |
+| `ops` / `current.md` carries `Audits recorded: <N>` | an extent already in the file | no such field anywhere. **The remedy adds a field**, which changes the promotion cost and lands the entry inside the next one |
+| `BLOCKED` *"appears 17 times in `anantys.qa/SKILL.md`"*; `"Never pick a mode yourself"` is in that `SKILL.md` | measured | both measured before `qa-skill-progressive-disclosure` split the skill. Still true of the *tree*; false of the *file* named |
+
+Three of the four were right when written. The first was never right. The difference
+matters for how the list is maintained: **a candidate's evidence is measured against one
+head and read in the union**, and the union moves without the candidate changing. A
+quotation that names a file is the fragile form; one that names a behaviour survives the
+split. Where a count is load-bearing, say which tree it was counted in — the two
+corrected above were off by a refactor, not by a fact, and reading them as facts is what
+makes a promotion write the wrong narrowing.
+
+A wrong citation is not a wrong candidate. All four survive; two of them are stronger for
+being corrected, because in both the real state of the role file is worse than the entry
+claimed.
 
 ---
 
