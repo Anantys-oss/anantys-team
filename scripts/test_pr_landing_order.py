@@ -811,3 +811,125 @@ class Stacked(unittest.TestCase):
         contained = p.stacked(self.pr((1, "lower"), (2, "copy"), (3, "upper")))
         self.assertEqual(contained, {1: 3, 2: 3})
 
+
+
+class Links(unittest.TestCase):
+    """Where a relative link points, read from the file that writes it."""
+
+    def test_a_sibling_link_resolves_beside_its_writer(self):
+        self.assertEqual(p.links("docs/a.md", "see [b](./b.md)"), ["docs/b.md"])
+
+    def test_a_link_is_to_a_file_not_to_a_section(self):
+        # `]([^)]+\.md)` — the form every checker reaches for — matches nothing
+        # here, so a deep link is silently counted as no link at all.
+        self.assertEqual(p.links("docs/a.md", "see [b](./b.md#rules)"),
+                         ["docs/b.md"])
+
+    def test_a_link_climbs_out_of_its_directory(self):
+        self.assertEqual(
+            p.links("plugins/pkg/skills/s/SKILL.md", "[c](../../CONTRACT.md)"),
+            ["plugins/pkg/CONTRACT.md"])
+
+    def test_an_external_link_is_not_a_path_in_this_repo(self):
+        self.assertEqual(p.links("a.md", "[x](https://example.com/y.md)"), [])
+
+    def test_a_target_named_twice_is_one_target(self):
+        self.assertEqual(p.links("a.md", "[x](./b.md) and [y](./b.md#z)"),
+                         ["b.md"])
+
+    def test_a_non_markdown_target_is_not_a_page(self):
+        self.assertEqual(p.links("a.md", "[img](./d.png)"), [])
+
+
+class LinkPrecedence(unittest.TestCase):
+    """A link across two branches is an ordering edge with no conflict in it.
+
+    The pair shares no path, so `merge-tree` is clean and the file intersection
+    is empty: every other signal this report computes says the two are
+    independent. Landing them in the wrong order puts prose on `main` that
+    points at a file `main` does not have.
+    """
+
+    def git(self, *args):
+        subprocess.run(("git",) + args, check=True, capture_output=True)
+
+    def head(self, name):
+        oid = subprocess.run(["git", "rev-parse", "HEAD"], check=True,
+                             capture_output=True, text=True).stdout.strip()
+        self.git("update-ref", f"refs/remotes/origin/{name}", oid)
+
+    def branch(self, name, files):
+        self.git("checkout", "-q", "main")
+        self.git("checkout", "-qb", name)
+        for path, body in files.items():
+            Path(path).parent.mkdir(parents=True, exist_ok=True)
+            Path(path).write_text(body)
+        self.git("add", "-A")
+        self.git("commit", "-qm", name)
+        self.head(name)
+        self.git("checkout", "-q", "main")
+
+    def setUp(self):
+        self.dir = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.dir)
+        self.addCleanup(os.chdir, os.getcwd())
+        os.chdir(self.dir)
+        self.git("init", "-q", "-b", "main")
+        self.git("config", "user.email", "t@example.com")
+        self.git("config", "user.name", "t")
+        Path("README.md").write_text("# Base\n")
+        self.git("add", "README.md")
+        self.git("commit", "-qm", "base")
+        # The consumer cites a page; the provider is the branch that writes it.
+        self.branch("cites", {"docs/role.md": "Read [why](./why.md) first.\n"})
+        self.branch("writes", {"docs/why.md": "# Why\n"})
+        self.branch("apart", {"other.md": "Unrelated.\n"})
+
+    def pr(self, *triples):
+        return [(n, ref, f"pr {n}", set(paths)) for n, ref, paths in triples]
+
+    def test_the_provider_is_ordered_before_the_consumer(self):
+        found = p.dangling(self.pr((1, "cites", ["docs/role.md"]),
+                                   (2, "writes", ["docs/why.md"])))
+        self.assertEqual(found, {(2, 1): {"docs/role.md": ["docs/why.md"]}})
+
+    def test_the_pair_that_needs_ordering_has_no_conflict_to_find_it_by(self):
+        prs = self.pr((1, "cites", ["docs/role.md"]),
+                      (2, "writes", ["docs/why.md"]))
+        self.assertEqual(p.conflicts(prs), {})
+
+    def test_waves_place_the_provider_first(self):
+        prs = self.pr((1, "cites", ["docs/role.md"]),
+                      (2, "writes", ["docs/why.md"]))
+        order = p.waves([n for n, _, _, _ in prs], {}, list(p.dangling(prs)))
+        self.assertEqual(order, [[2], [1]])
+
+    def test_a_link_nobody_provides_is_not_an_ordering_problem(self):
+        # A template's links resolve in the consumer's repository. No open head
+        # carries them, so requiring a provider drops them without a carve-out.
+        self.branch("template", {
+            "templates/plan.md": "Fill in [tasks](./tasks.md).\n"})
+        found = p.dangling(self.pr((1, "template", ["templates/plan.md"]),
+                                   (2, "apart", ["other.md"])))
+        self.assertEqual(found, {})
+
+    def test_a_link_its_own_head_resolves_is_not_an_edge(self):
+        self.branch("whole", {"docs/role.md": "Read [why](./why.md) first.\n",
+                              "docs/why.md": "# Why\n"})
+        found = p.dangling(self.pr((1, "whole", ["docs/role.md",
+                                                 "docs/why.md"]),
+                                   (2, "writes", ["docs/why.md"])))
+        self.assertEqual(found, {})
+
+    def test_a_deleted_file_has_no_links_left_to_resolve(self):
+        # `files` names every path the PR touched, removals included, so the
+        # head it names them on need not still have them.
+        self.branch("drops", {"docs/gone.md": "Read [why](./why.md).\n"})
+        self.git("checkout", "-q", "drops")
+        self.git("rm", "-q", "docs/gone.md")
+        self.git("commit", "-qm", "drop it")
+        self.head("drops")
+        self.git("checkout", "-q", "main")
+        found = p.dangling(self.pr((1, "drops", ["docs/gone.md"]),
+                                   (2, "writes", ["docs/why.md"])))
+        self.assertEqual(found, {})

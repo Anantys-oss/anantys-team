@@ -33,6 +33,17 @@ time — the restructurer collides with the most PRs, so it sorts to the front �
 so a relocation is a precedence constraint on the waves, not merely a warning
 printed under them.
 
+Not every ordering constraint is a conflict, and the ones that are not are the
+ones no tool here could see. A PR whose prose links a file another PR adds
+shares no path with it: `merge-tree` is clean, the file intersection is empty,
+and degree-first is free to land the consumer first. What lands is a role that
+says *read this before acting* pointing at a path `main` does not have — green
+by every gate, because CI asks each PR about a tree containing only that PR,
+and the branch that answers the question is in someone else's. So a link whose
+target another open head provides is a precedence edge too, of the same kind as
+a relocation and from the opposite evidence: not a shared file, but an unshared
+one.
+
 Mergeable is not green. A wave says the trees combine without a conflict; it
 says nothing about whether the combined tree still passes the repo's own checks.
 Every checker in this queue was written against `main` and validated against the
@@ -86,6 +97,8 @@ Exit 0 always — this is an operator report, not a gate.
 import argparse
 import contextlib
 import json
+import posixpath
+import re
 import subprocess
 import sys
 import tempfile
@@ -253,6 +266,65 @@ def relocations(base, prs, edges):
                                      anchors(base, refs[loser], path))
                 if destinations:
                     out.setdefault((loser, winner), {})[path] = destinations
+    return out
+
+
+LINK = re.compile(r"\]\(([^)\s]+?\.md)(?:#[^)]*)?\)")
+
+
+def links(path, text):
+    """Repo-relative targets of the local `.md` links written in `path`.
+
+    Anchors are stripped before resolution: a link is to a file, and one
+    written with a `#section` suffix points at the same file as one without.
+    A checker that requires the target to *end* in `.md` silently drops every
+    deep link, which is the form prose reaches for most.
+    """
+    base = posixpath.dirname(path)
+    return sorted({
+        posixpath.normpath(posixpath.join(base, target))
+        for target in LINK.findall(text)
+        if not target.startswith(("http:", "https:", "//", "/"))
+    })
+
+
+def dangling(prs):
+    """{(provider, consumer): {path: [targets]}} — links a clean merge breaks.
+
+    A relative link is prose, not a hunk. A PR that writes "read this before
+    acting" and the PR that adds the file it names touch no common path, so
+    `merge-tree` reports no conflict and `waves` is free to place the consumer
+    first. The result merges green and reads broken: `main` carries a role
+    pointing at a file `main` does not have. Mergeable is not coherent, and
+    this is the cross-PR form of it — invisible to CI, which asks each PR
+    about a tree that contains only that PR.
+
+    Only a target some *other open PR* provides becomes an edge. A link no
+    head resolves is not an ordering problem at all: template prose resolves
+    against the consumer's repository, never this one, so the same absence
+    that would be a defect in a role is the intended state in a template.
+    Requiring a provider separates the two without naming either.
+    """
+    heads = {n: f"origin/{ref}" for n, ref, _, _ in prs}
+
+    def blob(ref, path):
+        found = subprocess.run(["git", "show", f"{ref}:{path}"],
+                               capture_output=True, text=True)
+        return found.stdout if found.returncode == 0 else None
+
+    out = {}
+    for number, _, _, paths in prs:
+        for path in sorted(p for p in paths if p.endswith(".md")):
+            text = blob(heads[number], path)
+            if text is None:  # the PR deletes it — nothing left to resolve
+                continue
+            for target in links(path, text):
+                if blob(heads[number], target) is not None:
+                    continue
+                for other, _, _, _ in prs:
+                    if other != number and blob(heads[other], target) is not None:
+                        out.setdefault((other, number), {}).setdefault(
+                            path, []).append(target)
     return out
 
 
@@ -700,7 +772,9 @@ def main():
     base = run("git", "rev-parse", "main").strip()
     edges = conflicts(prs)
     relocated = relocations(base, prs, edges) if edges else {}
-    order = waves([n for n, _, _, _ in prs], edges, relocated)
+    unresolved = dangling(prs)
+    order = waves([n for n, _, _, _ in prs], edges,
+                  list(relocated) + list(unresolved))
 
     print(f"{len(prs)} open PRs, {len(edges)} conflicting pairs, "
           f"{len(order)} waves ({max(len(order) - 1, 0)} rebase rounds)\n")
@@ -727,6 +801,17 @@ def main():
                           f"above: a rebase cannot move a hunk across files, "
                           f"but #{winner} can re-split a file that already "
                           f"contains it.")
+
+    if unresolved:
+        print("\nLinks that only resolve once another PR lands — no conflict, "
+              "so nothing else here sees them:")
+        for (provider, consumer), where in sorted(unresolved.items()):
+            for path, targets in sorted(where.items()):
+                print(f"  #{consumer} {path} -> {', '.join(targets)} — "
+                      f"added by #{provider}, absent from #{consumer}'s own "
+                      f"head. The pair merges clean, so #{consumer} can land "
+                      f"first and leave `main` pointing at a file it does not "
+                      f"have. #{provider} is ordered before #{consumer} above.")
 
     if args.contracts and order:
         print("\nWhat the next round changes, read by file rather than by PR "
