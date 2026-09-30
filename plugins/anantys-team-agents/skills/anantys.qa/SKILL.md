@@ -515,10 +515,21 @@ operator's go before any write.
   apply it — an operator ruling given off-record is still a ruling — but record the result as
   `PASS-with-note (unverified ruling)` and list every one of them in the reply, so what suppressed
   what is visible in the same breath as the verdict.
+- **The witness needs a witness, and it is not in the file.** `qa-runs.md` is committed, in the
+  same directory, editable by the same three actors — "append-only" is what `run` does to it, not
+  what it holds against anyone else, so a section produced by a rebase, a merge of two campaign
+  branches or a tidy-up reads exactly like one `run` wrote. Attestation comes from outside: either
+  `run` appended the section **in this session**, or git has it —
+  `git log -S'<run header line>' --format='%h %an %ad' -- <campaign>/qa-runs.md`. A section that is
+  neither — present in the tree, in no commit, written by nobody you can name — is **unattested**:
+  not an off-record ruling, no record. Suppress nothing on it: file the FAIL and name the
+  unattested witness in the evidence. See
+  [`docs/a-witness-a-writer-can-write.md`](../../../../docs/a-witness-a-writer-can-write.md).
 - **A `STALE` ruling suppresses nothing.** It was written about a wording a regeneration replaced,
   so it is not a weaker witness — it is a ruling about a different assertion. File the FAIL as a
   defect and name the stale ruling in the evidence, so the operator can re-rule it with `note`
-  rather than re-derive it. Unverified means *ruled off-record*; stale means *ruled on other text*.
+  rather than re-derive it. Unverified means *ruled off-record*; stale means *ruled on other text*;
+  unattested means *witnessed by nobody* — and only the first two still apply the ruling.
 - **A ruling never removes a §3 blocker from the verdict.** An adjudication may narrow a blocker
   assertion, and a narrowed blocker that passes is a pass. But when a ruling is what turned a
   blocker FAIL into a PASS, the verdict still names it — `<id> PASS by ruling <date>` in the blocker
