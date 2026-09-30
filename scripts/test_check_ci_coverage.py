@@ -11,6 +11,8 @@ from check_ci_coverage import check, main, scan  # noqa: E402
 
 ON_PR = "on:\n  pull_request:\n\njobs:\n  j:\n    steps:\n"
 ON_PUSH = "on:\n  push:\n    branches: [main]\n\njobs:\n  j:\n    steps:\n"
+JOBS = "\njobs:\n  j:\n    steps:\n"
+RUN_A = "      - run: python3 scripts/check_a.py\n"
 
 
 def tree(root, scripts=(), workflows=()):
@@ -76,6 +78,71 @@ def test_pull_request_inside_an_expression_is_not_a_trigger(tmp_path):
     assert main([str(tmp_path)]) == 1
 
 
+def test_types_that_exclude_the_open_pr_reports_too_late(tmp_path):
+    tree(tmp_path, ["check_a.py"],
+         [("a.yml", "on:\n  pull_request:\n    types: [closed]\n" + JOBS + RUN_A)])
+    errors, _ = scan_and_check(tmp_path)
+    assert len(errors) == 1, errors
+    assert "only for closed, all after the decision" in errors[0], errors[0]
+
+
+def test_types_listed_as_a_block_are_read_the_same_way(tmp_path):
+    tree(tmp_path, ["check_a.py"],
+         [("a.yml", "on:\n  pull_request:\n    types:\n      - closed\n      - labeled\n"
+                    + JOBS + RUN_A)])
+    assert main([str(tmp_path)]) == 1
+
+
+def test_types_that_include_a_preventive_event_still_gate(tmp_path):
+    tree(tmp_path, ["check_a.py"],
+         [("a.yml", "on:\n  pull_request:\n    types: [opened, synchronize, closed]\n"
+                    + JOBS + RUN_A)])
+    assert main([str(tmp_path)]) == 0
+
+
+def test_a_path_filtered_trigger_is_not_coverage(tmp_path):
+    tree(tmp_path, ["check_a.py"],
+         [("a.yml", "on:\n  pull_request:\n    paths:\n      - 'docs/**'\n" + JOBS + RUN_A)])
+    errors, _ = scan_and_check(tmp_path)
+    assert len(errors) == 1, errors
+    assert "selected paths" in errors[0], errors[0]
+
+
+def test_paths_ignore_is_a_filter_too(tmp_path):
+    tree(tmp_path, ["check_a.py"],
+         [("a.yml", "on:\n  pull_request:\n    paths-ignore:\n      - '**.md'\n" + JOBS + RUN_A)])
+    assert main([str(tmp_path)]) == 1
+
+
+def test_a_branch_filter_on_the_pr_target_is_not_a_path_filter(tmp_path):
+    tree(tmp_path, ["check_a.py"],
+         [("a.yml", "on:\n  pull_request:\n    branches: [main]\n" + JOBS + RUN_A)])
+    assert main([str(tmp_path)]) == 0
+
+
+def test_a_push_path_filter_does_not_disqualify_the_pr_trigger(tmp_path):
+    tree(tmp_path, ["check_a.py"],
+         [("a.yml", "on:\n  push:\n    paths:\n      - 'docs/**'\n  pull_request:\n"
+                    + JOBS + RUN_A)])
+    assert main([str(tmp_path)]) == 0
+
+
+def test_the_flow_sequence_form_of_on_is_a_pull_request_trigger(tmp_path):
+    tree(tmp_path, ["check_a.py"], [("a.yml", "on: [push, pull_request]\n" + JOBS + RUN_A)])
+    assert main([str(tmp_path)]) == 0
+
+
+def test_a_quoted_on_key_is_still_the_trigger_block(tmp_path):
+    tree(tmp_path, ["check_a.py"], [("a.yml", '"on":\n  pull_request:\n' + JOBS + RUN_A)])
+    assert main([str(tmp_path)]) == 0
+
+
+def test_pull_request_target_is_not_matched_as_pull_request(tmp_path):
+    tree(tmp_path, ["check_a.py"],
+         [("a.yml", "on:\n  pull_request_target:\n    types: [closed]\n" + JOBS + RUN_A)])
+    assert main([str(tmp_path)]) == 1
+
+
 def test_no_workflows_at_all_orphans_every_checker(tmp_path):
     tree(tmp_path, ["check_a.py", "check_b.py"])
     errors, _ = scan_and_check(tmp_path)
@@ -88,8 +155,8 @@ def test_a_tree_with_no_checkers_is_clean(tmp_path):
 
 
 def scan_and_check(root):
-    checkers, named, gating = scan(root)
-    return check(checkers, named, gating, {p.name for p in (root / "scripts").glob("*.py")})
+    checkers, named, gating, why = scan(root)
+    return check(checkers, named, gating, {p.name for p in (root / "scripts").glob("*.py")}, why)
 
 
 def load_tests(loader, tests, pattern):

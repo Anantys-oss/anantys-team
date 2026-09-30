@@ -23,6 +23,24 @@ Two directions, both errors:
   rename direction, and it is how a working gate becomes a missing one without
   anybody editing the gate.
 
+`push: branches: [main]` is one way a trigger fires too late, not the only one,
+and the others live *under* the `pull_request:` key rather than beside it. The
+test is therefore not "is `pull_request` present" but "can this workflow fail
+while the branch is still a branch":
+
+- `types:` naming only events that follow the decision — `closed`, `labeled` —
+  fires on a pull request and still reports after the merge. Same defect as
+  `push: [main]`, one nesting level deeper.
+- `paths:` / `paths-ignore:` narrows the trigger to a subtree. Whether that
+  subtree contains what the gate reads is a fact about the gate, and a checker
+  that greps `run:` lines cannot know it: `check_plugins.py` reads `plugins/`,
+  `check_ci_coverage.py` reads `.github/` and `scripts/`, and nothing in the
+  YAML says so. A filtered trigger is therefore not counted — give the gate an
+  unfiltered workflow, or drop the filter. Fail closed: the alternative is
+  certifying a gate that never once ran on the tree it guards.
+
+Both shapes are the failure this checker exists to catch, dressed as coverage.
+
 Coverage is satisfied by *any* PR-triggered workflow, so a gate may keep its own
 workflow file or join an existing one — this fixes the wiring, not the layout.
 
@@ -38,32 +56,87 @@ from pathlib import Path
 # does not match `unittest discover -s scripts`: discovery runs test modules,
 # never the checkers, so a repo whose CI is discovery alone runs zero gates.
 NAMED = re.compile(r"scripts/([\w.-]+\.py)")
-# `on:` needs the key, not the phrase — `pull_request` also appears in comments
-# and in `github.event.pull_request.*` expressions inside a step.
-PULL_REQUEST = re.compile(r"^\s{2,}pull_request:\s*$", re.M)
+# `on:` at column 0 — the key, not the phrase. `pull_request` also appears in
+# comments and in `github.event.pull_request.*` expressions inside a step. YAML
+# lets the key be quoted, because bare `on` is also the boolean `true`.
+ON = re.compile(r"^(?:on|['\"]on['\"]):(.*)$")
+# The `pull_request` activity types that fire while the branch is still a branch.
+# Anything outside this set reports on a decision already taken.
+PREVENTIVE = {"opened", "synchronize", "reopened", "ready_for_review", "edited"}
+
+
+def nested(lines, index):
+    """The lines under `lines[index]` — strictly more indented, blanks dropped."""
+    outer = len(lines[index]) - len(lines[index].lstrip())
+    body = []
+    for line in lines[index + 1:]:
+        if not line.strip():
+            continue
+        if len(line) - len(line.lstrip()) <= outer:
+            break
+        body.append(line)
+    return body
+
+
+def blocking(text):
+    """None if this workflow can fail before the merge, else why it cannot.
+
+    Hand-rolled on purpose: every checker in `scripts/` is stdlib-only, and the
+    shapes that matter are two levels deep.
+    """
+    lines = text.splitlines()
+    for i, line in enumerate(lines):
+        if not (on := ON.match(line)):
+            continue
+        if inline := on.group(1).split("#", 1)[0].strip():
+            # `on: pull_request` or `on: [push, pull_request]` — no filters possible.
+            return None if "pull_request" in inline else "does not trigger on pull_request"
+        body = nested(lines, i)
+        keys = [n for n, ln in enumerate(body) if re.match(r"^\s*pull_request:", ln)]
+        if not keys:
+            return "does not trigger on pull_request"
+        inner = nested(body, keys[0])
+        for n, ln in enumerate(inner):
+            if re.match(r"^\s*paths(-ignore)?:", ln):
+                return ("fires on pull_request only for selected paths, which may exclude "
+                        "what the gate reads")
+            if kinds := re.match(r"^\s*types:\s*(.*)$", ln):
+                listed = set(re.findall(r"[\w-]+", kinds.group(1))) or set(
+                    re.findall(r"[\w-]+", " ".join(nested(inner, n)))
+                )
+                if not listed & PREVENTIVE:
+                    return ("fires on pull_request only for "
+                            f"{', '.join(sorted(listed))}, all after the decision")
+        return None
+    return "does not trigger on pull_request"
 
 
 def scan(root):
-    """(checkers, {script name: [workflow]}, {script name: [PR-triggered workflow]})."""
+    """(checkers, {script: [workflow]}, {script: [blocking workflow]}, {workflow: why not})."""
     checkers = {p.name for p in (root / "scripts").glob("check_*.py")}
-    named, gating = {}, {}
+    named, gating, why = {}, {}, {}
     for workflow in sorted((root / ".github/workflows").glob("*.y*ml")):
         text = workflow.read_text(encoding="utf-8")
+        reason = blocking(text)
+        if reason:
+            why[workflow.name] = reason
         for name in NAMED.findall(text):
             named.setdefault(name, []).append(workflow.name)
-            if PULL_REQUEST.search(text):
+            if reason is None:
                 gating.setdefault(name, []).append(workflow.name)
-    return checkers, named, gating
+    return checkers, named, gating, why
 
 
-def check(checkers, named, gating, present):
+def check(checkers, named, gating, present, why=None):
     """(errors, warnings) for one tree. `present` is every file in `scripts/`."""
+    why = why or {}
     errors = []
     for name in sorted(checkers - gating.keys()):
         where = named.get(name)
         errors.append(
-            f"scripts/{name}: run only by {', '.join(where)}, which does not trigger "
-            "on pull_request — it reports after the merge it should have blocked"
+            f"scripts/{name}: run only by "
+            + "; ".join(f"{w}, which {why.get(w, 'does not trigger on pull_request')}" for w in where)
+            + " — the gate cannot block the merge it exists to prevent"
             if where else
             f"scripts/{name}: no workflow runs it — the gate guards nothing"
         )
@@ -76,9 +149,9 @@ def check(checkers, named, gating, present):
 
 def main(argv=None):
     root = Path((argv or sys.argv[1:] or ["."])[0]).resolve()
-    checkers, named, gating = scan(root)
+    checkers, named, gating, why = scan(root)
     present = {p.name for p in (root / "scripts").glob("*.py")}
-    errors, warnings = check(checkers, named, gating, present)
+    errors, warnings = check(checkers, named, gating, present, why)
 
     for warning in warnings:
         print(f"warning: {warning}")
