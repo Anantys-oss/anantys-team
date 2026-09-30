@@ -56,6 +56,28 @@ before acting on it**:
 This holds for every action, not just the inferred one: `run`, `retest`, `note`, `report` and
 `status` all report not-found rather than proceeding against an empty or freshly written plan.
 
+**A found campaign is not yet your campaign.** Slug normalization is many-to-one — `feat/checkout`
+and `feat-checkout` are one directory, so are `SKU-231` and a brief titled `SKU 231` — so a
+`.anantys/qa/<slug>/` that exists is not evidence that it is this feature's. It is the mirror of the
+rule above and it is worse, because the absence proof *passes*: git tracks a plan, so step 2 reads
+green while `plan` is about to regenerate a stranger's `qa-plan.md` and score it against a
+closed-defect history that belongs to another feature. So the directory records its own identity:
+
+- **`brief.md` carries a `Slug derived from:` line** — the verbatim, un-normalized value the slug was
+  computed from: the branch, the SKU list, the PR URLs, or the brief's path. Only the lossy output of
+  that computation was ever kept; this keeps the input. (`Source:` states the *kind* of source, which
+  two hand-written briefs share.)
+- **`plan` reads the existing line before it copies the brief over it.** A recorded value that
+  disagrees with the one in hand is a different campaign: name both, and stop — ask for an explicit
+  `<slug>` rather than taking the directory that happens to be on disk. A `brief.md` with **no** such
+  line predates this rule — say so and ask; never infer the value from the directory name, which is
+  the thing the rule exists to distrust.
+- **Every later action matches on that record, not on the normalized branch name.** A name match with
+  a contradicting `Slug derived from:` resolves to nothing found, handled by the rule above.
+
+A spec-kit campaign is exempt: its directory *is* the source, so there is nothing to derive and
+nothing to collide.
+
 ---
 
 ## Locating the feature

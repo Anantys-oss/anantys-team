@@ -15,9 +15,14 @@ The two states are not the same, and no role in this repo distinguished them.
 | detached HEAD / renamed branch | branch name matches no dir | first run | **same** |
 | mistyped `<slug>` | named dir absent | first run | **same** |
 | fresh worktree / shallow clone | artifact not checked out | first run | **same** |
+| another feature normalizes to the same slug | dir present, plan tracked | **found** | **regenerates a stranger's plan over its adjudication history** |
 
-Only the first row is a first run. The other four are lookup failures wearing its clothes, and the
+Only the first row is a first run. The next four are lookup failures wearing its clothes, and the
 role cannot tell them apart because it asked the filesystem a question the filesystem cannot answer.
+
+The last row is the dual, and it is the one this document nearly missed: a lookup that **succeeds**
+and returns the wrong thing. Everything below about proving an absence is silent about it, because
+the proof it prescribes — ask git — comes back green.
 
 ## Why it was invisible
 
@@ -33,6 +38,45 @@ not-found state still ends in a regenerated plan.
 
 That is the general lesson. When a lookup can fail for several reasons, patching the reason you
 happened to hit leaves the others live. Handle the **state**, not the cause.
+
+## The fourth state: found, and wrong
+
+Three states, and the section above credits itself with two of them: ambiguity ("never guess between
+two, ask") and the wrong candidate ("never fall back to `specs_dir`"). Zero candidates is what this
+document closes. There is a fourth, and the patch that closed the *cause* in row four is what
+manufactured it.
+
+A `<slug>` is normalized — "lowercase, then every run of non-alphanumeric characters — `/` included —
+becomes a single `-`". That map is **many-to-one**. `feat/checkout` and `feat-checkout` are the same
+directory. So are `SKU-231` and a brief titled `SKU 231`, and so are the two spellings anyone lands
+on when a branch convention changes mid-project. The normalization exists so that a re-run finds its
+own directory; the same property makes a different feature find it too.
+
+That is worse than not-found, for one reason: **the absence proof passes.** Step 2 below asks git
+whether a plan is tracked. In a collision it is — the wrong one. The guard reads green at the one
+moment the role is holding a stranger's `qa-runs.md`, and `plan` regenerates `qa-plan.md` whole. The
+closed-defect history that backs *"a defect is never re-filed twice"* survives the overwrite and is
+now scoring a feature it never saw.
+
+The other qa guard is the tell. `never fall back to specs_dir … a spec dir sharing the PR's branch
+name is a different, stale campaign` is this exact defect, correctly diagnosed — and guarded only
+across the `specs/` ⇄ `.anantys/qa/` boundary. Inside `.anantys/qa/`, a name-sharing directory is
+accepted without a question.
+
+The general form is not qa-specific: any role that derives a durable path from project state is
+making a claim about identity, and a derived name that already exists is the moment to check the
+claim rather than the moment to write. `anantys.ops` derives its journal entry the same way, from a
+date.
+
+**The rule.** A directory name is a lookup key, never an identity. So the identity has to be written
+down: the feature directory records the value its slug was derived from, verbatim and
+un-normalized. `plan` reads that record **before** it copies anything over it, and a recorded source
+that disagrees with the one in hand is not this campaign — name both and stop, rather than picking
+the one that happens to be on disk. Every action after `plan` matches on the record, not on the
+normalized branch name.
+
+Nothing here is a second identifier. The value is already what the slug was computed from; the
+defect is that only the lossy output of that computation was ever kept.
 
 ## The rule
 
