@@ -117,6 +117,7 @@ Environment: `<name>` (`local` | `shared`). Subject: <account/fixture id>. Build
 |----|--------|----------|
 | A1 | ✅ | <observation> |
 | A4 | ❌ | <what was seen> vs <what was expected> — <url> |
+| A7 | ✅ PASS (unstable) | <observation> — green only after <what was retried>; first showed <what> |
 | C2 | ⛔ BLOCKED | <why unreachable> |
 
 ### Defects opened this run
@@ -132,6 +133,11 @@ Environment: `<name>` (`local` | `shared`). Subject: <account/fixture id>. Build
 A FAIL that came back PASS with nothing to put in **What changed** does not belong in this table: it
 did not reproduce on the same build, which is not a fix. It keeps its FAIL suffix and stays open —
 see SKILL.md, "A green retest is a fix only when something names the change".
+
+`PASS (unstable)` is the same asymmetry on the green side: an assertion that needed more than one
+observation to go green. Its `qa-plan.md` suffix is plain `PASS` — it did pass — and this row is the
+only record that it disagreed with itself, which is why `retest` selects its subset from here rather
+than from the plan. See SKILL.md, "A PASS is a single observation too".
 
 The line under the header is written `⏳ in progress` when the section is opened and replaced with
 `✅ complete` by step 5 once the walk has ended and steps 6–7 have run. **`⏳ in progress` on

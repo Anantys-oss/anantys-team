@@ -399,7 +399,8 @@ operator's go before any write.
 A full re-run after a fix pass is expensive and mostly re-confirms green. Instead:
 
 1. Take from `qa-runs.md` every assertion whose latest result **on the selected environment** is
-   FAIL or BLOCKED — a result recorded on another environment neither adds nor removes a case.
+   FAIL, BLOCKED, or `PASS (unstable)` — a result recorded on another environment neither adds nor
+   removes a case.
 2. Add the **regression-risk set** around each fix — the assertions the fix could plausibly have
    broken, especially the ones an *over-fix* would break. A guard added to stop a wrong behaviour
    very often also suppresses the right one; assert the right one explicitly.
@@ -429,6 +430,38 @@ assertion did not **reproduce**, which is not the same as fixed:
 
 Intermittent is the most expensive class of defect to find and the cheapest to lose. Closing one on
 the single run that went green is how it reaches production with a green report behind it.
+
+### A PASS is a single observation too
+
+"Nothing that passed is re-run" is not a remark about this subset — it is step 1's definition of it,
+and it makes the green side one-sided in the harder direction. A FAIL gets a second trial by
+construction. A PASS gets none, ever: it leaves no row for step 1 to select, step 2's regression-risk
+set is derived from the fix rather than from how any result was obtained, and step 3 is the
+*operator's* channel, not the walker's. So for an assertion that went green on a timing-dependent
+redirect or a warm cache, the campaign's first observation is also its last — and the rule above,
+which exists for exactly that defect class, can never fire on it, because the assertion never
+reaches a retest.
+
+Judging rules already forbid re-walking a flow to confirm a result: state you created yourself
+invalidates it. That is right, and it means the only evidence of instability a campaign will ever
+hold is what the walk noticed on the way to the green — a wait that had to be extended, a reload
+before the screen settled, a step re-driven past a transient error, an assertion that read FAIL and
+then PASS inside one scenario. Record it rather than discard it:
+
+- A PASS that took **more than one observation** to obtain is written `PASS (unstable)` in the run
+  section, naming what was retried and what the earlier observation showed. Silently re-driving a
+  step until the assertion goes green is the one move that destroys this evidence — a retry that
+  changes the answer *is* the observation.
+- It **joins the retest subset** (step 1). That is the only channel by which a shaky green gets a
+  second trial, and it needs no new status in `qa-plan.md`: the assertion did pass, so its
+  per-environment suffix stays PASS, and step 1 reads `qa-runs.md`, not the plan. Instability is a
+  property of the observation, and the run log is what records observations.
+- A PASS still unstable after a second run is the operator's to rule on with `note`, exactly like a
+  FAIL that would not reproduce. What they must not have to do is notice it themselves from a
+  progress table reading 100% green.
+
+An assertion that answers differently on the same build has been verified neither way — and that
+sentence does not stop being true when the run that disagreed with itself was the first one.
 
 ## `note` — record an operator adjudication
 
