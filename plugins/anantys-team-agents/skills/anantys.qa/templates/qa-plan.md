@@ -118,6 +118,10 @@ Environment: `<name>` (`local` | `shared`). Subject: <account/fixture id>. Build
 
 ### Created in the environment this run
 
+**Run state:** in progress | complete — written `in progress` when this section is opened, which
+is *before* the walk, and flipped to `complete` by `run` step 5. It is a property of the whole run
+section; it lives here because this is the part of it that must exist first.
+
 | What | How to find it | How to remove it |
 |----|----|----|
 | <record / account / order / upload> | <id, or the query that finds it> | <command, or "operator only"> |
@@ -140,6 +144,30 @@ rule — passes on exactly the leftovers it exists to reject. Until each prior r
 either carries this table or is struck as unaccounted, treat the campaign's footprint as unknown:
 S3 is `BLOCKED`, and so is any assertion whose precondition needs data the campaign did not create.
 An unaccounted footprint is the one thing a later run cannot reconstruct by looking.
+
+**The section is opened before the first write, not written at the end.** `run` appends the run
+section to `qa-runs.md` at step 5, after the step-3 walk that creates the data — so everything
+between the operator's go and the end of the walk is a live environment holding records that no
+artifact names. That is not an edge case: it is every run that is interrupted, and a
+forty-scenario campaign against staging is exactly the shape that runs out of context, loses its
+browser session, or gets `^C`'d. So `run` writes the run header and this empty table
+**immediately after the go**, marked `in progress`, and appends **each row before performing the
+write it describes**. Step 5 then fills in results and flips the state to `complete`.
+
+A row may therefore name a record that was never created — the write it preceded did not happen.
+That asymmetry is deliberate: a phantom row costs one lookup, a missing row costs an unfindable
+record in an environment that is never reset.
+
+**A section left `in progress` is a run that stopped without saying so**, and it is the only
+durable trace of one. Read it as a footprint, never as results: its rows count for the rule above
+(a precondition they satisfy is `BLOCKED`), and its result table counts for nothing — the
+assertions it does not list were not walked and keep their previous status. Do not delete it and
+do not fold it into the next run; a later `run`, `retest`, `status` or `report` that finds one
+says so, because an operator who does not know a run died does not know to go looking. And note
+what this buys the rule above: *a prior run with no such table* fires on a **section** that lacks
+the table. A run that died before writing its section leaves no section at all, so nothing fires
+and `qa-runs.md` reads exactly as if the run never happened. Opening the section first is what
+gives that rule something the failure cannot erase.
 
 ### Defects opened this run
 - **<id>** — <one line>

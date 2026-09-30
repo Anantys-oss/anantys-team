@@ -40,3 +40,31 @@ point: the table is only load-bearing exactly where the blast radius is real dat
 The general shape, for any role that acts outside the repo: **consent is per-run, a side effect is
 not.** A gate that asks permission and keeps no record has protected the moment and nothing after
 it.
+
+## A record written after the act is not a record of the act
+
+The table above is only a record if it survives the run that fills it. `run` appends the whole run
+section at step 5, after step 3's walk has created the data — so the window between the operator's
+go and the end of the walk is the one window in which the environment holds records and no artifact
+names them, and it is precisely the window a run dies in. A forty-scenario campaign against staging
+is the shape that runs out of context, loses its browser session, or gets `^C`'d; nothing about
+that is exotic.
+
+The rule that decides it is already written down: **nothing irreversible before it is durable**
+(`docs/nothing-irreversible-before-durable.md`). That page argues it for *destroying* state one may
+not be able to reconstruct. Creating a real record in an environment that is never reset is the
+same shape seen from the other side, and it takes the same answer — the note goes down **first**,
+and the write follows it. So the run section is opened immediately after the go, marked `in
+progress`, and each row is appended before the write it describes.
+
+`run` step 4 already knew the run could die mid-walk. "The operator is watching; a campaign that
+reports only at the end is one where a bad reset costs you the whole run" is the right instinct
+applied to the wrong surface: the console goes with the session, and the next reader of
+`qa-runs.md` is not the person who was watching.
+
+**And a fail-closed rule must key on something the failure cannot erase.** This page's own safety
+net — *a prior run with no such table wrote nothing that can be ruled out* — reads a run section
+and finds no table. A crash before step 5 leaves no section, so the net has nothing to read and the
+footprint is not merely unrecorded but undetectable. Any rule of the form "if the record is missing,
+fail closed" inherits the durability of whatever carries the record's *absence*. Ask what the
+failure mode destroys, then check it is not the artifact the net inspects.
