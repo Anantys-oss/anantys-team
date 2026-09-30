@@ -166,10 +166,26 @@ Overwrite **`<workspace>/current.md`** — the living snapshot that persists bet
 ## Next Actions          (priority-ordered; flag how many audits each has been pending)
 ## New Landing Pages     (Slug | Target Query | Priority | Status)
 ## Key Findings This Session
-## Audit History         (Date | Clicks | Impressions | CTR | Pos | VU/day | Journal — accumulates all past rows)
+## Audit History         (Date | Window | Clicks | Impressions | CTR | Pos | VU/day | Journal — accumulates all past rows)
 ```
 
 Rules for `current.md`: always overwrite the whole file (it is a snapshot; the journal is the append log). Carry forward completed actions; if a prior "Next Action" was done, move it to Completed, else keep it and flag its age. Accumulate the Audit History table from the previous `current.md`.
+
+**A row's window is carried, never inferred.** Audit History is the one table here that
+accumulates instead of being re-measured, so it is the one where an unrecorded window
+compounds: `E` moves with the audit cadence, and a column of totals over unequal intervals
+still reads as a trend. Three rules, in the units Phase 1c fixed (`14d`, `28d`):
+
+- **Write the window on the row you are adding.** It is already known — Phase 1c fixed it.
+- **Copy a prior row's window verbatim. Never backfill one.** A row written before this rule
+  recorded no window: put `unknown` in the cell, not a blank and not the old 28-day default.
+  A blank cell in a column that sometimes has values reads as *same as the row above* — the
+  inference this column exists to refuse.
+- **`unknown` is comparable to nothing, including another `unknown`.** A delta spanning such
+  a row is unavailable, not zero.
+
+Any record this table can be rebuilt from carries the window too. A recovery source missing a
+column produces a rebuild lossier than the loss it repairs, and it looks complete.
 
 ## Rules
 
