@@ -113,6 +113,50 @@ class Waves(unittest.TestCase):
         self.assertEqual(sorted(landed), [1, 2, 3, 4, 5])
 
 
+class RelocationPrecedence(unittest.TestCase):
+    """A relocation edge is directed; degree-first always picks the bad way.
+
+    The live queue's shape: one PR splits `anantys.qa/SKILL.md` into
+    `reference/*.md` and therefore collides with every PR editing that file.
+    Degree-first reads "collides with five others" as "land it first", which is
+    exactly the direction that leaves those five with hunks whose anchors no
+    longer exist anywhere in the file they patch.
+    """
+
+    def test_the_restructurer_lands_after_what_it_relocates(self):
+        graph = edges((5, 15), (5, 16), (5, 19), (5, 31), (5, 33))
+        without = p.waves([5, 15, 16, 19, 31, 33], graph)
+        self.assertEqual(without[0], [5])  # degree-first, the expensive way
+        order = p.waves([5, 15, 16, 19, 31, 33], graph,
+                        [(15, 5), (16, 5), (19, 5), (31, 5), (33, 5)])
+        self.assertEqual(order, [[15, 16, 19, 31, 33], [5]])
+
+    def test_a_predecessor_in_the_same_wave_does_not_count_as_placed(self):
+        # 2 may not join 1's wave merely because 1 was scheduled beside it.
+        order = p.waves([1, 2], edges((1, 2)), [(1, 2)])
+        self.assertEqual(order, [[1], [2]])
+
+    def test_precedence_naming_an_absent_pr_is_ignored(self):
+        # `stacked` drops contained PRs after the edges were built.
+        self.assertEqual(p.waves([1, 2], {}, [(9, 1)]), [[1, 2]])
+
+    def test_a_cycle_is_dropped_rather_than_deadlocking(self):
+        order = p.waves([1, 2, 3], edges((1, 2)), [(1, 2), (2, 1)])
+        self.assertEqual(sorted(n for wave in order for n in wave), [1, 2, 3])
+
+    def test_every_pr_still_appears_exactly_once(self):
+        order = p.waves([1, 2, 3, 4], edges((1, 2), (3, 4)), [(2, 1), (4, 3)])
+        landed = [n for wave in order for n in wave]
+        self.assertEqual(sorted(landed), [1, 2, 3, 4])
+
+    def test_waves_stay_internally_conflict_free(self):
+        graph = edges((1, 2), (2, 3), (1, 3))
+        for wave in p.waves([1, 2, 3], graph, [(3, 1), (2, 3)]):
+            for a in wave:
+                for b in wave:
+                    self.assertNotIn(frozenset((a, b)), graph)
+
+
 class LaterWavesAlwaysConflictBackwards(unittest.TestCase):
     """The property that makes every round past the first unassemblable.
 
@@ -143,6 +187,25 @@ class LaterWavesAlwaysConflictBackwards(unittest.TestCase):
     def test_a_star_with_bystanders(self):
         self.assert_conflicts_backwards(
             [1, 2, 3, 4, 5], edges((1, 2), (1, 3), (1, 4)))
+
+    def test_precedence_weakens_it_to_some_earlier_wave_not_the_last(self):
+        """What `--verify` actually needs, and all a constrained wave gives.
+
+        A precedence-deferred PR waits on a predecessor that may itself be
+        deferred, so it can skip past the wave it conflicts with. The
+        conclusion is unaffected — a round is a cumulative *prefix*, so one
+        conflicting pair anywhere below still makes it unassemblable — but
+        "conflicts with the wave immediately below" was an artifact of the
+        unconstrained greedy, not a property of the partition.
+        """
+        graph = edges((1, 2), (1, 3), (3, 4))
+        order = p.waves([1, 2, 3, 4], graph, [(2, 1), (4, 3)])
+        for i, wave in enumerate(order[1:], 1):
+            earlier = {n for w in order[:i] for n in w}
+            for pr in wave:
+                self.assertTrue(
+                    any(frozenset((pr, n)) in graph for n in earlier),
+                    f"#{pr} in wave {i + 1} conflicts with nothing below it")
 
     def test_one_wave_has_no_later_wave_to_check(self):
         self.assert_conflicts_backwards([1, 2, 3], {})

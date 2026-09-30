@@ -24,8 +24,14 @@ in that file. Git reports the conflict in the shared path anyway, and the file
 intersection reported below names that same path, so both point at the one file
 the change must not be applied to. The destination lives only on the
 restructurer's side of the diff. Each conflicting pair is therefore classified,
-and a relocated one is named as what it is — a re-authoring by hand that no
-ordering of the queue avoids.
+and a relocated one is named as what it is — and then *ordered around*, because
+it is the one edge whose two directions do not cost the same. Landing the
+restructurer first makes every partner a hand re-authoring; landing it last
+costs it one rebase of its own split, which is a mechanical redo of the thing it
+already did on purpose. Degree-first would pick the expensive direction every
+time — the restructurer collides with the most PRs, so it sorts to the front —
+so a relocation is a precedence constraint on the waves, not merely a warning
+printed under them.
 
 Mergeable is not green. A wave says the trees combine without a conflict; it
 says nothing about whether the combined tree still passes the repo's own checks.
@@ -230,9 +236,12 @@ def relocations(base, prs, edges):
     place the change must not be applied. The destination only ever appears on
     the restructurer's side of the diff, never in the intersection.
 
-    The distinction is the operator's cost, not a detail: a same-file conflict is
-    a rebase, and a relocated one is a re-authoring by hand that no ordering of
-    the queue avoids.
+    The distinction is the operator's cost, not a detail: a same-file conflict
+    is a rebase either way round, and a relocated one is a hand re-authoring in
+    one direction only. `loser` before `winner` and the hunks apply to the file
+    they were written against; `winner` first and they have nowhere to go. The
+    keys are therefore read as precedence pairs by `waves`, which is the whole
+    reason to classify the edge rather than just report it.
     """
     refs = {n: f"origin/{ref}" for n, ref, _, _ in prs}
     out = {}
@@ -247,21 +256,46 @@ def relocations(base, prs, edges):
     return out
 
 
-def waves(numbers, edges):
+def waves(numbers, edges, precedes=()):
     """Group PR numbers into internally conflict-free waves.
 
     Highest-degree first: a PR that collides with many others is the one whose
     delay costs the most rebases, so it goes in the earliest wave it fits.
+
+    `precedes` holds (before, after) pairs — the keys of `relocations` — and
+    overrides that heuristic where the two directions of an edge cost
+    different things. Degree cannot see direction, and a restructurer is by
+    construction the highest-degree node in its cluster, so degree alone always
+    schedules the one order that turns its partners into hand re-authorings.
+    A constrained PR waits for every predecessor to be *placed*, not merely
+    scheduled alongside it, so the restructurer rebases over content that has
+    already landed.
+
+    Constraints that cycle are dropped rather than deadlock the queue: a cycle
+    means each PR relocates the other's text, which no ordering fixes, and a
+    printed wave the operator can argue with beats no output at all.
     """
+    numbers = list(numbers)
+    present = set(numbers)
+    after = {}
+    for before, later in precedes:
+        if before in present and later in present:
+            after.setdefault(later, set()).add(before)
     degree = {n: sum(1 for e in edges if n in e) for n in numbers}
     remaining = sorted(numbers, key=lambda n: (-degree[n], n))
-    out = []
+    out, placed = [], set()
     while remaining:
         wave = []
         for pr in remaining:
+            if after.get(pr, set()) - placed:
+                continue
             if all(frozenset((pr, w)) not in edges for w in wave):
                 wave.append(pr)
+        if not wave:  # every candidate is blocked — the constraints cycle
+            after = {}
+            continue
         out.append(sorted(wave))
+        placed.update(wave)
         remaining = [p for p in remaining if p not in wave]
     return out
 
@@ -665,7 +699,8 @@ def main():
         prs = [pr for pr in prs if pr[0] not in contained]
     base = run("git", "rev-parse", "main").strip()
     edges = conflicts(prs)
-    order = waves([n for n, _, _, _ in prs], edges)
+    relocated = relocations(base, prs, edges) if edges else {}
+    order = waves([n for n, _, _, _ in prs], edges, relocated)
 
     print(f"{len(prs)} open PRs, {len(edges)} conflicting pairs, "
           f"{len(order)} waves ({max(len(order) - 1, 0)} rebase rounds)\n")
@@ -678,7 +713,6 @@ def main():
             print(f"  #{n:<4} {titles[n]}")
         print()
     if edges:
-        relocated = relocations(base, prs, edges)
         print("Conflicting pairs and the files they share:")
         for pair, shared in sorted(edges.items(), key=lambda kv: sorted(kv[0])):
             a, b = sorted(pair)
@@ -689,8 +723,10 @@ def main():
                     print(f"    #{winner} moves that text out of {path} — "
                           f"#{loser}'s hunks belong in "
                           f"{', '.join(destinations)}, not there. "
-                          f"Re-authored by hand; a rebase cannot move a hunk "
-                          f"across files.")
+                          f"#{loser} is therefore ordered before #{winner} "
+                          f"above: a rebase cannot move a hunk across files, "
+                          f"but #{winner} can re-split a file that already "
+                          f"contains it.")
 
     if args.contracts and order:
         print("\nWhat the next round changes, read by file rather than by PR "
