@@ -10,11 +10,16 @@ Exit 0 = clean (warnings allowed), 1 = at least one error.
 
 import json
 import re
+import subprocess
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 ROLE_MAX_LINES = 200  # see README "Skill size" — a role loads in full, every invocation
+
+#: Commit the working tree departs from, so a load can be reported as a *change*
+#: rather than as a standing fact. ``None`` = no baseline available; see ``merge_base``.
+BASE: str | None = None
 
 errors: list[str] = []
 warnings: list[str] = []
@@ -38,33 +43,85 @@ def rel(path: Path) -> str:
     return str(path.relative_to(ROOT))
 
 
-def check_load(path: Path) -> None:
-    """Warn when a role's *pre-action load* exceeds the ceiling.
+def merge_base() -> str | None:
+    """The commit the working tree departs from, or ``None`` when git cannot say.
 
-    The ceiling exists because a role file is loaded in full before the first
-    action — so it must be measured over everything that load includes, not just
-    the file the glob happened to find. A role's preamble (everything above its
-    first `## ` heading) is where it names what binds it before it acts; every
-    local `.md` it links there is read on the same invocation and counts.
+    Absence of a baseline is not a pass: ``check_load`` keeps its absolute warning
+    and only loses the ability to attribute growth to the change under review.
+    """
+    for ref in ("origin/main", "main"):
+        try:
+            done = subprocess.run(
+                ["git", "merge-base", "HEAD", ref],
+                cwd=ROOT, capture_output=True, text=True, timeout=10,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return None
+        if done.returncode == 0 and done.stdout.strip():
+            return done.stdout.strip()
+    return None
+
+
+def at(commit: str, path: Path) -> str | None:
+    """``path``'s content at ``commit``, or ``None`` when it was not there."""
+    done = subprocess.run(
+        ["git", "show", f"{commit}:{rel(path)}"],
+        cwd=ROOT, capture_output=True, text=True,
+    )
+    return done.stdout if done.returncode == 0 else None
+
+
+def load_parts(path: Path, read) -> list[tuple[Path, int]]:
+    """What a role loads before its first action, as ``(file, lines)`` pairs.
+
+    The role file itself, plus every local `.md` its *preamble* links — everything
+    above the first `## ` heading is where a role names what binds it before it
+    acts, and those files are read on the same invocation.
 
     Discovered from the links, never from a filename, so a role that points
-    somewhere else is measured against what it actually points at.
+    somewhere else is measured against what it actually points at. ``read`` decides
+    *which tree* is measured, which is what lets the same rule price a baseline.
     """
-    text = path.read_text(encoding="utf-8")
-    linked = [
-        target for link in re.findall(r"\]\(([^)]+\.md)\)", text.split("\n## ", 1)[0])
-        if (target := (path.parent / link).resolve()).is_file()
-    ]
-    parts = [(path, len(text.splitlines()))] + [
-        (p, len(p.read_text(encoding="utf-8").splitlines())) for p in linked
-    ]
+    text = read(path)
+    if text is None:
+        return []
+    parts = [(path, len(text.splitlines()))]
+    for link in re.findall(r"\]\(([^)]+\.md)\)", text.split("\n## ", 1)[0]):
+        target = (path.parent / link).resolve()
+        if (body := read(target)) is not None:
+            parts.append((target, len(body.splitlines())))
+    return parts
+
+
+def check_load(path: Path) -> None:
+    """Warn when a role's *pre-action load* exceeds the ceiling — and say who did it.
+
+    An absolute total is the same number on every branch, so a warning phrased
+    only as "loads N lines" says nothing about the change being reviewed: a commit
+    that adds forty lines to an over-ceiling role and one that adds none report
+    identically. That is how a queue of individually-clean changes walks a role
+    past the ceiling without any single one of them being the branch that did it.
+
+    So the load is also priced against ``BASE``, and the warning names the delta.
+    """
+    parts = load_parts(path, lambda p: p.read_text(encoding="utf-8") if p.is_file() else None)
     total = sum(n for _, n in parts)
-    if total > ROLE_MAX_LINES:
-        breakdown = " + ".join(f"{n} {rel(p)}" for p, n in parts)
-        warnings.append(
-            f"{rel(path)}: loads {total} lines (> {ROLE_MAX_LINES}) — {breakdown}; "
-            "move detail a given action does not need into reference/ and link it there"
-        )
+    if total <= ROLE_MAX_LINES:
+        return
+
+    breakdown = " + ".join(f"{n} {rel(p)}" for p, n in parts)
+    remedy = "move detail a given action does not need into reference/ and link it there"
+    before = sum(n for _, n in load_parts(path, lambda p: at(BASE, p))) if BASE else None
+
+    if before is None or before == total:
+        change = f"loads {total} lines (> {ROLE_MAX_LINES})"
+    elif before <= ROLE_MAX_LINES:
+        change = f"this change pushes the load over the ceiling, {before} -> {total} (> {ROLE_MAX_LINES})"
+    elif total > before:
+        change = f"this change grows a load already over the ceiling, {before} -> {total} (+{total - before})"
+    else:
+        change = f"loads {total} lines (> {ROLE_MAX_LINES}), down from {before}"
+    warnings.append(f"{rel(path)}: {change} — {breakdown}; {remedy}")
 
 
 def require(path: Path, fm: dict[str, str], keys: tuple[str, ...], expected_name: str) -> None:
@@ -76,6 +133,8 @@ def require(path: Path, fm: dict[str, str], keys: tuple[str, ...], expected_name
 
 
 def main() -> int:
+    global BASE
+    BASE = merge_base()
     marketplace = json.loads((ROOT / ".claude-plugin/marketplace.json").read_text())
 
     for entry in marketplace["plugins"]:

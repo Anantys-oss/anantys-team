@@ -10,4 +10,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The default shallow checkout has no origin/main, so the load check would
+          # fall back to an absolute total it cannot attribute to this PR.
+          fetch-depth: 0
       - run: python3 scripts/check_plugins.py

@@ -8,7 +8,11 @@ from pathlib import Path
 import check_plugins as cp
 
 
-class CheckLoad(unittest.TestCase):
+def lines(n: int) -> str:
+    return "\n".join(["x"] * n) + "\n"
+
+
+class Harness(unittest.TestCase):
     def setUp(self) -> None:
         cp.errors.clear()
         cp.warnings.clear()
@@ -16,9 +20,11 @@ class CheckLoad(unittest.TestCase):
         cp.ROOT = Path(self.tmp.name).resolve()  # check_load resolves its links
         self.addCleanup(self.tmp.cleanup)
         cp.ROLE_MAX_LINES = 10
+        cp.BASE = None
+        self.addCleanup(setattr, cp, "at", cp.at)
 
-    def write(self, name: str, lines: int, body: str = "x") -> None:
-        (cp.ROOT / name).write_text("\n".join([body] * lines) + "\n", encoding="utf-8")
+    def write(self, name: str, n: int) -> None:
+        (cp.ROOT / name).write_text(lines(n), encoding="utf-8")
 
     def check(self, text: str) -> list[str]:
         path = cp.ROOT / "SKILL.md"
@@ -26,6 +32,14 @@ class CheckLoad(unittest.TestCase):
         cp.check_load(path)
         return cp.warnings
 
+    def baseline(self, **texts: str) -> None:
+        """Pretend `texts` (file name -> content) is what the baseline commit held."""
+        cp.BASE = "base"
+        held = {cp.ROOT / name: text for name, text in texts.items()}
+        cp.at = lambda commit, path: held.get(path)
+
+
+class CheckLoad(Harness):
     def test_role_alone_under_the_ceiling_is_silent(self) -> None:
         self.assertEqual(self.check("one\ntwo\n"), [])
 
@@ -41,6 +55,43 @@ class CheckLoad(unittest.TestCase):
 
     def test_a_link_to_a_file_that_is_not_there_is_ignored(self) -> None:
         self.assertEqual(self.check("[gone](MISSING.md)\n"), [])
+
+
+class AgainstTheBaseline(Harness):
+    """A ceiling report is only actionable if it says what *this* change did to it."""
+
+    def test_a_change_that_pushes_a_role_over_is_named_as_the_cause(self) -> None:
+        self.baseline(**{"SKILL.md": lines(8)})
+        warning, = self.check(lines(20))
+        self.assertIn("pushes the load over the ceiling, 8 -> 20", warning)
+
+    def test_a_role_this_change_adds_is_its_own_cause(self) -> None:
+        self.baseline()  # the role is not in the baseline tree at all
+        warning, = self.check(lines(20))
+        self.assertIn("pushes the load over the ceiling, 0 -> 20", warning)
+
+    def test_growing_an_already_over_role_reports_the_delta(self) -> None:
+        self.baseline(**{"SKILL.md": lines(20)})
+        warning, = self.check(lines(26))
+        self.assertIn("grows a load already over the ceiling, 20 -> 26 (+6)", warning)
+
+    def test_an_untouched_over_role_is_not_blamed_on_this_change(self) -> None:
+        self.baseline(**{"SKILL.md": lines(20)})
+        warning, = self.check(lines(20))
+        self.assertIn("loads 20 lines", warning)
+        self.assertNotIn("this change", warning)
+
+    def test_the_baseline_load_counts_its_own_links(self) -> None:
+        # Dropping a linked contract is a shrink, so the baseline must be priced
+        # by the same rule as the working tree — not by the role file alone.
+        self.baseline(**{"SKILL.md": "[c](CONTRACT.md)\n" + lines(5), "CONTRACT.md": lines(20)})
+        warning, = self.check(lines(14))
+        self.assertIn("down from 26", warning)
+
+    def test_without_a_baseline_the_absolute_warning_still_fires(self) -> None:
+        cp.BASE = None
+        warning, = self.check(lines(20))
+        self.assertIn("loads 20 lines (> 10)", warning)
 
 
 if __name__ == "__main__":
