@@ -124,7 +124,9 @@ Then ask the operator only what you could not infer, in one batch:
   be filed as a defect.
 - **`local` only:** the reset procedure for a fresh test subject, and a payment sandbox instrument
   (test card / token) if any journey touches money — without one, every checkout case is BLOCKED.
-- **`shared` only:** how the operator's signed-in browser session is made available to you, whether
+- **`shared` only:** how the operator's signed-in browser session is made available to you **and
+  how to tell at a glance that it is still live** (`Signed in when:` — an account menu, an avatar, a
+  `/me` returning 200; see Environments), whether
   a real record exhibiting the behaviour under test exists there (a shared env has no fixtures), and
   how deploy lag shows up (a fix merged but not yet deployed), and **whether it is production**
   (`Production: yes | no`). A `shared` block is always written with `Reset — NONE`, never a reset
@@ -137,8 +139,11 @@ environment blocks and leaves the others untouched.
 **Re-running `init` on a flat file migrates it first.** If the existing `.anantys/qa.md` has no
 `## Environment:` blocks (the legacy layout, see Environments), rewrite its flat `## Surfaces` /
 `## Preflight` / `## Reset` / `## Credentials` / … sections as one
-`## Environment: local (kind: local, default)` block **before** adding any new one, and show the
-converted file in the confirmation below. Appending a `shared` block to a flat file leaves the local
+`## Environment: local (kind: <asked>, default)` block **before** adding any new one, and show the
+converted file in the confirmation below. **Ask the kind — never carry it over from the name.** A
+flat file's sections say nothing about whether they describe a dev stack or a deployed one, and the
+migration is the moment the answer becomes durable; a `local` answer also needs the Target and probe
+the Reset block predates. Appending a `shared` block to a flat file leaves the local
 sections read by nothing and no environment marked default — the local campaign stops resolving.
 
 Confirm the file back to the operator before writing. `.anantys/qa.md` is committed — so it must
@@ -232,10 +237,16 @@ local dev stack *or* a deployed one. Each environment is one of two **kinds**:
 
 **How each environment is driven is read from its `Driven by:` line**, never assumed: the
 operator's connected browser (e.g. Claude-in-Chrome), or a named local command. A `shared` env is
-always driven by the operator's connected browser. An environment with no `Driven by:` line — a
-legacy file included — is driven by the operator's connected browser.
+always driven by the operator's connected browser — its kind *derives* the line, which is a
+declaration, not an absence. A **declared** env missing the line is not assumed to be: ask which
+drives it, fold the question into the run-mode question below, and write the answer into
+`.anantys/qa.md`. Never fall back to the operator's connected browser — it is the widest capability
+this skill has, and a missing line is the one case where nobody chose to grant it.
 
-**Production is a `shared` env with `Production: yes`**, and gets two extra guards:
+**Production is a `shared` env with `Production: yes`**. A `shared` block with **no** `Production:`
+line is treated as production until the operator says otherwise — being wrong that way costs a
+handful of `BLOCKED` assertions, being wrong the other way charges a real card or emails a real
+person. Production gets two extra guards:
 
 - **Never run on production:** any scenario that charges a real card, records a real consent, or
   sends a notification (email, SMS, push) to a real person. Those assertions are `BLOCKED` on
@@ -259,10 +270,48 @@ block in `.anantys/qa.md`.
 
 **A `.anantys/qa.md` with no `## Environment:` blocks** (written by an earlier `init`: flat
 `## Surfaces` / `## Preflight` / `## Reset` / `## Credentials` sections) **is a single `local`
-environment named `local`, and it is the default** — run it exactly as before, reset included.
-`--env <other>` against such a file is an error: stop and tell the operator to re-run `init`, which
-migrates the file before declaring the new environment (see `init`). Never guess an environment's
-kind; an env whose kind you cannot establish is not run.
+environment named `local`, and it is the default** — its surfaces, preflight checks, credentials and
+drift notes are read exactly as before. Its **kind is undeclared**, so its Reset block is **not
+run**: the flat layout predates the `local`/`shared` distinction, nothing in it was written under a
+rule that asked which kind it targets, and it carries neither a declared Target nor a probe to
+compare one against. A campaign needing a fresh subject there asks the operator to re-run `init`
+first. `--env <other>` against such a file is an error: stop and tell the operator to re-run `init`,
+which migrates the file before declaring the new environment (see `init`). Never guess an
+environment's kind; an env whose kind you cannot establish is not reset and not run.
+
+**An absent declaration is never a permission** — the general rule the three paragraphs above
+apply, stated once in `templates/qa-config.md`. A field this skill gates an action on can be
+missing: an older `init` wrote the file, a hand edit dropped a line, the operator skipped the
+question. Missing resolves to the **narrower** branch, and a field whose absence would widen what an
+action may do is asked, never inferred. Note which way the existing defaults already lean: the two
+fields about *being able to verify* fail closed (no build-identity probe ⇒ ask and stop; no payment
+instrument ⇒ every checkout case `BLOCKED`). The fields about *permission to act* are the ones to
+watch, because their permissive branch reads like backward compatibility.
+
+**And a present declaration is not an observation** — the complement, also stated once in
+`templates/qa-config.md`. `kind:` and `Production:` are typed at `init` and read forever after as if
+they described the host; they describe a URL, and the URL is what moves — a retired staging hostname
+repointed at prod, a repointed dev box behind a `local` block (whose surface is *expected* not to be
+`localhost`), a `shared` block copied with only the name changed. No field is missing in any of
+those, so every rule above passes while the campaign resets real data or walks the money assertions
+it was meant to `BLOCK`. Each environment therefore records an **`Answers as:`** line beside its
+build-identity probe — an identity in the probe's own response, never the commit, since staging and
+production serve the same commit right after a deploy — and `run` step 1 compares it, free, because
+the probe already ran. No match, or no identity in the response, ⇒ `kind:`/`Production:`
+**unconfirmed** ⇒ the narrower branch above: not reset, treated as production.
+
+**And an observation is a measurement at a time, not a property of the run.** The two rules above
+read a field once and compare it once, at step 1 — correct for `kind:` and `Production:`, which a
+deploy changes between campaigns rather than during one. One precondition does not hold still:
+on a `shared` env the whole campaign rides the **operator's signed-in browser session**, and the
+agent may not sign in, so this is the only load-bearing precondition it can neither establish nor
+repair. Sessions expire, and an autonomous walk is long. Past that point the product answers every
+request with a login wall, "judge from what the product shows" reads it as the feature being gone,
+and the run files consecutive FAILs — money and legal ones first, since those scenarios are ordered
+first — against code that is fine. Nothing in the file is wrong and no probe disagrees; the
+observation simply aged. So each `shared` env records a **`Signed in when:`** line — the cheapest
+visible proof the session is still live — and `run` re-checks it per scenario (step 3), reporting
+its loss as `BLOCKED`, which is what an unreachable case has always been.
 
 **Results are per environment**, since an assertion can pass on one and fail on another (a fix
 deployed to staging but not the local stack, or the reverse):
@@ -278,6 +327,23 @@ deployed to staging but not the local stack, or the reverse):
 - **Adjudications are scoped too** (see `note`): most are drift rulings, and drift is
   per-environment. A ruling applies only to its own environment, or to all of them when scoped
   `all`.
+
+**But a brief is work, not evidence, and the work is not per environment.** The rules above scope
+*results*, correctly: an observation belongs to the environment it was made on. `qa-report.md` is
+not a result. It is the one artifact that leaves the campaign, addressed to a dev agent that has the
+spec but neither the plan nor this session — and the code it asks for is the same code on every
+environment. Yet the file is a **single slot, rewritten in full** by `report` and by step 7 of every
+`run`. A campaign with open defects on two environments can therefore hand off only one of them: the
+second write replaces the first brief, and the repro, blast radius and *what a fix must not break*
+it carried survive nowhere — `qa-runs.md` keeps one line per defect, which is a record, not a brief.
+Bullet three above makes that loss visible rather than silent, which is strictly better, but it
+points the reader at a brief that no longer exists.
+
+So **`qa-report.md` covers every environment that has an open defect**, selected environment first,
+each defect naming the environments it was observed on, and one entry per product problem rather
+than one per environment that saw it. *What a fix must not break* is then computed against the
+assertions passing **anywhere** — a fix validated only against `staging`'s passing set can regress
+an assertion that passes only on the local stack, and no per-environment rule above can see that.
 
 Testing a shipped feature on `staging` is often easier than reproducing its data locally —
 but the `shared` rules above are not optional, because the blast radius of a reset or a stray write
@@ -341,20 +407,49 @@ operator's go before any write.
 
    The line is absent for a merged/deployed feature, and then there is nothing extra to check.
 
+   **The same probe response also says which host answered — read it.** Compare it to the
+   environment's `Answers as:` line (Environments). A match confirms this block's `kind:` and
+   `Production:` for this run; a mismatch, or a response carrying no identity, leaves both
+   **unconfirmed** — no reset in step 2, and the environment is treated as production. Record
+   `Identity: confirmed` or `Identity: unconfirmed — <what answered> ≠ <declared>` in the run
+   section next to `Subject:`, and never edit `Answers as:` to match. This check is free: the probe
+   already ran above, and the commit it returns is what `Answers as:` exists to supplement — the
+   same commit is served by staging and production between deploys.
+
    **On a `shared` env, confirm the target before anything is written:** echo the environment name,
-   its base URL, the build it serves, whether it is production, and the scenarios that will create
-   data there — then wait for the operator's explicit go. No go, no run.
-2. **Reset — `local` only.** On a `local` environment, apply its reset procedure and confirm it took
-   effect (a stale auth cookie or leftover cache silently invalidates every assertion that follows) —
-   verify by observing the app, not by trusting the command's exit code. On a **`shared`**
-   environment there is **NO reset**: never reset staging / preview / prod — reuse the operator's
-   session and create any needed test data additively (see Environments).
+   its base URL, the build it serves, whether it is production **and whether that was confirmed or
+   declared**, and the scenarios that will create data there — then wait for the operator's explicit
+   go. No go, no run. Reading `Production: no` back as fact is how a mistyped block gets confirmed
+   by the person who mistyped it; an unconfirmed env is presented as production, and the question is
+   whether to proceed at all.
+2. **Reset — a confirmed `local` env only.** On an environment whose block declares `kind: local`
+   *and* whose identity step 1 confirmed, apply its reset procedure and confirm it took effect (a stale auth cookie or leftover cache
+   silently invalidates every assertion that follows) — verify by observing the app, not by trusting
+   the command's exit code. On a **`shared`** environment there is **NO reset**: never reset staging /
+   preview / prod — reuse the operator's session and create any needed test data additively. On an
+   environment whose kind is **undeclared** (a flat legacy file) or **unconfirmed** (step 1 found a
+   different host, or none) there is also no reset: ask the operator to re-run `init`, or walk the
+   plan with whatever subject state exists and mark anything the leftover state invalidates
+   `BLOCKED` (see Environments).
 3. **Walk the scenarios in order**, in a real browser driven as the environment's `Driven by:`
    line says (see Environments). On production, skip the unsafe scenario classes and record them
    `BLOCKED`. Per scenario: establish the precondition,
    perform the steps, then evaluate each assertion **individually**. In **interactive** mode the
    first *new* DEFECT ends the walk: finish that assertion's evidence, do steps 5–6, then hand off
    (see Run mode).
+
+   **On a `shared` env, the session is part of that precondition — check it, per scenario.** Before
+   the first step, confirm the environment's `Signed in when:` condition still holds. If it does not,
+   the walk is **over**: you cannot sign in, so every remaining scenario would observe a login wall
+   and file it as a defect. Mark this scenario's assertions — and every one not yet walked —
+   `BLOCKED`, reason `session ended`, record it in the run section, do steps 5–7, and tell the
+   operator what to re-establish. This is a preflight failure found late, not a verdict on the
+   product: name no defect, and do not let `report` lead with one.
+   Two cases stay ordinary FAILs, or the rule would suppress the defects it most resembles: an
+   assertion **about** authentication (a requirement that an unauthenticated visitor is redirected,
+   or that a session survives a reload) is judged on its merits; and a login wall on **one** surface
+   while `Signed in when:` still holds elsewhere is the product logging the user out, which is the
+   defect.
 4. **Post a one-line result after each scenario.** The operator is watching; a campaign that
    reports only at the end is one where a bad reset costs you the whole run.
 5. **Append a run section to `qa-runs.md`**, its header naming the environment and the mode —
@@ -370,9 +465,11 @@ operator's go before any write.
 - **Behaviour over stores.** Judge from what the product shows, not from a database or cache you
   polled. Reads race the writes they observe, and tokens lag the events that invalidate them —
   both will lie to you at exactly the wrong moment.
-- **Confirm your own preconditions before asserting.** A surviving session, a leftover record, or
-  state you created yourself by re-walking a flow invalidates the result. A defect you caused is
-  not a defect.
+- **Confirm your own preconditions before asserting — in both directions.** A surviving session, a
+  leftover record, or state you created yourself by re-walking a flow invalidates the result. So
+  does the same state *gone*: an expired session, a fixture reaped by a nightly job, a preview
+  environment torn down mid-walk. A defect you caused is not a defect, and neither is one you
+  observed through a precondition that had quietly lapsed.
 - **Screenshot anything visual**, and capture the URL plus any console/network error on every FAIL.
 - **Never infer a PASS from a screen you did not reach.**
 - Check every FAIL against the adjudication annotations in `qa-plan.md` **scoped to this environment
@@ -447,6 +544,11 @@ session** that has the spec context but not yours. For each open defect:
 Close with the release verdict: the blocker list, its status, and — explicitly — the assertions
 that were never observed. **Passing every blocker is not the same as having tested everything**;
 say which gaps a green list is hiding.
+
+"Open defect" here means open on **any** environment, not only the selected one (see Environments):
+the selected environment orders the brief and is named at the top, it does not filter it. *What a fix
+must not break* likewise spans every environment's passing assertions. The release verdict stays
+per environment — it answers "can this ship *here*".
 
 Tell the operator the file is ready to paste into a dev session. Do not open issues or PRs.
 
