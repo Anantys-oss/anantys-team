@@ -16,6 +16,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 ROLE_MAX_LINES = 200  # see README "Skill size" — a role loads in full, every invocation
+CONTRACT = "TEAM-CONTRACT.md"  # the rules every role in a plugin shares; each must link it
 
 #: Commit the working tree departs from, so a load can be reported as a *change*
 #: rather than as a standing fact. ``None`` = no baseline available; see ``merge_base``.
@@ -71,6 +72,11 @@ def at(commit: str, path: Path) -> str | None:
     return done.stdout if done.returncode == 0 else None
 
 
+def disk(path: Path) -> str | None:
+    """``path``'s content in the working tree, or ``None`` when it is not there."""
+    return path.read_text(encoding="utf-8") if path.is_file() else None
+
+
 def load_parts(path: Path, read) -> list[tuple[Path, int]]:
     """What a role loads before its first action, as ``(file, lines)`` pairs.
 
@@ -104,13 +110,16 @@ def check_load(path: Path) -> None:
 
     So the load is also priced against ``BASE``, and the warning names the delta.
     """
-    parts = load_parts(path, lambda p: p.read_text(encoding="utf-8") if p.is_file() else None)
+    parts = load_parts(path, disk)
     total = sum(n for _, n in parts)
     if total <= ROLE_MAX_LINES:
         return
 
     breakdown = " + ".join(f"{n} {rel(p)}" for p, n in parts)
-    remedy = "move detail a given action does not need into reference/ and link it there"
+    remedy = (
+        "move detail a given action does not need into reference/ and link it there "
+        f"— never the {CONTRACT}, which `check_contract` requires"
+    )
     before = sum(n for _, n in load_parts(path, lambda p: at(BASE, p))) if BASE else None
 
     if before is None or before == total:
@@ -122,6 +131,28 @@ def check_load(path: Path) -> None:
     else:
         change = f"loads {total} lines (> {ROLE_MAX_LINES}), down from {before}"
     warnings.append(f"{rel(path)}: {change} — {breakdown}; {remedy}")
+
+
+def check_contract(path: Path, contract: Path) -> None:
+    """Error when a role's preamble does not link the contract that claims to bind it.
+
+    ``TEAM-CONTRACT.md`` opens *"Rules that bind every role in this plugin"*, *"Every
+    role file points here"* and *"This file is loaded before every action of every
+    role"*. Those are three assertions about the tree, and nothing checked any of
+    them — the binding was a convention that happened to hold.
+
+    Worse, the one check that read the link read it as a cost. The contract counts
+    toward ``check_load``'s ceiling, so the five roles that point at it load 207-723
+    against a 200 limit; deleting the single line that binds them takes three of
+    those under the ceiling and the run stays green. The cheapest way to satisfy the
+    ceiling was to stop being bound. A ceiling may make a role shorter; it may not
+    make it unbound.
+    """
+    if contract not in [p for p, _ in load_parts(path, disk)]:
+        errors.append(
+            f"{rel(path)}: preamble does not link {CONTRACT} — a role names what binds "
+            "it above its first `## ` heading, where it is read before the role acts"
+        )
 
 
 def require(path: Path, fm: dict[str, str], keys: tuple[str, ...], expected_name: str) -> None:
@@ -156,16 +187,29 @@ def main() -> int:
         skills = sorted(p for p in (plugin_dir / "skills").iterdir() if p.is_dir())
         agents = sorted((plugin_dir / "agents").glob("*.md"))
 
+        # An absent contract is not an error: the file is one some *other* change lands,
+        # and a gate that reddens every branch until it arrives forces an order on changes
+        # that have none. It is not silence either — an absent input that prints nothing
+        # is a check reporting health it never measured.
+        contract = plugin_dir / CONTRACT
+        if not contract.is_file():
+            warnings.append(f"{rel(plugin_dir)}: no {CONTRACT}, so no role's binding is checked")
+            contract = None
+
         for skill_dir in skills:
             skill = skill_dir / "SKILL.md"
             if not skill.exists():
                 errors.append(f"{rel(skill_dir)}: no SKILL.md")
                 continue
             require(skill, frontmatter(skill), ("name", "description"), skill_dir.name)
+            if contract:
+                check_contract(skill, contract)
             check_load(skill)
 
         for agent in agents:
             require(agent, frontmatter(agent), ("name", "description", "tools", "model"), agent.stem)
+            if contract:
+                check_contract(agent, contract)
             check_load(agent)
 
         # The description advertises counts ("5 skills … 2 review agents") to users browsing

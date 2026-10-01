@@ -94,5 +94,37 @@ class AgainstTheBaseline(Harness):
         self.assertIn("loads 20 lines (> 10)", warning)
 
 
+class TheContractBinds(Harness):
+    """The ceiling counts the contract, so unlinking it is the cheapest way to pass."""
+
+    def contract(self, text: str) -> list[str]:
+        self.write(cp.CONTRACT, 20)
+        path = cp.ROOT / "SKILL.md"
+        path.write_text(text, encoding="utf-8")
+        cp.check_contract(path, cp.ROOT / cp.CONTRACT)
+        return cp.errors
+
+    def test_a_preamble_link_to_the_contract_satisfies_it(self) -> None:
+        self.assertEqual(self.contract(f"[team contract]({cp.CONTRACT}) binds you.\n"), [])
+
+    def test_a_role_that_links_nothing_is_an_error(self) -> None:
+        error, = self.contract("You are a role.\n")
+        self.assertIn("does not link TEAM-CONTRACT.md", error)
+
+    def test_a_contract_link_below_the_first_heading_does_not_count(self) -> None:
+        # Nothing below `## ` is read before the role acts, so a link there binds
+        # it no earlier than not linking at all — and it would pass a substring test.
+        error, = self.contract(f"preamble\n\n## Step\n\n[c]({cp.CONTRACT})\n")
+        self.assertIn("does not link TEAM-CONTRACT.md", error)
+
+    def test_shrinking_under_the_ceiling_by_unlinking_is_not_a_pass(self) -> None:
+        # The whole point: 25 lines with the contract is over a ceiling of 10, and
+        # dropping the link takes it under. The load goes quiet; the binding does not.
+        self.write(cp.CONTRACT, 20)
+        self.assertEqual(self.check(lines(5)), [])
+        cp.check_contract(cp.ROOT / "SKILL.md", cp.ROOT / cp.CONTRACT)
+        self.assertEqual(len(cp.errors), 1)
+
+
 if __name__ == "__main__":
     unittest.main()
