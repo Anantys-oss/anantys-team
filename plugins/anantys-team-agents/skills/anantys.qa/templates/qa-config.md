@@ -85,6 +85,16 @@ block below.
 >   the file launders it. Report it and let the operator re-run `init` — repointed DNS and a typo
 >   are indistinguishable from here, and only one of them is safe to accept.
 
+> **And an observation is a measurement at a time.** Both rules above resolve at step 1 and are
+> then treated as settled — right for `kind:` and `Production:`, which change between campaigns.
+> Ask of every precondition instead: *who can falsify this while the walk is still running, and can
+> the agent put it back?* Here exactly one answers "the identity provider" and "no" — the
+> `shared` env's signed-in session, which the agent is forbidden to re-establish. So it gets a
+> `Signed in when:` line and a **per-scenario** re-check, not a preflight row; its loss is
+> `BLOCKED — session ended` for the remainder, never a defect. A precondition that lapses silently
+> is worse than one that was never there: the missing one stops the campaign, the lapsed one lets
+> it keep reporting.
+
 ---
 
 ```markdown
@@ -189,6 +199,15 @@ Production: no
 | S1 | App reachable | `curl -sk -o /dev/null -w '%{http_code}' <app-url>` → 200/307, not 000 |
 | S2 | Signed in | the operator's browser is signed in; the agent reuses that session and never signs in |
 | S3 | The feature has real DATA | the behaviour under test exists on a real record — a shared env has no fixtures, so a campaign against one with no such data can only report BLOCKED |
+
+Signed in when: `<the cheapest visible proof the session is still live — an account menu or avatar
+is present, `/me` returns 200, the header shows the operator's name — not "the page loaded">`
+
+S2 is a preflight check, so it answers once, before the walk. The session it checks is the only
+precondition here the agent can neither create nor restore, and it expires on the provider's clock,
+not the campaign's. `run` therefore re-checks this line **per scenario** (step 3), and a loss ends
+the walk with the remainder `BLOCKED — session ended`. Without it the run keeps walking and files
+the login wall as a defect in every scenario after the one where the session died.
 
 ### Build identity — how this environment reports the code it is serving
 ```bash

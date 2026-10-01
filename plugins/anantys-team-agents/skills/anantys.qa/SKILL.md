@@ -124,7 +124,9 @@ Then ask the operator only what you could not infer, in one batch:
   be filed as a defect.
 - **`local` only:** the reset procedure for a fresh test subject, and a payment sandbox instrument
   (test card / token) if any journey touches money — without one, every checkout case is BLOCKED.
-- **`shared` only:** how the operator's signed-in browser session is made available to you, whether
+- **`shared` only:** how the operator's signed-in browser session is made available to you **and
+  how to tell at a glance that it is still live** (`Signed in when:` — an account menu, an avatar, a
+  `/me` returning 200; see Environments), whether
   a real record exhibiting the behaviour under test exists there (a shared env has no fixtures), and
   how deploy lag shows up (a fix merged but not yet deployed), and **whether it is production**
   (`Production: yes | no`). A `shared` block is always written with `Reset — NONE`, never a reset
@@ -298,6 +300,19 @@ production serve the same commit right after a deploy — and `run` step 1 compa
 the probe already ran. No match, or no identity in the response, ⇒ `kind:`/`Production:`
 **unconfirmed** ⇒ the narrower branch above: not reset, treated as production.
 
+**And an observation is a measurement at a time, not a property of the run.** The two rules above
+read a field once and compare it once, at step 1 — correct for `kind:` and `Production:`, which a
+deploy changes between campaigns rather than during one. One precondition does not hold still:
+on a `shared` env the whole campaign rides the **operator's signed-in browser session**, and the
+agent may not sign in, so this is the only load-bearing precondition it can neither establish nor
+repair. Sessions expire, and an autonomous walk is long. Past that point the product answers every
+request with a login wall, "judge from what the product shows" reads it as the feature being gone,
+and the run files consecutive FAILs — money and legal ones first, since those scenarios are ordered
+first — against code that is fine. Nothing in the file is wrong and no probe disagrees; the
+observation simply aged. So each `shared` env records a **`Signed in when:`** line — the cheapest
+visible proof the session is still live — and `run` re-checks it per scenario (step 3), reporting
+its loss as `BLOCKED`, which is what an unreachable case has always been.
+
 **Results are per environment**, since an assertion can pass on one and fail on another (a fix
 deployed to staging but not the local stack, or the reverse):
 
@@ -405,6 +420,19 @@ operator's go before any write.
    perform the steps, then evaluate each assertion **individually**. In **interactive** mode the
    first *new* DEFECT ends the walk: finish that assertion's evidence, do steps 5–6, then hand off
    (see Run mode).
+
+   **On a `shared` env, the session is part of that precondition — check it, per scenario.** Before
+   the first step, confirm the environment's `Signed in when:` condition still holds. If it does not,
+   the walk is **over**: you cannot sign in, so every remaining scenario would observe a login wall
+   and file it as a defect. Mark this scenario's assertions — and every one not yet walked —
+   `BLOCKED`, reason `session ended`, record it in the run section, do steps 5–7, and tell the
+   operator what to re-establish. This is a preflight failure found late, not a verdict on the
+   product: name no defect, and do not let `report` lead with one.
+   Two cases stay ordinary FAILs, or the rule would suppress the defects it most resembles: an
+   assertion **about** authentication (a requirement that an unauthenticated visitor is redirected,
+   or that a session survives a reload) is judged on its merits; and a login wall on **one** surface
+   while `Signed in when:` still holds elsewhere is the product logging the user out, which is the
+   defect.
 4. **Post a one-line result after each scenario.** The operator is watching; a campaign that
    reports only at the end is one where a bad reset costs you the whole run.
 5. **Append a run section to `qa-runs.md`**, its header naming the environment and the mode —
@@ -420,9 +448,11 @@ operator's go before any write.
 - **Behaviour over stores.** Judge from what the product shows, not from a database or cache you
   polled. Reads race the writes they observe, and tokens lag the events that invalidate them —
   both will lie to you at exactly the wrong moment.
-- **Confirm your own preconditions before asserting.** A surviving session, a leftover record, or
-  state you created yourself by re-walking a flow invalidates the result. A defect you caused is
-  not a defect.
+- **Confirm your own preconditions before asserting — in both directions.** A surviving session, a
+  leftover record, or state you created yourself by re-walking a flow invalidates the result. So
+  does the same state *gone*: an expired session, a fixture reaped by a nightly job, a preview
+  environment torn down mid-walk. A defect you caused is not a defect, and neither is one you
+  observed through a precondition that had quietly lapsed.
 - **Screenshot anything visual**, and capture the URL plus any console/network error on every FAIL.
 - **Never infer a PASS from a screen you did not reach.**
 - Check every FAIL against the adjudication annotations in `qa-plan.md` **scoped to this environment
