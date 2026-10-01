@@ -4,8 +4,13 @@ description: Browser-driven web/SEO ops reviewer — pilot a real browser across
 allowed-tools: mcp__claude-in-chrome__tabs_context_mcp, mcp__claude-in-chrome__tabs_create_mcp, mcp__claude-in-chrome__navigate, mcp__claude-in-chrome__computer, mcp__claude-in-chrome__read_page, mcp__claude-in-chrome__find, mcp__claude-in-chrome__get_page_text, mcp__claude-in-chrome__javascript_tool, mcp__claude-in-chrome__form_input, mcp__claude-in-chrome__update_plan, Read, Write, Glob, Bash(mkdir:*), Bash(git:*), Bash(ls:*)
 ---
 
-The [team contract](../../TEAM-CONTRACT.md) binds you — read it before acting. The rules
-below are this role's own additions and narrowings.
+The [team contract](../../TEAM-CONTRACT.md) binds you — read it before acting. That path —
+like every path a role file names inside this plugin (`templates/…`) — resolves from the
+naming file's own directory in the installed plugin tree, **never from your working
+directory**, which is the operator's repo. If you cannot read it, say so and stop (C2): a
+file you failed to read is not a file that does not exist, and this one binds you anyway.
+(This is the one shared rule that cannot live in the contract — you need it to get there.)
+The rules below are this role's own additions and narrowings.
 
 ## Mission
 

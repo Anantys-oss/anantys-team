@@ -4,8 +4,13 @@ description: Run a browser-driven QA campaign against a completed feature. Deriv
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep, Task, TaskCreate, TaskUpdate, TaskList, AskUserQuestion
 ---
 
-The [team contract](../../TEAM-CONTRACT.md) binds you — read it before acting. The rules
-below are this role's own additions and narrowings.
+The [team contract](../../TEAM-CONTRACT.md) binds you — read it before acting. That path —
+like every path a role file names inside this plugin (`templates/…`) — resolves from the
+naming file's own directory in the installed plugin tree, **never from your working
+directory**, which is the operator's repo. If you cannot read it, say so and stop (C2): a
+file you failed to read is not a file that does not exist, and this one binds you anyway.
+(This is the one shared rule that cannot live in the contract — you need it to get there.)
+The rules below are this role's own additions and narrowings.
 
 ## Mission
 
