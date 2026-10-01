@@ -143,7 +143,60 @@ class VersionBumpCase(unittest.TestCase):
         self.write(f"{PLUGIN}/skills/demo/reference/b.md", "by B\n")
         self.write_plugin("0.2.0")
         self.commit("B: edit skill + name the same 0.2.0")
-        self.assertEqual(self.check().returncode, 0)
+        result = self.check()
+        self.assertEqual(result.returncode, 0)
+        # ...and the debt that buys: 0.2.0 is on main, untagged, so the floor is still v0.1.0.
+        self.assertIn("warning:", result.stderr)
+        self.assertIn("already names 0.2.0", result.stderr)
+
+    # --- the debt the release baseline runs on ------------------------------
+
+    def test_a_version_landed_but_never_tagged_is_reported(self) -> None:
+        """The floor is the tag, so content landed under an untagged version is invisible.
+
+        This is the price of measuring against the release: nothing in the repo
+        makes the release happen. Report it, do not fail it — failing would put
+        the queue back on N distinct values, which is what the tag baseline
+        bought us out of.
+        """
+        self.sh("git", "checkout", "-q", "main")
+        self.write(f"{PLUGIN}/skills/demo/SKILL.md", "---\nname: demo\n---\n\nlanded\n")
+        self.write_plugin("0.2.0")
+        self.commit("land 0.2.0 without cutting a release")
+
+        self.branch()
+        self.write(f"{PLUGIN}/skills/demo/reference/more.md", "more\n")
+        self.write_plugin("0.2.0")
+        self.commit("another change under the same unreleased version")
+        result = self.check()
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("already names 0.2.0", result.stderr)
+        self.assertIn("v0.1.0", result.stderr)
+
+    def test_no_debt_reported_when_the_base_matches_the_tag(self) -> None:
+        self.branch()
+        self.write(f"{PLUGIN}/skills/demo/SKILL.md", "---\nname: demo\n---\n\nrewritten\n")
+        self.write_plugin("0.2.0")
+        self.commit("edit skill + bump")
+        result = self.check()
+        self.assertEqual(result.returncode, 0)
+        self.assertNotIn("warning:", result.stderr)
+
+    def test_untagged_debt_is_not_reported_in_merge_base_mode(self) -> None:
+        """Without a tag the published version always moves — there is no debt to name."""
+        self.sh("git", "tag", "-d", "v0.1.0")
+        self.sh("git", "checkout", "-q", "main")
+        self.write(f"{PLUGIN}/skills/demo/SKILL.md", "---\nname: demo\n---\n\nlanded\n")
+        self.write_plugin("0.2.0")
+        self.commit("land 0.2.0")
+
+        self.branch()
+        self.write(f"{PLUGIN}/skills/demo/reference/more.md", "more\n")
+        self.write_plugin("0.3.0")
+        self.commit("the next distinct value the fallback forces")
+        result = self.check()
+        self.assertEqual(result.returncode, 0)
+        self.assertNotIn("warning:", result.stderr)
 
     def test_no_release_tag_falls_back_to_the_merge_base(self) -> None:
         """A repo that has never published still gets the original gate, not a free pass."""

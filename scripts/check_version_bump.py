@@ -33,6 +33,18 @@ has never published has no better answer for what users have installed. That
 fallback is the pre-existing behaviour, so adopting a release tag is a strict
 improvement and never a prerequisite.
 
+It is an improvement with a precondition, though, and the precondition is not
+this script's to enforce: releases have to actually happen. The floor is the tag,
+not `main`, so a version that a queue of PRs names, lands, and nobody tags leaves
+the floor exactly where it was — and every later content change may keep naming
+that same version and pass. The merge-base fallback is at least monotonic: the
+published version always moves. This is not; it can freeze while the tree under
+it is rewritten, which is the failure the check exists to prevent, reached
+through the remedy instead of the defect. So the check also *reports* when the
+base branch has moved past the newest tag. That is a warning, never an error —
+failing the PR would put the queue back on N distinct values, and the debt
+belongs to the release, not to whoever happens to push next.
+
 Usage: check_version_bump.py [base-ref]
 Exit 0 = clean or nothing to compare, 1 = a content change with no bump.
 """
@@ -90,12 +102,14 @@ def main(argv: list[str]) -> int:
         print("no changes against base — nothing to check")
         return 0
 
-    shipped_ref = released_tag()
+    tag = released_tag()
+    shipped_ref = tag
     if shipped_ref is None:
         shipped_ref = base
         print("no release tag — measuring the version against the merge-base")
 
     errors: list[str] = []
+    unreleased: list[str] = []
     marketplace = json.loads((ROOT / ".claude-plugin/marketplace.json").read_text())
 
     for entry in marketplace["plugins"]:
@@ -110,6 +124,19 @@ def main(argv: list[str]) -> int:
         except (subprocess.CalledProcessError, KeyError):
             continue  # no version to measure against: a brand-new plugin owes no bump
 
+        if tag is not None:
+            try:
+                on_base = json.loads(git("show", f"{base}:{manifest}"))["version"]
+            except (subprocess.CalledProcessError, KeyError):
+                on_base = shipped
+            if semver(on_base, f"{manifest}@{base}") > semver(shipped, f"{manifest}@{tag}"):
+                unreleased.append(
+                    f"{entry['name']}: the base branch already names {on_base}, but the newest "
+                    f"release tag is {tag} ({shipped}). Until {on_base} is tagged, the floor this "
+                    f"check measures against does not move, so any further content change may "
+                    f"keep naming {on_base} and pass — cut the release."
+                )
+
         after = json.loads((ROOT / manifest).read_text())["version"]
         if semver(after, manifest) > semver(shipped, f"{manifest}@{shipped_ref}"):
             print(f"{entry['name']}: {shipped} → {after} ({len(touched)} file(s) changed)")
@@ -122,6 +149,8 @@ def main(argv: list[str]) -> int:
             + "\n".join(f"    {f}" for f in touched)
         )
 
+    for note in unreleased:
+        print(f"warning: {note}", file=sys.stderr)
     for error in errors:
         print(f"error: {error}", file=sys.stderr)
     return 1 if errors else 0
