@@ -328,6 +328,23 @@ deployed to staging but not the local stack, or the reverse):
   per-environment. A ruling applies only to its own environment, or to all of them when scoped
   `all`.
 
+**But a brief is work, not evidence, and the work is not per environment.** The rules above scope
+*results*, correctly: an observation belongs to the environment it was made on. `qa-report.md` is
+not a result. It is the one artifact that leaves the campaign, addressed to a dev agent that has the
+spec but neither the plan nor this session — and the code it asks for is the same code on every
+environment. Yet the file is a **single slot, rewritten in full** by `report` and by step 7 of every
+`run`. A campaign with open defects on two environments can therefore hand off only one of them: the
+second write replaces the first brief, and the repro, blast radius and *what a fix must not break*
+it carried survive nowhere — `qa-runs.md` keeps one line per defect, which is a record, not a brief.
+Bullet three above makes that loss visible rather than silent, which is strictly better, but it
+points the reader at a brief that no longer exists.
+
+So **`qa-report.md` covers every environment that has an open defect**, selected environment first,
+each defect naming the environments it was observed on, and one entry per product problem rather
+than one per environment that saw it. *What a fix must not break* is then computed against the
+assertions passing **anywhere** — a fix validated only against `staging`'s passing set can regress
+an assertion that passes only on the local stack, and no per-environment rule above can see that.
+
 Testing a shipped feature on `staging` is often easier than reproducing its data locally —
 but the `shared` rules above are not optional, because the blast radius of a reset or a stray write
 there is real data, not a fixture.
@@ -527,6 +544,11 @@ session** that has the spec context but not yours. For each open defect:
 Close with the release verdict: the blocker list, its status, and — explicitly — the assertions
 that were never observed. **Passing every blocker is not the same as having tested everything**;
 say which gaps a green list is hiding.
+
+"Open defect" here means open on **any** environment, not only the selected one (see Environments):
+the selected environment orders the brief and is named at the top, it does not filter it. *What a fix
+must not break* likewise spans every environment's passing assertions. The release verdict stays
+per environment — it answers "can this ship *here*".
 
 Tell the operator the file is ready to paste into a dev session. Do not open issues or PRs.
 
