@@ -41,6 +41,22 @@ while the branch is still a branch":
 
 Both shapes are the failure this checker exists to catch, dressed as coverage.
 
+And one more, in the direction the argument above points away from. Discovery is
+used twice as the counter-example — it collects a checker's tests whether or not
+any workflow runs the checker, so `NAMED` deliberately does not match it. But
+`python3 -m unittest discover -s scripts` is *also* the only step that runs any
+test in this repo: six of the seven test modules are named by no workflow line at
+all. Delete both discover steps and every assertion above still holds — the gates
+are wired, each to a blocking workflow, and nothing is left proving one of them
+is correct about anything. So a third error: a tree with test modules must run
+them before the merge too. Not per module, which would put every new test file on
+a workflow edit; once, for the step that collects them all.
+
+The rename direction has no equivalent here and is deliberately left open: a
+module renamed out of `test_*.py` drops out of discovery silently, and the only
+check that would catch it is one that names each module in CI — the serialisation
+this error exists to avoid.
+
 Coverage is satisfied by *any* PR-triggered workflow, so a gate may keep its own
 workflow file or join an existing one — this fixes the wiring, not the layout.
 
@@ -56,6 +72,9 @@ from pathlib import Path
 # does not match `unittest discover -s scripts`: discovery runs test modules,
 # never the checkers, so a repo whose CI is discovery alone runs zero gates.
 NAMED = re.compile(r"scripts/([\w.-]+\.py)")
+# The step `NAMED` is written not to see. Nothing else runs a test module here, so
+# its absence has to be an error of its own.
+DISCOVER = re.compile(r"unittest\s+discover")
 # `on:` at column 0 — the key, not the phrase. `pull_request` also appears in
 # comments and in `github.event.pull_request.*` expressions inside a step. YAML
 # lets the key be quoted, because bare `on` is also the boolean `true`.
@@ -112,25 +131,34 @@ def blocking(text):
 
 
 def scan(root):
-    """(checkers, {script: [workflow]}, {script: [blocking workflow]}, {workflow: why not})."""
+    """(checkers, {script: [workflow]}, {script: [blocking workflow]}, {workflow: why not},
+    whether some blocking workflow runs the test suite)."""
     checkers = {p.name for p in (root / "scripts").glob("check_*.py")}
     named, gating, why = {}, {}, {}
+    discovers = False
     for workflow in sorted((root / ".github/workflows").glob("*.y*ml")):
         text = workflow.read_text(encoding="utf-8")
         reason = blocking(text)
         if reason:
             why[workflow.name] = reason
+        else:
+            discovers = discovers or bool(DISCOVER.search(text))
         for name in NAMED.findall(text):
             named.setdefault(name, []).append(workflow.name)
             if reason is None:
                 gating.setdefault(name, []).append(workflow.name)
-    return checkers, named, gating, why
+    return checkers, named, gating, why, discovers
 
 
-def check(checkers, named, gating, present, why=None):
+def check(checkers, named, gating, present, why, discovers):
     """(errors, warnings) for one tree. `present` is every file in `scripts/`."""
     why = why or {}
     errors = []
+    if not discovers and any(name.startswith("test_") for name in present):
+        errors.append(
+            "no pull-request workflow runs `unittest discover -s scripts` — the gates "
+            "are wired, and nothing runs the tests that say they are right"
+        )
     for name in sorted(checkers - gating.keys()):
         where = named.get(name)
         errors.append(
@@ -149,9 +177,9 @@ def check(checkers, named, gating, present, why=None):
 
 def main(argv=None):
     root = Path((argv or sys.argv[1:] or ["."])[0]).resolve()
-    checkers, named, gating, why = scan(root)
+    checkers, named, gating, why, discovers = scan(root)
     present = {p.name for p in (root / "scripts").glob("*.py")}
-    errors, warnings = check(checkers, named, gating, present, why)
+    errors, warnings = check(checkers, named, gating, present, why, discovers)
 
     for warning in warnings:
         print(f"warning: {warning}")

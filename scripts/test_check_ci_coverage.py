@@ -13,6 +13,7 @@ ON_PR = "on:\n  pull_request:\n\njobs:\n  j:\n    steps:\n"
 ON_PUSH = "on:\n  push:\n    branches: [main]\n\njobs:\n  j:\n    steps:\n"
 JOBS = "\njobs:\n  j:\n    steps:\n"
 RUN_A = "      - run: python3 scripts/check_a.py\n"
+DISCOVER = "      - run: python3 -m unittest discover -s scripts\n"
 
 
 def tree(root, scripts=(), workflows=()):
@@ -60,7 +61,26 @@ def test_a_workflow_naming_a_missing_script_is_an_error(tmp_path):
 
 def test_a_test_module_needs_no_workflow_of_its_own(tmp_path):
     tree(tmp_path, ["check_a.py", "test_check_a.py"],
-         [("a.yml", ON_PR + "      - run: python3 scripts/check_a.py\n")])
+         [("a.yml", ON_PR + RUN_A + DISCOVER)])
+    assert main([str(tmp_path)]) == 0
+
+
+def test_a_test_module_nothing_discovers_is_an_error(tmp_path):
+    tree(tmp_path, ["check_a.py", "test_check_a.py"], [("a.yml", ON_PR + RUN_A)])
+    errors, _ = scan_and_check(tmp_path)
+    assert len(errors) == 1, errors
+    assert "unittest discover" in errors[0], errors[0]
+
+
+def test_discovery_that_reports_after_the_merge_does_not_count(tmp_path):
+    tree(tmp_path, ["check_a.py", "test_check_a.py"],
+         [("a.yml", ON_PR + RUN_A), ("late.yml", ON_PUSH + DISCOVER)])
+    errors, _ = scan_and_check(tmp_path)
+    assert any("unittest discover" in e for e in errors), errors
+
+
+def test_a_tree_with_no_test_modules_needs_no_discovery(tmp_path):
+    tree(tmp_path, ["check_a.py"], [("a.yml", ON_PR + RUN_A)])
     assert main([str(tmp_path)]) == 0
 
 
@@ -155,8 +175,9 @@ def test_a_tree_with_no_checkers_is_clean(tmp_path):
 
 
 def scan_and_check(root):
-    checkers, named, gating, why = scan(root)
-    return check(checkers, named, gating, {p.name for p in (root / "scripts").glob("*.py")}, why)
+    checkers, named, gating, why, discovers = scan(root)
+    present = {p.name for p in (root / "scripts").glob("*.py")}
+    return check(checkers, named, gating, present, why, discovers)
 
 
 def load_tests(loader, tests, pattern):
