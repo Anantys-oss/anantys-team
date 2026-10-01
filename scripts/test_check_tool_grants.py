@@ -51,12 +51,39 @@ class ToolGrants(unittest.TestCase):
         self.assertEqual(errors, [])
 
     def test_unreferenced_grant_warns(self):
-        _, warnings = role(["Bash(git:*)"], "Read the journal.")
-        self.assertIn("`Bash(git:*)`", warnings[0])
+        _, warnings = role(["Bash(ls:*)"], "Read the journal.")
+        self.assertIn("`Bash(ls:*)`", warnings[0])
 
     def test_generic_grants_are_never_unreferenced(self):
         _, warnings = role(["Read", "Write", "Glob"], "Do the thing.")
         self.assertEqual(warnings, [])
+
+
+class UnboundedGrant(unittest.TestCase):
+    """A prefix that bounds only the first word is bare `Bash` in disguise."""
+
+    def test_a_command_that_runs_other_commands_is_not_a_narrowing(self):
+        errors, _ = role(["Bash(git:*)"], "Commit the report with git.")
+        self.assertIn("`Bash(git:*)` is not a narrowing", errors[0])
+
+    def test_it_fires_even_when_the_prose_exercises_the_grant(self):
+        """The mention warning is silent in exactly this case — the common one."""
+        errors, warnings = role(["Bash(git:*)"], "```bash\ngit log --oneline -1\n```")
+        self.assertIn("is not a narrowing", errors[0])
+        self.assertEqual(warnings, [])
+
+    def test_naming_a_subcommand_is_a_narrowing(self):
+        errors, _ = role(["Bash(git log:*)"], "```bash\ngit log --oneline -1\n```")
+        self.assertEqual(errors, [])
+
+    def test_a_bounded_command_is_not_reported(self):
+        errors, _ = role(["Bash(mkdir:*)"], "```bash\nmkdir -p out\n```")
+        self.assertEqual(errors, [])
+
+    def test_bare_bash_is_not_reported_as_a_false_narrowing(self):
+        """`Bash` claims nothing, so there is no narrowing to contradict."""
+        errors, _ = role(["Bash"], "```bash\ngit push origin HEAD\n```")
+        self.assertEqual(errors, [])
 
 
 class MentionIsNotSpelling(unittest.TestCase):

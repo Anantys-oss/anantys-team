@@ -7,7 +7,9 @@ directions, and each direction fails differently:
   * a tool the prose needs but the frontmatter withholds -> the role silently
     does something weaker than what it documents;
   * a tool granted but never referenced -> an unaudited capability sitting on a
-    role that has no use for it.
+    role that has no use for it;
+  * a grant that reads as a narrowing but bounds nothing -> the audit records a
+    restriction the runtime does not impose. See `UNBOUNDED`.
 
 The second direction is only as good as what counts as a reference. Matching the
 grant name as a case-folded substring makes any grant whose name is also an
@@ -30,6 +32,31 @@ from pathlib import Path
 
 # Grants that are inherently generic — never reported as unreferenced.
 GENERIC = {"Bash", "Read", "Write", "Edit", "Glob", "Grep"}
+
+# Commands that run other commands. `Bash(<one of these>:*)` is bare `Bash`
+# spelled as a narrowing: the prefix bounds the first word and nothing after it.
+# `git` is the instance in this tree — `git config alias.x '!<shell>'` then
+# `git x` is two calls, both inside `Bash(git:*)`, and `git fetch <url>` reaches
+# the network. Naming a subcommand escapes this set on purpose: the hatches are
+# themselves subcommands, so `Bash(git diff:*)` rejects `git config` already.
+UNBOUNDED = {
+    "bash",
+    "docker",
+    "env",
+    "find",
+    "git",
+    "make",
+    "node",
+    "npm",
+    "npx",
+    "perl",
+    "python",
+    "python3",
+    "sh",
+    "ssh",
+    "xargs",
+    "zsh",
+}
 
 BASELINE = Path(__file__).with_name("tool-grants-baseline.txt")
 
@@ -88,7 +115,7 @@ def bash_commands(body):
     Kept whole because a grant may name a subcommand: `Bash(git diff:*)` permits
     `git diff --stat` and nothing else `git`. Truncating to the first word would
     compare `git` against `git diff` and reject every narrowed grant — pushing
-    authors to the over-broad `Bash(git:*)` this checker exists to discourage.
+    authors to `Bash(git:*)`, which `UNBOUNDED` rejects.
     """
     found = set()
     for block in BASH_FENCE.findall(body):
@@ -121,6 +148,16 @@ def check(path, grants, body, known_mcp, agents=()):
     # optional in prose; having them is not.
     if "browser" in lowered and not mcp_granted:
         errors.append("prose commits to driving a browser but grants no browser tool")
+
+    # A narrowing that bounds only the first word is not a narrowing, and the
+    # mention check cannot catch it: its single warning says the prose never
+    # names the grant, so its remedy is to write the word. Discharging it leaves
+    # the unbounded grant in place and removes the last signal about it.
+    for prefix in sorted(bash_grants & UNBOUNDED):
+        errors.append(
+            f"`Bash({prefix}:*)` is not a narrowing — `{prefix}` runs other "
+            f"commands; grant the subcommands it needs"
+        )
 
     if bash_grants and not has_bare_bash:
         for cmd in sorted(bash_commands(body)):

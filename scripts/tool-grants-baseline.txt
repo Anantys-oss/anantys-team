@@ -9,3 +9,9 @@
 # a warning, not a failure. Delete the line in the change that fixed it.
 
 plugins/anantys-team-agents/skills/anantys.qa/SKILL.md: prose commits to driving a browser but grants no browser tool
+
+# `ops` is the only role with a scoped Bash grant, and `git` is the one prefix
+# that bounds nothing. Its prose runs no command at all — no bash fence names
+# git, mkdir or ls — so the fix is to name the subcommands the actions actually
+# need, not to widen the prose until the mention warning goes quiet.
+plugins/anantys-team-agents/skills/anantys.ops/SKILL.md: `Bash(git:*)` is not a narrowing — `git` runs other commands; grant the subcommands it needs
