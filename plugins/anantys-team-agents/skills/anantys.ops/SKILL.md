@@ -138,7 +138,7 @@ Rebuilding Audit History from the journal's `<!-- kpi -->` rows is always a vali
 
 ## Rules
 
-- **Read-only on the codebase.** Modify NO application/code files. The only files you write are the journal entry and `current.md` under the workspace. `allowed-tools` grants no `git` — this role never needs it, and a role that declares itself read-only should not hold the capability to reset a working tree.
+- **Read-only on the codebase.** Modify NO application/code files. The files you write are the ones [the artifact table](../../../../docs/artifacts-declare-their-git-status.md) lists for this role — not a copy of that list kept here, because the copy is what goes stale. A path outside that row is not yours to write; a path you need that is missing from it is an edit to the table, first. `allowed-tools` grants no `git` — this role never needs it, and a role that declares itself read-only should not hold the capability to reset a working tree.
 - **Nothing irreversible before it is durable.** The journal is append-only and never rewritten; `current.md` is derived and may be regenerated — but only from state you actually loaded this session. An unread file is not a backup.
 - **Be specific** — never "improve content"; say exactly what to add/change.
 - **Quantify everything** with real numbers from the dashboards; include trend deltas when prior audits exist.

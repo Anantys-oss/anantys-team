@@ -52,6 +52,26 @@ down at all. There is no third class, so in practice:
 - `.gitignore` is therefore where nothing a role writes belongs — if a path wants to be ignored,
   it wanted to be a temp file.
 
+## The table is the write set, and it is the only copy
+
+The table above was not the first place `anantys.ops`' write set was written down. Its `## Rules`
+section carried an inline one — *"the only files you write are the journal entry and `current.md`
+under the workspace"* — and the two disagree, in the same tree: the table names four paths, and
+the phases under that rule append to `rulings.md` and create `.anantys/ops.md` at the repo root,
+which is not under the workspace either.
+
+Neither half is wrong about the artifacts. The inline list is wrong about its **form**. A closed
+enumeration in a fixed location puts every change that adds an artifact onto that one line, and
+none of them went there — a rule nobody updates does not read as stale, it reads as an authority
+boundary. The safe way to obey a contradicted boundary is to write less than asked: the ruling is
+never persisted, the config file is never created, and the next audit interviews the operator for
+facts it was supposed to already have. That is exactly the persistence those artifacts exist to
+provide, defeated by the sentence that was supposed to bound them.
+
+So a role **points at its row instead of restating it**, and adding an artifact is one edit, here,
+in the change that starts writing it — the same edit [the rule above](#the-rule) already requires
+for naming its git status. One obligation, one location, no second copy to forget.
+
 ## What it costs the roles
 
 One sentence each, at the point of the write, naming the status. The one that is not a sentence
