@@ -4,6 +4,7 @@
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import check_platform as cp
 
@@ -71,6 +72,49 @@ class CheckPlatform(unittest.TestCase):
         )
         cp.check_component(path, cp.AGENT_KEYS, "tools")
         self.assertEqual(cp.errors, [])
+
+
+class Discovery(unittest.TestCase):
+    """What the gate does when it is asked about a tree it cannot see."""
+
+    def setUp(self) -> None:
+        cp.errors.clear()
+        cp.warnings.clear()
+        self.tmp = tempfile.TemporaryDirectory()
+        cp.ROOT = Path(self.tmp.name)
+        self.asked: list[Path] = []
+        # The two things `main` reaches outside the tree: the CLI, and the call
+        # that runs it. Stub both so the test measures discovery and nothing else.
+        self.enterContext(mock.patch.object(cp.shutil, "which", return_value="/usr/bin/claude"))
+        self.enterContext(
+            mock.patch.object(cp, "ask_the_loader", lambda d, strict: self.asked.append(d))
+        )
+        self.addCleanup(self.tmp.cleanup)
+
+    def plugin(self, name: str) -> Path:
+        manifest = cp.ROOT / "plugins" / name / ".claude-plugin" / "plugin.json"
+        manifest.parent.mkdir(parents=True)
+        manifest.write_text("{}", encoding="utf-8")
+        return manifest.parent.parent
+
+    def skill(self, plugin_dir: Path, name: str, text: str) -> None:
+        path = plugin_dir / "skills" / name / "SKILL.md"
+        path.parent.mkdir(parents=True)
+        path.write_text(text, encoding="utf-8")
+
+    def test_empty_discovery_fails_rather_than_reporting_clean(self) -> None:
+        # Zero matches used to print `0 error(s), 0 warning(s)` and exit 0 —
+        # byte-identical to a healthy run, with the loader never asked.
+        self.assertEqual(cp.main([]), 1)
+        self.assertEqual(self.asked, [])
+
+    def test_an_error_in_one_plugin_does_not_mute_the_loader_on_the_next(self) -> None:
+        first = self.plugin("a-first")
+        self.skill(first, "s", GOOD_SKILL.replace("allowed-tools:", "allowed_tools:"))
+        second = self.plugin("z-second")
+        self.skill(second, "s", GOOD_SKILL)
+        self.assertEqual(cp.main([]), 1)
+        self.assertEqual(self.asked, [first, second])
 
 
 if __name__ == "__main__":

@@ -36,8 +36,10 @@ Neither check invents a registry of real tool names — that would go stale and
 is not ours to maintain. They check spelling and shape, which is where the
 silent failures actually live.
 
-Exit 0 = clean. 1 = at least one error, or the CLI is absent. `--strict` also
-fails on warnings.
+Exit 0 = clean. 1 = at least one error, the CLI is absent, or the discovery glob
+matched no plugin at all — a gate whose input set is empty must say so, because
+`0 error(s), 0 warning(s)` is otherwise indistinguishable from a healthy run.
+`--strict` also fails on warnings.
 """
 
 import json
@@ -124,12 +126,21 @@ def check_component(path: Path, known: frozenset[str], tools_key: str) -> None:
 
 def main(argv: list[str]) -> int:
     strict = "--strict" in argv
-    if shutil.which("claude") is None:
+    have_cli = shutil.which("claude") is not None
+    if not have_cli:
         errors.append("the `claude` CLI is not on PATH — this gate asks it, it cannot guess")
 
-    for manifest in sorted(ROOT.glob("plugins/*/.claude-plugin/plugin.json")):
+    manifests = sorted(ROOT.glob("plugins/*/.claude-plugin/plugin.json"))
+    if not manifests:
+        print(f"no plugins found under {ROOT}", file=sys.stderr)
+        return 1
+
+    for manifest in manifests:
         plugin_dir = manifest.parent.parent
-        if not errors:
+        # Gate on the CLI alone. Gating on `errors` instead makes a component
+        # error found in one plugin silently stop the loader being asked about
+        # every plugin after it — the half of this gate that cannot be guessed.
+        if have_cli:
             ask_the_loader(plugin_dir, strict)
         for skill in sorted(plugin_dir.glob("skills/*/SKILL.md")):
             check_component(skill, SKILL_KEYS, "allowed-tools")
