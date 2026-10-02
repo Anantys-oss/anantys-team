@@ -143,6 +143,6 @@ Rebuilding Audit History from the journal's `<!-- kpi -->` rows is always a vali
 - **Be specific** — never "improve content"; say exactly what to add/change.
 - **Quantify everything** with real numbers from the dashboards; include trend deltas when prior audits exist.
 - **Prioritize by impact** toward the stated traffic goal — compute the gap (e.g. "+60 daily visitors needed — where do they come from?").
-- If a service requires login and you can't access data, note it clearly and proceed with what's available. Never invent metrics.
+- **A login wall ends one phase, not the audit — and never the file.** Phases 2 and 3 say *tell the user and wait*, and this list does not override them. "Proceed with what's available" means the phases that need no session (1, 1b, 4) and nothing downstream of a dashboard you did not read: no metric, no delta, no Phase 4b score, no `current.md` KPI row. Never invent metrics — and a number carried forward from the last audit is invented too, because nothing this session observed it. Name the phase that did not run, and take the `current.next.md` path above.
 - Take screenshots at each phase to document the audit trail.
 - If the user provided extra queries/focus areas in $ARGUMENTS, fold them into the relevant phases.
