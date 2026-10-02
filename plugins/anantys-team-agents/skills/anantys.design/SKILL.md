@@ -24,14 +24,20 @@ The user typically provides a page/URL and a list of design issues to fix.
 4. **A known tree state — because a `blocked` task must be reverted.** Step 4.8 obliges you to undo
    a task's edits, and you cannot undo to a state you never recorded. Before the first edit, run
    `git status --porcelain` and `git branch --show-current`, and **report both**:
-   - **Dirty tree** — those changes are the user's. STOP and ask them to commit or stash. Do not
-     stash for them: once your overrides sit in the same stylesheet, reverting a file reverts their
-     work too, and you never saw what it was.
+   - **Modified tracked files** (` M`, `M `, `A `) — those changes are the user's. STOP and ask them
+     to commit or stash. Do not stash for them: once your overrides sit in the same stylesheet,
+     reverting a file reverts their work too, and you never saw what it was.
+   - **Untracked files** (`??`) — not the same risk, and not a reason to stop: `git checkout --`
+     cannot touch a path git does not know. **List them by path** and continue; they are the entries
+     that must still be there when you finish.
    - **Unexpected branch** — the checkout is ambient state you did not set; a prior session may have
      left it on a review or feature branch. Name it and confirm before editing.
 
-   Then record, per task, which files you touch. With a clean start that list *is* the undo:
-   `git checkout -- <those files>`.
+   Then record, per task, what you **edited** and what you **created** — two lists, because the undo
+   is two commands. `git checkout -- <those files>` restores tracked files only; a new stylesheet or
+   partial is untracked, so it fails on that path (`did not match any file(s) known to git`) and the
+   file survives the revert. Creations are undone with `rm`, by path. **Never `git clean`** — it
+   cannot tell your `??` entries from the ones you listed above.
 
 ## Workflow
 
@@ -83,10 +89,11 @@ For **each** task, in order:
    - **The fix is structural** — the markup, the component boundary or the design token itself is
      wrong, and no inline override reaches it. That is a deliberate deferral, not a stuck loop.
 
-   Revert that task's edits before moving to the next one — `git checkout -- <the files recorded
-   for that task>`, scoped to that task alone, never a whole-tree reset that would also discard the
-   tasks you completed. A `blocked` task that leaves three dead overrides in the stylesheet hands
-   the next person a worse page than it found.
+   Revert that task's edits before moving to the next one — `git checkout -- <the files that task
+   edited>` plus `rm <the files that task created>`, scoped to that task alone, never a whole-tree
+   reset that would also discard the tasks you completed. A `blocked` task that leaves three dead
+   overrides in the stylesheet hands the next person a worse page than it found — and a file no
+   `checkout` removes is the same debt, invisible in the diff.
 
 ### 5. Scope the proof to the edit, before marking anything done
 
@@ -182,7 +189,9 @@ List the source files touched. Note anything deliberately left as-is (with reaso
   inline pass cannot reach. Revert that task's edits and say what it needs. Never buy a `completed`
   by lowering what counts as proof.
 - **Record the tree before you edit it, and say where you are.** Clean tree, named branch, both
-  reported, and a per-task file list. A loop that must undo cannot start from a state it never read.
+  reported, and a per-task list split into edits and creations — the undo is `git checkout --` for
+  one and `rm` for the other. "Dirty" means modified *tracked* files; untracked ones you list and
+  leave alone. Never `git clean`: it cannot spare the user's.
 - **The screenshot's scope is one page; the edit's scope is every consumer.** Grep each touched file
   for its other consumers before `completed`. Page-local, and the screenshot is the whole proof;
   shared, and you either get a dev URL per surface or name the unverified ones in the Proof column.

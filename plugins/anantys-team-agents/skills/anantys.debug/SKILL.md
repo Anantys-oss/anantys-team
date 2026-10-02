@@ -18,14 +18,24 @@ This is a **Ralf loop** — the model's limit is rarely the model; it's the feed
    end UNRESOLVED (step 4b), which obliges you to leave the tree as you found it. You cannot undo to
    a state you never recorded. Before the first edit, run `git status --porcelain` and
    `git branch --show-current`, and **report both to the user**:
-   - **Dirty tree** — the changes are the user's, not yours. STOP and ask them to commit or stash.
-     Do not start and do not stash for them: after three of your own edits, nothing distinguishes
-     their line from yours, and an undo that reverts a whole file destroys work you never saw.
+   - **Modified tracked files** (` M`, `M `, `A `) — the changes are the user's, not yours. STOP and
+     ask them to commit or stash. Do not start and do not stash for them: after three of your own
+     edits, nothing distinguishes their line from yours, and an undo that reverts a whole file
+     destroys work you never saw.
+   - **Untracked files** (`??`) — not the same risk, and not a reason to stop. Your undo is
+     `git checkout --`, which cannot touch a path git does not know; a stray note or build artifact
+     is in no danger from it. **List them by path in the snapshot you report** and continue. They are
+     the entries you must still see at the end — proof you removed only your own.
    - **Unexpected branch** — the checkout is ambient state you did not set. A previous session may
      have left it on a review branch or a feature branch. Name the branch and confirm it is where
      the fix belongs before editing; a verified fix on the wrong branch is not a delivered fix.
 
-   With a clean tree at a named commit, "undo" is exact: `git checkout -- <files you touched>`.
+   The snapshot has two halves because the undo does. `git checkout -- <files you touched>` restores
+   **tracked** files; a file *you created* is untracked, so that command fails on it
+   (`error: pathspec '<path>' did not match any file(s) known to git`) and the file survives. Record
+   edits and creations separately as you go, and undo each with its own command: `git checkout --`
+   for the edits, `rm` for the creations, by path. **Never `git clean`** — it does not distinguish
+   your `??` entries from the ones you listed on entry.
 
 ## Workflow
 
@@ -68,8 +78,11 @@ Declare UNRESOLVED and hand back when **either** holds:
 Handing back is not failure — it is the honest version of the same evidence trail. Report the
 rejected hypotheses and *what observation killed each one*; that is the expensive part and the next
 agent (or the human) should not pay for it twice. Then **restore the tree to the state precondition
-3 recorded** — `git checkout -- <the files you touched>`, and `git status --porcelain` clean again
-before you report. An UNRESOLVED handoff that also ships four dead edits is worse than no attempt.
+3 recorded** — `git checkout -- <the files you edited>`, `rm <the files you created>`, and
+`git status --porcelain` back to the snapshot you reported: empty of your edits, still carrying the
+`??` entries that were there before you. Not *empty* — a run that reports an empty porcelain in a
+tree that started with untracked files deleted something that was not its to delete.
+An UNRESOLVED handoff that also ships four dead edits is worse than no attempt.
 (That is the *tree*'s starting state. The word "baseline" in step 1 means the failure signal you
 captured, which you keep — it is the evidence.)
 
@@ -106,4 +119,8 @@ got, Fix is empty, and Re-proof lists each hypothesis with the observation that 
 - **Record the tree before you edit it, and say where you are.** Clean tree, named branch, both
   reported. A loop that may have to undo cannot start from a state it did not read, and a fix
   verified on a branch nobody chose is not delivered.
+- **"Dirty" means modified tracked files; untracked ones you list and keep.** The undo is two
+  commands because the snapshot is two classes — `git checkout --` for what you edited, `rm` for
+  what you created. `git checkout --` cannot remove a file you created, and `git clean` cannot
+  spare the user's.
 - **Never commit, push, or open a PR** unless the user explicitly asks — stop at the verified local fix.
