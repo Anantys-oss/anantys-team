@@ -36,10 +36,11 @@ Neither check invents a registry of real tool names — that would go stale and
 is not ours to maintain. They check spelling and shape, which is where the
 silent failures actually live.
 
-Exit 0 = clean. 1 = at least one error, the CLI is absent, or the discovery glob
-matched no plugin at all — a gate whose input set is empty must say so, because
-`0 error(s), 0 warning(s)` is otherwise indistinguishable from a healthy run.
-`--strict` also fails on warnings.
+Exit 0 = clean. 1 = at least one error, the CLI is absent, the discovery glob
+matched no plugin at all, or the loader answered in a shape the keys above do not
+fit — a gate whose input set is empty, or whose reading of a non-empty answer
+came back empty, must say so, because `0 error(s), 0 warning(s)` is otherwise
+indistinguishable from a healthy run. `--strict` also fails on warnings.
 """
 
 import json
@@ -77,11 +78,24 @@ def ask_the_loader(plugin_dir: Path, strict: bool) -> None:
     except json.JSONDecodeError:
         errors.append(f"{rel(plugin_dir)}: validator produced no report ({proc.stderr.strip()})")
         return
+    before = len(errors) + len(warnings)
     for section in [report.get("manifest") or {}, *(report.get("contents") or [])]:
         where = Path(section.get("file", plugin_dir)).name
         for kind, sink in (("errors", errors), ("warnings", warnings)):
             for item in section.get(kind) or []:
                 sink.append(f"loader: {where}: {item.get('path')}: {item['message']}")
+    # The report states its own verdict in `success`. Read it, and check that it
+    # agrees with what the keys above yielded: a tree the validator says did not
+    # pass, with nothing this parser could extract, means the shape moved and the
+    # loader half of the gate has gone quiet — printing `0 error(s)` exactly as a
+    # clean run does. `platform.yml` installs the CLI unpinned, so that drift
+    # arrives without a commit and no test in this repo would catch it.
+    if report.get("success") is not True and len(errors) + len(warnings) == before:
+        errors.append(
+            f"{rel(plugin_dir)}: validator did not pass yet reported nothing this gate could "
+            f"read — findings live under `manifest`/`contents` as `errors`/`warnings`, and the "
+            f"report's top-level keys are {sorted(report)}"
+        )
 
 
 def frontmatter_keys(path: Path) -> tuple[list[str], str]:

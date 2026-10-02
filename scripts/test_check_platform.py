@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Every case here is a mutation the loader was measured to accept in silence."""
 
+import json
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -115,6 +117,95 @@ class Discovery(unittest.TestCase):
         self.skill(second, "s", GOOD_SKILL)
         self.assertEqual(cp.main([]), 1)
         self.assertEqual(self.asked, [first, second])
+
+
+class AskTheLoader(unittest.TestCase):
+    """What the gate does when the program it asks answers in a shape it predates.
+
+    Every other case in this file stubs `ask_the_loader` out, so the one piece of
+    this gate that parses an external program's output had no coverage at all —
+    and `platform.yml` installs that program unpinned.
+    """
+
+    def setUp(self) -> None:
+        cp.errors.clear()
+        cp.warnings.clear()
+        self.tmp = tempfile.TemporaryDirectory()
+        cp.ROOT = Path(self.tmp.name)
+        self.addCleanup(self.tmp.cleanup)
+
+    def ask(self, report: dict, strict: bool = False) -> None:
+        completed = subprocess.CompletedProcess([], 0, json.dumps(report), "")
+        with mock.patch.object(cp.subprocess, "run", return_value=completed):
+            cp.ask_the_loader(cp.ROOT / "plugins" / "p", strict)
+
+    # The shape measured at 2.1.278, verbatim down to the empty `contents`.
+    def test_current_shape_surfaces_a_finding(self) -> None:
+        self.ask(
+            {
+                "success": False,
+                "manifest": {"file": "plugin.json", "errors": [{"path": "name", "message": "gone"}]},
+                "contents": [],
+            }
+        )
+        self.assertEqual(cp.errors, ["loader: plugin.json: name: gone"])
+
+    def test_a_clean_report_stays_clean(self) -> None:
+        self.ask({"success": True, "manifest": {"file": "plugin.json"}, "contents": []})
+        self.assertEqual((cp.errors, cp.warnings), ([], []))
+
+    def test_warnings_alone_do_not_read_as_drift(self) -> None:
+        # Non-strict, warnings only: the validator still passes, and a drift check
+        # that ignored `success` would redden every healthy run of this gate.
+        self.ask(
+            {
+                "success": True,
+                "manifest": {"file": "plugin.json", "warnings": [{"path": "author", "message": "n"}]},
+                "contents": [],
+            }
+        )
+        self.assertEqual(cp.errors, [])
+        self.assertEqual(len(cp.warnings), 1)
+
+    def test_renamed_sections_are_drift_not_silence(self) -> None:
+        self.ask(
+            {
+                "success": False,
+                "plugin": {"file": "plugin.json", "errors": [{"path": "name", "message": "gone"}]},
+                "components": [],
+            }
+        )
+        self.assertEqual(len(cp.errors), 1)
+        self.assertIn("'components', 'plugin', 'success'", cp.errors[0])
+
+    def test_renamed_findings_key_is_drift_not_silence(self) -> None:
+        self.ask(
+            {
+                "success": False,
+                "manifest": {"file": "plugin.json", "problems": [{"path": "n", "message": "gone"}]},
+                "contents": [],
+            }
+        )
+        self.assertEqual(len(cp.errors), 1)
+        self.assertIn("did not pass yet reported nothing", cp.errors[0])
+
+    def test_a_dropped_verdict_field_is_itself_drift(self) -> None:
+        self.ask({"manifest": {"file": "plugin.json", "errors": []}, "contents": []})
+        self.assertEqual(len(cp.errors), 1)
+
+    def test_strict_warnings_are_not_reported_twice(self) -> None:
+        # Under --strict the validator fails on warnings alone; the warning is a
+        # real finding, so the drift check must not also fire.
+        self.ask(
+            {
+                "success": False,
+                "manifest": {"file": "plugin.json", "warnings": [{"path": "author", "message": "n"}]},
+                "contents": [],
+            },
+            strict=True,
+        )
+        self.assertEqual(cp.errors, [])
+        self.assertEqual(len(cp.warnings), 1)
 
 
 if __name__ == "__main__":
