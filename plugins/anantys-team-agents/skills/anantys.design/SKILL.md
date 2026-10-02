@@ -144,20 +144,50 @@ const zone = document.querySelector('main') || document.body;
 const isLightGrey=(r,g,b)=>(r>150&&g>150&&b>150)&&Math.abs(r-g)<40&&Math.abs(g-b)<40&&r<210;
 const isGreen=(r,g,b)=>g>120&&g>r+30&&g>b+20;
 const ALLOWED=/perf|value|variation|semantic|badge/; // adapt to the project's legit semantic classes
-const out=[];
+const out=new Map();
+let visited=0;
 zone.querySelectorAll('*').forEach(el=>{
-  if(!el.offsetParent) return;
   if(![...el.childNodes].some(n=>n.nodeType===3&&n.textContent.trim().length>1)) return;
-  const m=getComputedStyle(el).color.match(/\d+/g); if(!m) return; const [r,g,b]=m.map(Number);
+  const s=getComputedStyle(el);
+  if(s.display==='none'||s.visibility==='hidden'||!el.getClientRects().length) return;
+  visited++;
+  const m=s.color.match(/\d+/g); if(!m) return; const [r,g,b]=m.map(Number);
   const cls=''+(el.className||'');
   if(ALLOWED.test(cls)) return;
-  if(isLightGrey(r,g,b)) out.push({t:'grey',cls:cls.slice(0,40),txt:el.textContent.trim().slice(0,28)});
-  else if(isGreen(r,g,b)) out.push({t:'green',cls:cls.slice(0,40),txt:el.textContent.trim().slice(0,28)});
+  const t=isLightGrey(r,g,b)?'grey':isGreen(r,g,b)?'green':''; if(!t) return;
+  const k=t+'|'+cls.slice(0,40)+'|'+s.position;
+  const hit=out.get(k)||{t,cls:cls.slice(0,40),pos:s.position,n:0,txt:el.textContent.trim().slice(0,28)};
+  hit.n++; out.set(k,hit);
 });
-[...new Map(out.map(o=>[o.t+o.cls,o])).values()].slice(0,30);
+({zone:zone.tagName, visited, hits:[...out.values()].sort((a,b)=>b.n-a.n)});
 ```
 
-An empty result (`[]`) is the goal. Anything returned is a new fix.
+**A clean scan and a scan that looked at nothing return the same answer.** So report
+`visited` and `zone` with the result — an empty `hits` over 400 visited elements is a
+finding about the page; an empty `hits` over 3 is a finding about your selector. Three
+reasons the number can collapse without the page being clean, all of which this scan
+is written to avoid and an adapted one can reintroduce:
+
+- **`zone` missed the content.** `querySelector('main')` finds the first `main`; a layout
+  that wraps chrome in it, or names its content region something else, scopes the whole
+  scan to the wrong subtree. Check `visited` against what the page visibly holds.
+- **Visibility was tested with `offsetParent`.** It is `null` for `position: fixed`
+  elements — the sticky header, the nav bar, the toast, the modal, the cookie banner: the
+  most-seen chrome on the page, skipped in silence, by the one pass that exists to catch
+  what the per-task loop missed. `display`/`visibility` plus `getClientRects()` tests what
+  the guard meant. The `pos` field is there so a fixed hit is recognisable as one.
+- **Hits were deduplicated by class.** Every unclassed element shares the key `''`, so a
+  whole template's worth of grey text collapses to one row. Grouping with a count (`n`)
+  keeps the magnitude; `pos` in the key keeps the chrome separate from the body copy.
+
+Then say what the pass **did not** cover. It reads one property, `color`, on one page
+state. The DS rules in step 1 also forbid stray typefaces, decorative gradients, glow
+shadows, card-in-card nesting and sparkle iconography — none of which this scan can see,
+and §7's mobile width is a second state it has not run against. An empty `hits` is "no
+color violation found in `<zone>`", never "DS-clean". Report it in those words: a tripwire
+that fired nothing, not a verdict.
+
+Anything in `hits` is a new fix.
 
 ### 7. Mobile + edge states
 
@@ -195,6 +225,9 @@ List the source files touched. Note anything deliberately left as-is (with reaso
 - **The screenshot's scope is one page; the edit's scope is every consumer.** Grep each touched file
   for its other consumers before `completed`. Page-local, and the screenshot is the whole proof;
   shared, and you either get a dev URL per surface or name the unverified ones in the Proof column.
+- **An empty audit pass reports what it visited.** The global scan's clean answer and its broken
+  answer are the same answer, so `hits: []` is only evidence next to `zone` and `visited`. It reads
+  one property on one page state: say "no color violation in `<zone>`", never "DS-clean".
 - Respect the project's existing design system and tokens; never invent new color tokens, gradients, glows, or AI-cliché iconography.
 - **Never commit, push, or open a PR** unless the user explicitly asks — stop at validated local edits.
 - Report what the screenshot actually shows, not what you expect.
