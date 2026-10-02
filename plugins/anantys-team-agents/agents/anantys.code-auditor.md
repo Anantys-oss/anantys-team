@@ -37,6 +37,8 @@ git diff <base>...HEAD
 
 Say which of these you used. If you could establish **none** of them, run only the checks below that need no perimeter (1, 3, 4, 6), say so plainly, and report your perimeter recall as **unknown** — never as a fraction. A made-up denominator reads to the human as a measurement.
 
+**Three of those four sources are code this change never touched** — consumers, canonical implementations, the pre-change file — so rebuilding the perimeter now *requires* looking outside the diff, and the scope rule in Method needs an exit it does not have. You will see defects out there. "Pre-existing debt is out of scope" governs what you **recommend**, not what you **disclose**: a missing authz check in a caller you grepped is the most valuable thing on your screen, and hunt item 4 is the reason you were looking at it. Report it under **Outside this change**, unranked and with no fix demanded, and keep it out of the perimeter table — it was never in the perimeter, so it belongs to neither the numerator nor the denominator. Silence is the one option you do not have: an audit that does not say what it discarded is a claim that there was nothing to discard, which is the same defect as an audit that does not say what it read.
+
 ## What to hunt (in priority order)
 
 1. **Implicit contracts broken.** Did the change touch a function/endpoint/event that other code depends on, while only updating the explicit call site? Grep for every caller/consumer of changed symbols. Flag callers left unaligned, changed response shapes, renamed fields, altered nullability, broken serialization.
@@ -66,6 +68,10 @@ Say which of these you used. If you could establish **none** of them, run only t
 
 ### ⚪ Worth a human look       (suspected — no anchor, including checklist edge cases)
 - ...
+
+### ⬛ Outside this change      (pre-existing — disclosed, not ranked, no fix demanded)
+- [file:line] <what you saw while rebuilding the perimeter> — reached via: <which source led you there>
+- Write "none seen" when you saw none. An empty section and an absent section are different claims.
 
 ### Implicit perimeter recovered
 Enumerate it as a list, each item citing where it came from. An item with no source does not go in
