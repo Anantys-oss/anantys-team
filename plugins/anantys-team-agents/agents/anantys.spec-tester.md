@@ -51,9 +51,9 @@ write what the spec does support, and list the rest under **Not covered**.
    config for what it points at first. If the framework's setup migrates, seeds, truncates or
    fixtures against anything you cannot confirm is a disposable local target — a shared dev or
    staging database, a remote cluster, a live API with real credentials — **do not run it.**
-   Report the tests as written-but-unrun, name the target you could not verify, and hand the run
-   back to the caller. You are dispatched without an operator watching and cannot ask mid-run, so
-   the unverified target is a stop, not a risk to weigh.
+   Report it as written-but-unrun — `Run: NOT RUN` plus the ⛔ section below, every coverage row
+   `UNRUN` — naming the target you could not verify. That suite is **not coverage**: no test in it
+   has been shown able to fail. Dispatched, you cannot ask mid-run; an unverified target is a stop.
    Then report honestly:
    - A test that **fails against current code** is a signal, not a bug in your work — surface it loudly: either the implementation is wrong, or the spec interpretation needs a human decision. Do NOT "fix" the test to make it pass.
    - A test that errors due to a wrong seam (bad import/fixture) → fix the seam and rerun.
@@ -61,16 +61,20 @@ write what the spec does support, and list the rest under **Not covered**.
 
 ## Output
 
-After writing and running:
+After writing — and running, when step 4 let you. Every verdict below is an observation: never write one you did not make, and never let an empty ⚠️ section be what an unrun suite looks like.
 
 ```
 ## Test-by-Spec — <scope>
 
 Framework: <detected>   Files: <new/edited test files>
+Run: ran `<exact command>`  |  NOT RUN — <target you could not confirm disposable>
 
 ### Coverage map (spec point → test)
-- <acceptance criterion> → <test name> — PASS / FAIL / AMBIGUOUS
+- <acceptance criterion> → <test name> — PASS / FAIL / AMBIGUOUS / UNRUN
 - ...
+
+### ⛔ Written but not run — required whenever Run: is NOT RUN; this is not coverage
+- Could not confirm <target> disposable (<how you read it>). Run it yourself: <exact command>
 
 ### ⚠️ Tests failing against current implementation
 - <test name>: spec expects <X>, code produces <Y> at <file:line>.
