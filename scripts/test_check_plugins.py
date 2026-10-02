@@ -57,6 +57,52 @@ class CheckLoad(Harness):
         self.assertEqual(self.check("[gone](MISSING.md)\n"), [])
 
 
+class TheRemedyIsCountedToo(Harness):
+    """reference/ is where the remedy puts the load, so it is part of the load."""
+
+    def reference(self, name: str, n: int) -> None:
+        (cp.ROOT / "reference").mkdir(exist_ok=True)
+        (cp.ROOT / "reference" / name).write_text(lines(n), encoding="utf-8")
+
+    def test_a_named_topic_file_counts_toward_the_load(self) -> None:
+        self.reference("run.md", 20)
+        warning, = self.check("| run | `reference/run.md` |\n")
+        self.assertIn("loads 21 lines", warning)
+        self.assertIn("20 reference/run.md", warning)
+
+    def test_only_the_largest_topic_file_counts(self) -> None:
+        # One action reads one topic, so the bound is the worst action, not the sum.
+        self.reference("small.md", 4)
+        self.reference("big.md", 20)
+        warning, = self.check("`reference/small.md` `reference/big.md`\n")
+        self.assertIn("loads 21 lines", warning)
+        self.assertIn("20 reference/big.md", warning)
+        self.assertNotIn("small.md", warning)
+
+    def test_a_topic_file_no_action_names_is_not_counted(self) -> None:
+        self.reference("unused.md", 20)
+        self.assertEqual(self.check("preamble only\n"), [])
+
+    def test_a_named_topic_file_that_is_not_there_is_ignored(self) -> None:
+        self.assertEqual(self.check("`reference/gone.md`\n"), [])
+
+    def test_splitting_into_one_big_topic_file_is_not_a_pass(self) -> None:
+        # The defect this closes: relocating prose into a file every action still
+        # reads took a role from over-ceiling to clean without lowering the load.
+        self.baseline(**{"SKILL.md": lines(20)})
+        self.reference("all.md", 16)
+        warning, = self.check("`reference/all.md`\n" + lines(2))
+        self.assertIn("loads 19 lines (> 10), down from 20", warning)
+
+    def test_the_baseline_counts_its_own_topic_file(self) -> None:
+        self.baseline(**{
+            "SKILL.md": "`reference/run.md`\n" + lines(5),
+            "reference/run.md": lines(20),
+        })
+        warning, = self.check(lines(14))
+        self.assertIn("down from 26", warning)
+
+
 class AgainstTheBaseline(Harness):
     """A ceiling report is only actionable if it says what *this* change did to it."""
 

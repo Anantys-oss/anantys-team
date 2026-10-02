@@ -15,8 +15,13 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-ROLE_MAX_LINES = 200  # see README "Skill size" — a role loads in full, every invocation
+ROLE_MAX_LINES = 200  # see docs/adding-a-role.md — a role loads in full, every invocation
 CONTRACT = "TEAM-CONTRACT.md"  # the rules every role in a plugin shares; each must link it
+
+#: How a role names a topic file an action loads on top of its always-loaded set.
+#: Same literal as ``check_tool_grants`` and ``check_delegation_grants``: the
+#: convention is a backticked path, not a markdown link.
+REFERENCE_LINK = re.compile(r"`(reference/[\w.-]+\.md)`")
 
 #: Commit the working tree departs from, so a load can be reported as a *change*
 #: rather than as a standing fact. ``None`` = no baseline available; see ``merge_base``.
@@ -99,8 +104,35 @@ def load_parts(path: Path, read) -> list[tuple[Path, int]]:
     return parts
 
 
+def worst_action_part(path: Path, read) -> list[tuple[Path, int]]:
+    """The largest ``reference/*.md`` the role names, as a one-element list or ``[]``.
+
+    ``check_load``'s own remedy is to move detail into ``reference/``, so that
+    directory is where a role's load *goes* — measuring the always-loaded set alone
+    would make the remedy a way to satisfy the ceiling without lowering the load.
+    An action reads one topic file on top of that set and the ceiling is a worst-case
+    bound, so the largest named file is the part that counts.
+
+    ``check_tool_grants`` and ``check_delegation_grants`` already read these files,
+    for the same reason and with the same pattern; this is the gate that prices them.
+
+    A floor, not an exact load: an action that reads two topic files pays for both.
+    """
+    text = read(path)
+    sized = []
+    for name in sorted(set(REFERENCE_LINK.findall(text or ""))):
+        if (body := read(target := (path.parent / name).resolve())) is not None:
+            sized.append((target, len(body.splitlines())))
+    return [max(sized, key=lambda part: part[1])] if sized else []
+
+
+def measured_load(path: Path, read) -> list[tuple[Path, int]]:
+    """Every file one action of ``path`` reads, worst case, as ``(file, lines)`` pairs."""
+    return load_parts(path, read) + worst_action_part(path, read)
+
+
 def check_load(path: Path) -> None:
-    """Warn when a role's *pre-action load* exceeds the ceiling — and say who did it.
+    """Warn when a role's worst-case *one-action load* exceeds the ceiling — and say who did it.
 
     An absolute total is the same number on every branch, so a warning phrased
     only as "loads N lines" says nothing about the change being reviewed: a commit
@@ -110,17 +142,18 @@ def check_load(path: Path) -> None:
 
     So the load is also priced against ``BASE``, and the warning names the delta.
     """
-    parts = load_parts(path, disk)
+    parts = measured_load(path, disk)
     total = sum(n for _, n in parts)
     if total <= ROLE_MAX_LINES:
         return
 
     breakdown = " + ".join(f"{n} {rel(p)}" for p, n in parts)
     remedy = (
-        "move detail a given action does not need into reference/ and link it there "
-        f"— never the {CONTRACT}, which `check_contract` requires"
+        "split detail a given action does not need into reference/ topic files — the "
+        "largest is counted too, so one big reference file relocates the load without "
+        f"lowering it; never into the {CONTRACT}, which `check_contract` requires"
     )
-    before = sum(n for _, n in load_parts(path, lambda p: at(BASE, p))) if BASE else None
+    before = sum(n for _, n in measured_load(path, lambda p: at(BASE, p))) if BASE else None
 
     if before is None or before == total:
         change = f"loads {total} lines (> {ROLE_MAX_LINES})"

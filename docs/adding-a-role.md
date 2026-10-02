@@ -39,7 +39,7 @@ must say so rather than print the output of a healthy run.
 
 A role over 200 lines is a *warning*, not an error: a role file is loaded in full on every
 invocation, so past that size the per-action detail belongs in a `reference/` page the
-actions table links to.
+actions table links to — and that page is counted too, see below.
 
 **The 200 is a ceiling on the load, not on the file.** A role's preamble — everything above
 its first `## ` heading — is where it names what binds it before it acts, so every local
@@ -54,3 +54,18 @@ saying *"read it before acting"*; at 502 lines it made every one of them — inc
 under 100 lines of their own — invoke at between 578 and 733 against a ceiling of 200, while
 the checker reported one warning, for the one file that was individually long. A ceiling
 measured on the wrong unit reads as compliance.
+
+**The remedy is inside the unit, not outside it.** `reference/` is where this page sends
+the detail, so it is where the load goes — a ceiling that stopped at the always-loaded set
+would be satisfiable by relocating prose into a file every action still reads. So the total
+also carries the **largest** `reference/*.md` the role names: an action reads one topic on
+top of the always-loaded set, and a ceiling is a worst-case bound. Splitting into several
+small topics lowers the measured load; moving the same prose into one big topic file does
+not. `check_tool_grants` and `check_delegation_grants` already read these files, for the
+same reason and with the same backticked-path convention; this is the gate that prices them.
+
+It is a floor, not an exact load: an action that reads two topic files pays for both, and
+the checker charges one. Measured on the assembled queue, `anantys.qa` — the only split
+role today — invokes at 385 (160 + 95 contract + 130 `reference/sources.md`) where the
+always-loaded set alone reported 255. No individual branch shows this: the split lands on
+one head, the contract on another, and this checker on a third.
