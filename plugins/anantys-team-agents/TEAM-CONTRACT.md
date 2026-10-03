@@ -36,10 +36,14 @@ role here gates — no browser, a dirty tree, consent withheld, a precondition y
 work around. Stopping there is correct. Stopping there *silently* is not.
 
 - **Name the stop as the verdict**, with the gate that fired and what passing it needs.
-- **Write that into the artifact a finished run would have written.** A file a stopped run
-  left untouched is byte-identical to one a finished run had no reason to change, and the
-  next reader — often the next run — cannot tell those apart. A snapshot gains a dated
-  line saying no run refreshed it; an append-only log gains a stopped entry, not nothing.
+- **Write that into the artifact a finished run would have written** — once you know where
+  that artifact is and what it already says. A file a stopped run left untouched is
+  byte-identical to one a finished run had no reason to change, and the next reader — often
+  the next run — cannot tell those apart. An append-only log gains a stopped entry; a
+  snapshot *you have read* gains a dated line saying no run refreshed it. A snapshot you
+  have **not** read is not amended but rewritten whole from its own prior content, so a stop
+  that fires before that read records the stop in the reply and names the file it could not
+  reach. Rewriting a snapshot blind destroys the history this clause exists to preserve.
 - **Recording the stop publishes nothing else** — not the partial result as a whole one.
 
 A missing record is not a smaller failure than a wrong one. It is the same failure with

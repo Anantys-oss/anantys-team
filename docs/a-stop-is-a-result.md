@@ -69,6 +69,65 @@ them. The next shared rule cannot be paid for out of this file — it lands inli
 the five role files moves per-action detail into `reference/` first, which is the remedy the
 checker already names and is a change to those files, not to this one.
 
+## The precondition clause 2 carries, and why it is not a loophole
+
+The row above says `current.md`, left untouched, "reads as **current**". True. But the
+remedy has a cost in the direction the row does not face, and `ops` is where it lands:
+
+`current.md` has exactly one sanctioned write. *"Always overwrite the whole file (it is a
+snapshot; the journal is the append log). Carry forward completed actions… Accumulate the
+Audit History table from the previous `current.md`."* There is no append. So "a snapshot
+gains a dated line" — clause 2's illustration as first written — is, for this file, a
+whole-file rewrite that must reproduce every past Audit History row, every Completed
+Action, and every pending Next Action's age counter **from the copy being replaced**.
+
+Every `ops` gate fires before that copy has been read:
+
+| gate | fires at | has it read `current.md`? |
+|---|---|---|
+| contract unreadable ⇒ stop | before the Mission section | no — the workspace is not even anchored yet |
+| browser unavailable ⇒ STOP | §Browser, before Phase 0 | no |
+| git tracked an artifact you did not find ⇒ stop | Phase 0 step 2 | **no — that is the gate's premise** |
+
+So a literal clause 2 would have told a stopped `ops` run to rewrite `current.md` whole
+with no prior content to carry — which is precisely what the skill's own Phase 0 warning
+calls out: *"a wrongly-assumed first audit silently drops every past row and every pending
+action's age."* The third gate is the sharp case. It fires exactly when git says a prior
+artifact exists and the run could not find it, and its remedy is *"do not start a fresh
+history beside the old one"* — the one artifact the demanded write would create, now with
+the contract's authority behind it.
+
+Clause 2 therefore binds from the point the artifact is **located and read**. Before that,
+clause 1 still binds in full: the stop is named, with its gate and what passing it needs,
+and it names the file it could not record into. That is strictly more than silence, and it
+is the most a context that has never seen the snapshot can honestly write into it.
+
+This is not the "shape of a stopped entry" exemption below. Shape is a schema question the
+role answers; this is about whether the write is reachable at all, which is a property of
+every overwrite-whole artifact and belongs with the clause.
+
+**Cost — and it is a fifth warning, not a rounding error.** The precondition is +4 lines
+in `TEAM-CONTRACT.md` (95 → 99), charged to every role. Measured with
+`check_plugins.py` (borrowed from `plugin-manifest-checks`, which owns it) on *this* head,
+before and after — the table above was measured on the wave-1 union, where
+`anantys.ops/SKILL.md` was still 246 lines:
+
+| role | before | after |
+|---|---|---|
+| `qa` | 615 | 619 |
+| `ops` | 234 | 238 |
+| `design` | 217 | 221 |
+| `spec-tester` | 200 — exactly at the ceiling | **204** — newly over |
+| `debug` | 169 | 173 |
+| `review` | 186 | 190 |
+
+`0 error(s), 3 warning(s)` → `0 error(s), 4 warning(s)`. `spec-tester` crosses because the
+commit before this one grew it to 105 lines of its own; these four lines are what tip it.
+There is no cheaper placement: the checker's own remedy is *"split detail into
+`reference/`… never into the `TEAM-CONTRACT.md`, which `check_contract` requires"*, and a
+precondition on when clause 2 binds is not detail a role can be spared. The alternative is
+a clause whose conforming path is the data loss it was written to prevent.
+
 ## Deliberately not here
 
 - **The exact shape of a stopped entry.** A dated no-run line in `current.md` and a
