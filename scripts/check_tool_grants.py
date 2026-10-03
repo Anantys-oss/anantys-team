@@ -19,6 +19,13 @@ errors landed on the same grant and pointed opposite ways — `qa` held an
 unexercised `Task` in silence because it writes about `tasks.md`, while `review`,
 the one role that dispatches, was reported as not mentioning it.
 
+The first direction is only as good as what counts as a command. Reading them
+out of ```bash fences alone left the check with nothing to read: `ops` is the
+only role here with a narrowed grant set, so the only role the check runs on,
+and it has no bash fence — it runs `mkdir -p` mid-sentence. The three grants it
+narrows were never compared against anything, and the gate printed OK. See
+`bash_commands`.
+
 Errors that predate this gate are declared in `tool-grants-baseline.txt` rather
 than fixed here — see `baseline()` for why the gate may not fix its own subject.
 
@@ -62,6 +69,7 @@ BASELINE = Path(__file__).with_name("tool-grants-baseline.txt")
 
 MCP_IN_PROSE = re.compile(r"`([a-z_]+)`|mcp__[a-z-]+__([a-z_]+)")
 BASH_FENCE = re.compile(r"```(?:bash|sh|shell)\n(.*?)```", re.S)
+INLINE_CODE = re.compile(r"`([a-z][\w./-]*(?: [^`\n]*)?)`")
 FRONTMATTER = re.compile(r"\A---\n(.*?)\n---\n(.*)\Z", re.S)
 REFERENCE_LINK = re.compile(r"`(reference/[\w.-]+\.md)`")
 
@@ -109,13 +117,42 @@ def prose_surface(path, body):
     return "\n".join(parts), warnings
 
 
-def bash_commands(body):
-    """Every command line inside a bash-fenced block, whole.
+def bash_commands(body, heads=frozenset(), known_mcp=frozenset()):
+    """Every command the prose runs: bash-fenced lines, plus inline code spans.
 
-    Kept whole because a grant may name a subcommand: `Bash(git diff:*)` permits
-    `git diff --stat` and nothing else `git`. Truncating to the first word would
-    compare `git` against `git diff` and reject every narrowed grant — pushing
-    authors to `Bash(git:*)`, which `UNBOUNDED` rejects.
+    Fenced lines are kept whole because a grant may name a subcommand:
+    `Bash(git diff:*)` permits `git diff --stat` and nothing else `git`.
+    Truncating to the first word would compare `git` against `git diff` and
+    reject every narrowed grant — pushing authors to `Bash(git:*)`, which
+    `UNBOUNDED` rejects.
+
+    Inline spans are read too, because a fence is not where a role writes a
+    one-off command. These roles write prose, not runbooks: of 37 fences in the
+    tree 29 carry no language tag and are report skeletons, while the one
+    command any narrowed role runs — `ops` and its `mkdir -p` — sits in a
+    sentence. On fences alone this function returns the empty set for every
+    role the caller invokes it for.
+
+    Two anchors bound that widening, because nothing in the markup separates
+    `mkdir -p` from `current.md` and an unanchored read would call filenames
+    commands:
+
+      * the first word heads a granted prefix or is in `UNBOUNDED` — the span
+        is about a command family the grants already speak about, so the grant
+        can judge the specific form (`Bash(git log:*)` vs `git rev-parse`);
+      * or a flag follows it. A lowercase word whose next token starts with `-`
+        is an invocation and nothing else. This is the anchor that reaches a
+        command no grant mentions at all — `rm -rf build` heads nothing and is
+        not `UNBOUNDED`, so the first anchor cannot see it.
+
+    Known mcp tool names are then removed: a one-word span is ambiguous between
+    a command and a tool, and `find` is live in this tree as both — an
+    `UNBOUNDED` shell command and a granted browser tool `ops` calls by name.
+
+    What still escapes: a bare, flagless command that heads no grant and is
+    not in `UNBOUNDED` — `` `curl` `` on its own. Without a command
+    vocabulary it is indistinguishable from a backticked noun, and guessing
+    one would trade silence for noise.
     """
     found = set()
     for block in BASH_FENCE.findall(body):
@@ -123,6 +160,10 @@ def bash_commands(body):
             line = line.strip()
             if line and not line.startswith("#"):
                 found.add(line)
+    for span in INLINE_CODE.findall(body):
+        word, _, rest = span.partition(" ")
+        if word not in known_mcp and (word in heads or rest.startswith("-")):
+            found.add(span.strip())
     return found
 
 
@@ -160,7 +201,10 @@ def check(path, grants, body, known_mcp, agents=()):
         )
 
     if bash_grants and not has_bare_bash:
-        for cmd in sorted(bash_commands(body)):
+        # First word of each prefix: `Bash(git diff:*)` heads at `git`, so a
+        # one-word span `git` is a candidate the narrowed grant then rejects.
+        heads = {p.split()[0] for p in bash_grants} | UNBOUNDED
+        for cmd in sorted(bash_commands(body, heads, known_mcp)):
             if not permitted(cmd, bash_grants):
                 errors.append(f"prose runs `{cmd}` but only {sorted(bash_grants)} are granted")
 

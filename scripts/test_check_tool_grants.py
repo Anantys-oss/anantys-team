@@ -86,6 +86,54 @@ class UnboundedGrant(unittest.TestCase):
         self.assertEqual(errors, [])
 
 
+class InlineCommands(unittest.TestCase):
+    """A command written mid-sentence is still a command the grant must permit.
+
+    On bash fences alone this check had an empty input set for every role it
+    ran on: `ops` is the only role with a narrowed grant set, and it writes its
+    one command — `mkdir -p` — in a sentence.
+    """
+
+    def test_an_inline_span_is_checked_against_the_grant(self):
+        errors, _ = role(["Bash(ls:*)"], "Create it first with `mkdir -p out`.")
+        self.assertIn("`mkdir -p out`", errors[0])
+
+    def test_a_flag_reaches_a_command_no_grant_mentions(self):
+        """`rm` heads no grant and is not UNBOUNDED — the head anchor is blind to it."""
+        errors, _ = role(["Bash(ls:*)"], "Clear it with `rm -rf build`.")
+        self.assertIn("`rm -rf build`", errors[0])
+
+    def test_a_flagless_ungranted_command_is_the_documented_gap(self):
+        """Named so the gap is a decision, not a surprise. See `bash_commands`."""
+        errors, _ = role(["Bash(ls:*)"], "Fetch it with `curl`.")
+        self.assertEqual(errors, [])
+
+    def test_an_inline_span_its_grant_permits_passes(self):
+        errors, _ = role(["Bash(mkdir:*)"], "Create it first with `mkdir -p out`.")
+        self.assertEqual(errors, [])
+
+    def test_a_narrowed_grant_rejects_a_sibling_subcommand_inline(self):
+        errors, _ = role(["Bash(git log:*)"], "Record it with `git rev-parse HEAD`.")
+        self.assertIn("`git rev-parse HEAD`", errors[0])
+
+    def test_a_backticked_path_is_not_a_command(self):
+        """Nothing in the markup separates `mkdir -p` from `current.md`."""
+        errors, _ = role(["Bash(ls:*)"], "Overwrite `current.md` and `./seo/`.")
+        self.assertEqual(errors, [])
+
+    def test_a_known_mcp_tool_name_is_not_a_command(self):
+        """`find` is live in this tree as both a shell command and a browser tool."""
+        errors, _ = c.check(
+            Path("role.md"), ["Bash(ls:*)", "mcp__x__find"], "Use `find` to locate it.", {"find"}
+        )
+        self.assertEqual(errors, [])
+
+    def test_the_same_span_is_a_command_when_no_tool_claims_the_name(self):
+        """The exclusion is the mcp vocabulary, not a hardcoded word."""
+        errors, _ = role(["Bash(ls:*)"], "Use `find` to locate it.")
+        self.assertIn("`find`", errors[0])
+
+
 class MentionIsNotSpelling(unittest.TestCase):
     """What counts as referencing a grant. Both cases here were live in this tree."""
 
