@@ -151,7 +151,8 @@ def check_load(path: Path) -> None:
     remedy = (
         "split detail a given action does not need into reference/ topic files — the "
         "largest is counted too, so one big reference file relocates the load without "
-        f"lowering it; never into the {CONTRACT}, which `check_contract` requires"
+        f"lowering it; never into the {CONTRACT}, whose lines every role pays and whose "
+        "clauses `check_contract_clauses` holds in place"
     )
     before = sum(n for _, n in measured_load(path, lambda p: at(BASE, p))) if BASE else None
 
@@ -185,6 +186,60 @@ def check_contract(path: Path, contract: Path) -> None:
         errors.append(
             f"{rel(path)}: preamble does not link {CONTRACT} — a role names what binds "
             "it above its first `## ` heading, where it is read before the role acts"
+        )
+
+
+def clauses(text: str) -> set[str]:
+    """The contract's binding rules, keyed by their `## C<N>` label.
+
+    The title after the dash is prose and may be reworded; the label is what the
+    role files cite (`say so and stop (C2)`), so it is the identity.
+    """
+    return set(re.findall(r"^## (C\d+)\b", text, re.MULTILINE))
+
+
+def check_contract_clauses(contract: Path) -> None:
+    """Error when a clause that existed at ``BASE`` is no longer in the contract.
+
+    ``check_contract`` guarantees that every role *links* this file. Nothing read
+    what the file then says — and ``check_load``'s remedy pointed at that guarantee
+    as if it covered the content: *"never into the TEAM-CONTRACT.md, which
+    `check_contract` requires"*. A reader following that line concludes the contract
+    is held in place. It was not: renaming `## C2 — A stop is a result` to anything
+    else left 0 errors, the same warning count, and 227 passing tests.
+
+    That is the inverse of the hole ``check_contract`` closed. There, the cheapest
+    way to satisfy the ceiling was for a role to stop being bound; here it is for
+    the contract to stop binding, which takes *every* role under the ceiling at once
+    and is invisible in both the error list and the warning list.
+
+    Only deletion is an error. Adding a clause is how the contract grows, and a
+    reworded title is not a changed rule — the label is the identity because the
+    label is what the role files cite.
+    """
+    if BASE is None:
+        warnings.append(
+            f"{rel(contract)}: no baseline, so no clause deletion is checked — "
+            "the absolute content of the contract is not something this check can price"
+        )
+        return
+    before = at(BASE, contract)
+    if before is None:
+        # The contract arrives on the branch under review, so there is no clause set to
+        # lose yet — and saying nothing here is how this check would ship inert. The
+        # contract is added by one open head, so for the whole queue before it lands
+        # this is the only branch the check takes; a silent one is a check reporting
+        # health it never measured, which is the gap it was written to close.
+        warnings.append(
+            f"{rel(contract)}: new at the baseline, so no clause deletion is checked — "
+            "this check only has a clause set to protect once the contract is on main"
+        )
+        return
+    if gone := sorted(clauses(before) - clauses(disk(contract) or "")):
+        errors.append(
+            f"{rel(contract)}: {', '.join(gone)} present at the baseline and gone here — "
+            "a clause the role files cite may not be dropped or relabelled silently; "
+            "retire it by name in the same change that removes the citations"
         )
 
 
@@ -228,6 +283,8 @@ def main() -> int:
         if not contract.is_file():
             warnings.append(f"{rel(plugin_dir)}: no {CONTRACT}, so no role's binding is checked")
             contract = None
+        else:
+            check_contract_clauses(contract)
 
         for skill_dir in skills:
             skill = skill_dir / "SKILL.md"

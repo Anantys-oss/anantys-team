@@ -172,5 +172,65 @@ class TheContractBinds(Harness):
         self.assertEqual(len(cp.errors), 1)
 
 
+class ContractClauses(Harness):
+    """`check_contract` holds the link. These hold what the link points at."""
+
+    def clauses(self, now: str, *, before: str | None = None) -> list[str]:
+        path = cp.ROOT / cp.CONTRACT
+        path.write_text(now, encoding="utf-8")
+        if before is not None:
+            self.baseline(**{cp.CONTRACT: before})
+        cp.check_contract_clauses(path)
+        return cp.errors
+
+    def test_a_dropped_clause_is_an_error(self) -> None:
+        error, = self.clauses(
+            "# Team contract\n\n## C1 — Observation\n",
+            before="# Team contract\n\n## C1 — Observation\n\n## C2 — A stop is a result\n",
+        )
+        self.assertIn("C2 present at the baseline and gone here", error)
+
+    def test_relabelling_a_clause_is_a_drop(self) -> None:
+        # The role files cite the label (`say so and stop (C2)`), so the label is the
+        # identity. Renaming the heading is how the deletion would have arrived.
+        error, = self.clauses(
+            "## Zzz — nothing\n", before="## C2 — A stop is a result\n"
+        )
+        self.assertIn("C2", error)
+
+    def test_rewording_the_title_is_not_a_drop(self) -> None:
+        self.assertEqual(
+            self.clauses("## C2 — the run you did not finish\n", before="## C2 — A stop\n"),
+            [],
+        )
+
+    def test_adding_a_clause_is_how_the_contract_grows(self) -> None:
+        self.assertEqual(self.clauses("## C1 — a\n\n## C2 — b\n", before="## C1 — a\n"), [])
+
+    def test_a_contract_that_arrives_on_this_branch_is_not_a_drop(self) -> None:
+        self.baseline()  # BASE set, nothing held there
+        path = cp.ROOT / cp.CONTRACT
+        path.write_text("## C1 — a\n", encoding="utf-8")
+        cp.check_contract_clauses(path)
+        self.assertEqual(cp.errors, [])
+
+    def test_a_contract_new_at_the_baseline_says_so_rather_than_passing(self) -> None:
+        # This is the branch the whole queue takes until the contract lands on main.
+        # Silent here and the check ships inert, which is the gap it closes.
+        self.baseline()
+        path = cp.ROOT / cp.CONTRACT
+        path.write_text("## C1 — a\n", encoding="utf-8")
+        cp.check_contract_clauses(path)
+        self.assertIn("new at the baseline", cp.warnings[0])
+
+    def test_no_baseline_warns_rather_than_passing_silently(self) -> None:
+        cp.BASE = None
+        path = cp.ROOT / cp.CONTRACT
+        path.write_text("## C1 — a\n", encoding="utf-8")
+        cp.check_contract_clauses(path)
+        self.assertEqual(cp.errors, [])
+        self.assertIn("no baseline", cp.warnings[0])
+
+
 if __name__ == "__main__":
     unittest.main()
