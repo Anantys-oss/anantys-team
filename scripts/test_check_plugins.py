@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """The ceiling is on the load, not on the file — these are the cases that differ."""
 
+import contextlib
+import io
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -272,6 +275,65 @@ class ContractClauses(Harness):
         cp.check_contract_clauses(path)
         self.assertEqual(cp.errors, [])
         self.assertIn("no baseline", cp.warnings[0])
+
+
+class DeletingTheContractIsNotAnAbsentContract(unittest.TestCase):
+    """A dropped clause is an error. Deleting the file drops every clause at once.
+
+    ``check_contract_clauses`` holds the clause set, and ``main`` only reaches it when
+    the file is on disk — absence took the "some other change lands it" branch and
+    printed a warning. So the cheapest way to unbind every role was not to relabel a
+    clause but to delete the file: zero errors, and five roles under the ceiling.
+
+    These go through ``main`` because the short circuit is in ``main``; the function
+    itself already errors when handed a tree with no contract in it.
+    """
+
+    def setUp(self) -> None:
+        cp.errors.clear()
+        cp.warnings.clear()
+        self.tmp = tempfile.TemporaryDirectory()
+        cp.ROOT = Path(self.tmp.name).resolve()
+        self.addCleanup(self.tmp.cleanup)
+        self.addCleanup(setattr, cp, "at", cp.at)
+        self.addCleanup(setattr, cp, "merge_base", cp.merge_base)
+        cp.merge_base = lambda: "base"  # the tmp tree is not a git repo
+
+        plugin = cp.ROOT / "plugins/p"
+        (plugin / ".claude-plugin").mkdir(parents=True)
+        (plugin / "skills").mkdir()
+        (plugin / "agents").mkdir()
+        entry = {"name": "p", "version": "1.0.0", "description": "a plugin"}
+        (plugin / ".claude-plugin/plugin.json").write_text(json.dumps(entry))
+        (cp.ROOT / ".claude-plugin").mkdir()
+        (cp.ROOT / ".claude-plugin/marketplace.json").write_text(
+            json.dumps({"plugins": [dict(entry, source="plugins/p")]})
+        )
+        (cp.ROOT / "README.md").write_text("")
+        self.contract = plugin / cp.CONTRACT
+
+    def held(self, text: str | None) -> None:
+        """What the baseline commit held at the contract's path."""
+        cp.at = lambda commit, path: text if path == self.contract else None
+
+    def run_main(self) -> int:
+        with contextlib.redirect_stdout(io.StringIO()):
+            return cp.main()
+
+    def test_a_contract_present_at_the_baseline_and_gone_here_is_an_error(self) -> None:
+        self.held("# Team contract\n\n## C1 — Observation\n")
+        self.assertEqual(self.run_main(), 1)
+        error, = cp.errors
+        self.assertIn(cp.CONTRACT, error)
+        self.assertIn("gone here", error)
+
+    def test_a_tree_that_never_held_a_contract_is_still_only_a_warning(self) -> None:
+        # Absence is legitimate until some other change lands the file; this is the
+        # branch every open head takes, and reddening it would force an order on them.
+        self.held(None)
+        self.assertEqual(self.run_main(), 0)
+        self.assertEqual(cp.errors, [])
+        self.assertTrue(cp.warnings)
 
 
 if __name__ == "__main__":
