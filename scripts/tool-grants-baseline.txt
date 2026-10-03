@@ -11,7 +11,14 @@
 plugins/anantys-team-agents/skills/anantys.qa/SKILL.md: prose commits to driving a browser but grants no browser tool
 
 # `ops` is the only role with a scoped Bash grant, and `git` is the one prefix
-# that bounds nothing. Its prose runs no command at all — no bash fence names
-# git, mkdir or ls — so the fix is to name the subcommands the actions actually
-# need, not to widen the prose until the mention warning goes quiet.
+# that bounds nothing. Its prose runs exactly one command — `mkdir -p`, in a
+# sentence, permitted by `Bash(mkdir:*)`. Nothing in it runs git. So the fix is
+# to drop the grant or name the subcommands the actions actually need, not to
+# widen the prose until the mention warning goes quiet.
+#
+# This comment used to read "its prose runs no command at all — no bash fence
+# names git, mkdir or ls". That was the checker's blind spot restated as a fact
+# about the prose: `mkdir -p` was there the whole time, and on fences alone the
+# command check had nothing to read. Scoping the claim to "bash fence" is where
+# it hid.
 plugins/anantys-team-agents/skills/anantys.ops/SKILL.md: `Bash(git:*)` is not a narrowing — `git` runs other commands; grant the subcommands it needs
