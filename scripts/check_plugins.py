@@ -246,18 +246,31 @@ def check_contract_clauses(contract: Path) -> None:
         )
         return
     before = at(BASE, contract)
+    here = disk(contract)
     if before is None:
-        # The contract arrives on the branch under review, so there is no clause set to
-        # lose yet — and saying nothing here is how this check would ship inert. The
-        # contract is added by one open head, so for the whole queue before it lands
-        # this is the only branch the check takes; a silent one is a check reporting
-        # health it never measured, which is the gap it was written to close.
+        # The contract arrives on the branch under review, or is nowhere yet — either
+        # way there is no clause set to lose, and saying nothing here is how this check
+        # would ship inert. The contract is added by one open head, so for the whole
+        # queue before it lands this is the only branch the check takes; a silent one is
+        # a check reporting health it never measured, which is the gap it closes.
+        state = "new at the baseline" if here is not None else "not in this tree"
         warnings.append(
-            f"{rel(contract)}: new at the baseline, so no clause deletion is checked — "
+            f"{rel(contract)}: {state}, so no clause deletion is checked — "
             "this check only has a clause set to protect once the contract is on main"
         )
         return
-    if gone := sorted(clauses(before) - clauses(disk(contract) or "")):
+    if here is None:
+        # Deleting the file is the same move as relabelling a clause, taken to its
+        # limit: it drops every clause at once. It is also the profitable one, because
+        # the contract's lines are what put the roles over `check_load`'s ceiling, so
+        # the deletion that unbinds all of them is the edit that makes them all clean.
+        errors.append(
+            f"{rel(contract)}: present at the baseline and gone here — deleting the "
+            "contract unbinds every role at once; retire it by name in the same change "
+            "that removes the citations"
+        )
+        return
+    if gone := sorted(clauses(before) - clauses(here)):
         errors.append(
             f"{rel(contract)}: {', '.join(gone)} present at the baseline and gone here — "
             "a clause the role files cite may not be dropped or relabelled silently; "
@@ -297,16 +310,16 @@ def main() -> int:
         skills = sorted(p for p in (plugin_dir / "skills").iterdir() if p.is_dir())
         agents = sorted((plugin_dir / "agents").glob("*.md"))
 
-        # An absent contract is not an error: the file is one some *other* change lands,
-        # and a gate that reddens every branch until it arrives forces an order on changes
-        # that have none. It is not silence either — an absent input that prints nothing
-        # is a check reporting health it never measured.
+        # An absent contract is not an error *by itself*: the file is one some other
+        # change lands, and a gate that reddens every branch until it arrives forces an
+        # order on changes that have none. Whether this absence is that one is a question
+        # about the baseline, which is `check_contract_clauses`'s subject — so absence is
+        # routed into it rather than short-circuited around it. Deciding here, where the
+        # baseline is not read, is what let a deletion pass as a not-landed-yet file.
         contract = plugin_dir / CONTRACT
+        check_contract_clauses(contract)
         if not contract.is_file():
-            warnings.append(f"{rel(plugin_dir)}: no {CONTRACT}, so no role's binding is checked")
-            contract = None
-        else:
-            check_contract_clauses(contract)
+            contract = None  # no file, so no role can link it; checked once, above
 
         for skill_dir in skills:
             skill = skill_dir / "SKILL.md"
