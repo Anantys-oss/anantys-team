@@ -103,6 +103,48 @@ class TheRemedyIsCountedToo(Harness):
         self.assertIn("down from 26", warning)
 
 
+class ATemplateIsReadLikeATopic(Harness):
+    """templates/ is the other directory an action reads, so it is priced the same."""
+
+    def companion(self, folder: str, name: str, n: int) -> None:
+        (cp.ROOT / folder).mkdir(exist_ok=True)
+        (cp.ROOT / folder / name).write_text(lines(n), encoding="utf-8")
+
+    def test_a_named_template_counts_toward_the_load(self) -> None:
+        # The hole: a template the action is told to follow was read and never charged.
+        self.companion("templates", "plan.md", 20)
+        warning, = self.check("Write it following `templates/plan.md`.\n")
+        self.assertIn("loads 21 lines", warning)
+        self.assertIn("20 templates/plan.md", warning)
+
+    def test_only_the_largest_template_counts(self) -> None:
+        self.companion("templates", "small.md", 4)
+        self.companion("templates", "big.md", 20)
+        warning, = self.check("`templates/small.md` `templates/big.md`\n")
+        self.assertIn("20 templates/big.md", warning)
+        self.assertNotIn("small.md", warning)
+
+    def test_a_topic_and_a_template_are_both_charged(self) -> None:
+        # One action can read both, so the two directories sum — they do not compete.
+        self.companion("reference", "run.md", 8)
+        self.companion("templates", "plan.md", 9)
+        warning, = self.check("`reference/run.md` `templates/plan.md`\n")
+        self.assertIn("loads 18 lines", warning)
+        self.assertIn("8 reference/run.md", warning)
+        self.assertIn("9 templates/plan.md", warning)
+
+    def test_moving_prose_into_a_template_is_not_a_pass(self) -> None:
+        # Same defect reference/ already closed, through the sibling directory.
+        self.baseline(**{"SKILL.md": lines(20)})
+        self.companion("templates", "plan.md", 16)
+        warning, = self.check("`templates/plan.md`\n" + lines(2))
+        self.assertIn("loads 19 lines (> 10), down from 20", warning)
+
+    def test_a_template_no_action_names_is_not_counted(self) -> None:
+        self.companion("templates", "unused.md", 20)
+        self.assertEqual(self.check("preamble only\n"), [])
+
+
 class AgainstTheBaseline(Harness):
     """A ceiling report is only actionable if it says what *this* change did to it."""
 

@@ -64,6 +64,21 @@ small topics lowers the measured load; moving the same prose into one big topic 
 not. `check_tool_grants` and `check_delegation_grants` already read these files, for the
 same reason and with the same backticked-path convention; this is the gate that prices them.
 
+**`templates/` is read on the same invocation, so it is charged the same way.** The reason
+written beside the 200 is that *a role loads in full, every invocation* — and a template an
+action is told to *follow* satisfies that reason exactly. It was not priced. `anantys.qa`'s
+`plan` step says *"Write `qa-plan.md` following `templates/qa-plan.md`"*, a file that on the
+assembled queue runs to 229 lines, longer than the whole ceiling, against a role the gate
+reported at 513. Any directory whose files an action reads is a place the prose can go, so
+the escape is closed by **directory, not by file**: the total carries the largest named
+`reference/*.md` *and* the largest named `templates/*.md`. They sum rather than compete —
+one action reads at most one of each, but it can read both.
+
+The two grant gates stay on `reference/` alone, and that is not an oversight: a template is
+a file shape, it names no tools, and there is nothing in it to union into a grant set. Load
+is a claim about bytes; authority is not. The units genuinely differ here, which is why this
+page says so rather than leaving the next reader to call it an inconsistency.
+
 It is a floor, not an exact load: an action that reads two topic files pays for both, and
 the checker charges one. Measured on the assembled queue, `anantys.qa` — the only split
 role today — invokes at 385 (160 + 95 contract + 130 `reference/sources.md`) where the

@@ -23,6 +23,12 @@ CONTRACT = "TEAM-CONTRACT.md"  # the rules every role in a plugin shares; each m
 #: convention is a backticked path, not a markdown link.
 REFERENCE_LINK = re.compile(r"`(reference/[\w.-]+\.md)`")
 
+#: How a role names a file shape an action is told to *follow* (`templates/qa-plan.md`).
+#: Read on that invocation exactly as a reference topic is, so it costs the same lines.
+#: It names no tools, which is why the two grant gates stay on ``reference/`` alone:
+#: load is a claim about bytes, authority is not, and the units do not coincide.
+TEMPLATE_LINK = re.compile(r"`(templates/[\w.-]+\.md)`")
+
 #: Commit the working tree departs from, so a load can be reported as a *change*
 #: rather than as a standing fact. ``None`` = no baseline available; see ``merge_base``.
 BASE: str | None = None
@@ -105,7 +111,7 @@ def load_parts(path: Path, read) -> list[tuple[Path, int]]:
 
 
 def worst_action_part(path: Path, read) -> list[tuple[Path, int]]:
-    """The largest ``reference/*.md`` the role names, as a one-element list or ``[]``.
+    """The largest companion file per companion directory, as ``(file, lines)`` pairs.
 
     ``check_load``'s own remedy is to move detail into ``reference/``, so that
     directory is where a role's load *goes* — measuring the always-loaded set alone
@@ -113,17 +119,32 @@ def worst_action_part(path: Path, read) -> list[tuple[Path, int]]:
     An action reads one topic file on top of that set and the ceiling is a worst-case
     bound, so the largest named file is the part that counts.
 
-    ``check_tool_grants`` and ``check_delegation_grants`` already read these files,
-    for the same reason and with the same pattern; this is the gate that prices them.
+    ``templates/`` is the second such directory and was the hole in that argument.
+    The ceiling's stated reason is that *the role loads in full, every invocation*;
+    a template an action is told to follow satisfies that reason exactly, and nothing
+    priced it. `anantys.qa`'s plan action is told to follow a 229-line template —
+    longer than the whole ceiling — while the gate reported the role at 513. Any
+    directory whose files an action reads is a place the prose can go, so the escape
+    is closed by directory, not by file: a template is charged like a topic.
+
+    One per directory, summed: an action reads at most one topic and at most one
+    template, but it can read both, so maxing across the union would understate it.
+
+    ``check_tool_grants`` and ``check_delegation_grants`` read ``reference/`` only,
+    and deliberately — a template names no tools, so it grants nothing to union.
 
     A floor, not an exact load: an action that reads two topic files pays for both.
     """
-    text = read(path)
-    sized = []
-    for name in sorted(set(REFERENCE_LINK.findall(text or ""))):
-        if (body := read(target := (path.parent / name).resolve())) is not None:
-            sized.append((target, len(body.splitlines())))
-    return [max(sized, key=lambda part: part[1])] if sized else []
+    text = read(path) or ""
+    parts = []
+    for pattern in (REFERENCE_LINK, TEMPLATE_LINK):
+        sized = []
+        for name in sorted(set(pattern.findall(text))):
+            if (body := read(target := (path.parent / name).resolve())) is not None:
+                sized.append((target, len(body.splitlines())))
+        if sized:
+            parts.append(max(sized, key=lambda part: part[1]))
+    return parts
 
 
 def measured_load(path: Path, read) -> list[tuple[Path, int]]:
@@ -150,9 +171,10 @@ def check_load(path: Path) -> None:
     breakdown = " + ".join(f"{n} {rel(p)}" for p, n in parts)
     remedy = (
         "split detail a given action does not need into reference/ topic files — the "
-        "largest is counted too, so one big reference file relocates the load without "
-        f"lowering it; never into the {CONTRACT}, whose lines every role pays and whose "
-        "clauses `check_contract_clauses` holds in place"
+        "largest reference/ and the largest templates/ the role names are counted too, "
+        "so one big topic file, or a template carrying the prose, relocates the load "
+        f"without lowering it; never into the {CONTRACT}, whose lines every role pays "
+        "and whose clauses `check_contract_clauses` holds in place"
     )
     before = sum(n for _, n in measured_load(path, lambda p: at(BASE, p))) if BASE else None
 
