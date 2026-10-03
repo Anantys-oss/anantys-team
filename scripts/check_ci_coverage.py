@@ -57,6 +57,30 @@ module renamed out of `test_*.py` drops out of discovery silently, and the only
 check that would catch it is one that names each module in CI — the serialisation
 this error exists to avoid.
 
+The trigger is not the only level at which a workflow stops being able to fail,
+and the test above — "can this workflow fail while the branch is still a
+branch" — has to be asked of the *step*, not only of `on:`. Two shapes answer it
+with no while the trigger still says yes, and neither is visible to a reader of
+the `on:` block:
+
+- `continue-on-error: true` on the step, or on the job around it. The gate runs,
+  prints every error it found, exits 1, and the check is green. This is the worst
+  of the lot: it reads as a considered exemption, it is one line, and it is the
+  only way to neuter a gate while leaving the `run:` line a reviewer looks for
+  exactly where they expect it.
+- an `if:` on the step or the job. Whether the condition holds on the pull
+  request that matters is not a fact in the YAML — the same unknowable the
+  `paths:` case already fails closed on, so this one fails closed too.
+
+Both are read per step, because a workflow legitimately gates one checker and
+neuters another; a job-level guard disqualifies the whole file.
+
+And the `run:` line itself has to be a `run:` line. `NAMED` used to scan the
+whole file, so `# we used to run scripts/check_a.py here` certified the gate it
+documents the removal of — the rename direction above, arriving by the one route
+that leaves a plausible-looking trail. Comments are stripped before matching,
+and matching is confined to step bodies.
+
 Coverage is satisfied by *any* PR-triggered workflow, so a gate may keep its own
 workflow file or join an existing one — this fixes the wiring, not the layout.
 
@@ -79,6 +103,15 @@ DISCOVER = re.compile(r"unittest\s+discover")
 # comments and in `github.event.pull_request.*` expressions inside a step. YAML
 # lets the key be quoted, because bare `on` is also the boolean `true`.
 ON = re.compile(r"^(?:on|['\"]on['\"]):(.*)$")
+# A YAML comment, stripped before anything above is matched. A `#` only opens one
+# at the start of a line or after whitespace, so `--arg=a#b` survives. A `#`
+# inside a quoted scalar does not, and that is the safe direction: dropping a
+# mention un-covers a gate, it never certifies one.
+COMMENT = re.compile(r"(?m)(?:(?<=\s)|^)#.*$")
+# A step, or a job, that reports without being able to fail the check. `if:` is
+# included unconditionally: whether the condition holds on the pull request that
+# matters is not a fact this file can read.
+NEUTERED = re.compile(r"^\s*(?:-\s*)?(?:continue-on-error:\s*true|if:)(?:\s|$)", re.M)
 # The `pull_request` activity types that fire while the branch is still a branch.
 # Anything outside this set reports on a decision already taken.
 PREVENTIVE = {"opened", "synchronize", "reopened", "ready_for_review", "edited"}
@@ -95,6 +128,21 @@ def nested(lines, index):
             break
         body.append(line)
     return body
+
+
+def steps(text):
+    """Every `- ` bullet under a `steps:` key, as one block of text each."""
+    lines = text.splitlines()
+    blocks = []
+    for i, line in enumerate(lines):
+        if not re.match(r"^\s*steps:\s*$", line):
+            continue
+        body = nested(lines, i)
+        starts = [n for n, ln in enumerate(body) if re.match(r"^\s*-", ln)]
+        for n, start in enumerate(starts):
+            end = starts[n + 1] if n + 1 < len(starts) else len(body)
+            blocks.append("\n".join(body[start:end]))
+    return blocks
 
 
 def blocking(text):
@@ -137,16 +185,30 @@ def scan(root):
     named, gating, why = {}, {}, {}
     discovers = False
     for workflow in sorted((root / ".github/workflows").glob("*.y*ml")):
-        text = workflow.read_text(encoding="utf-8")
-        reason = blocking(text)
+        text = COMMENT.sub("", workflow.read_text(encoding="utf-8"))
+        blocks = steps(text)
+        outside = text
+        for block in blocks:
+            outside = outside.replace(block, "")
+        reason = blocking(text) or (
+            "runs its gates in a job that cannot fail the check"
+            if NEUTERED.search(outside) else None
+        )
         if reason:
             why[workflow.name] = reason
-        else:
-            discovers = discovers or bool(DISCOVER.search(text))
-        for name in NAMED.findall(text):
-            named.setdefault(name, []).append(workflow.name)
-            if reason is None:
-                gating.setdefault(name, []).append(workflow.name)
+        for block in blocks:
+            guarded = reason or (
+                "runs the gate in a step that cannot fail the check"
+                if NEUTERED.search(block) else None
+            )
+            if not guarded and DISCOVER.search(block):
+                discovers = True
+            for name in NAMED.findall(block):
+                named.setdefault(name, []).append(workflow.name)
+                if guarded:
+                    why.setdefault(workflow.name, guarded)
+                else:
+                    gating.setdefault(name, []).append(workflow.name)
     return checkers, named, gating, why, discovers
 
 

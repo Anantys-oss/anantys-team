@@ -174,6 +174,76 @@ def test_a_tree_with_no_checkers_is_clean(tmp_path):
     assert main([str(tmp_path)]) == 0
 
 
+def test_a_comment_naming_a_deleted_step_is_not_coverage(tmp_path):
+    tree(tmp_path, ["check_a.py"],
+         [("a.yml", ON_PR + "      # we used to run scripts/check_a.py here\n"
+                            "      - run: echo hi\n")])
+    errors, _ = scan_and_check(tmp_path)
+    assert any("guards nothing" in e for e in errors), errors
+
+
+def test_a_comment_does_not_make_a_missing_script_an_error_either(tmp_path):
+    tree(tmp_path, ["check_a.py"],
+         [("a.yml", ON_PR + "      # scripts/check_gone.py was dropped in #12\n" + RUN_A)])
+    assert main([str(tmp_path)]) == 0
+
+
+def test_a_hash_that_opens_no_comment_is_not_stripped(tmp_path):
+    tree(tmp_path, ["check_a.py"],
+         [("a.yml", ON_PR + "      - run: python3 scripts/check_a.py --tag=v1#rc2\n")])
+    assert main([str(tmp_path)]) == 0
+
+
+def test_continue_on_error_on_the_step_is_not_coverage(tmp_path):
+    tree(tmp_path, ["check_a.py"],
+         [("a.yml", ON_PR + RUN_A + "        continue-on-error: true\n")])
+    errors, _ = scan_and_check(tmp_path)
+    assert len(errors) == 1, errors
+    assert "step that cannot fail" in errors[0], errors[0]
+
+
+def test_continue_on_error_false_still_gates(tmp_path):
+    tree(tmp_path, ["check_a.py"],
+         [("a.yml", ON_PR + RUN_A + "        continue-on-error: false\n")])
+    assert main([str(tmp_path)]) == 0
+
+
+def test_an_if_on_the_step_fails_closed(tmp_path):
+    tree(tmp_path, ["check_a.py"],
+         [("a.yml", ON_PR + "      - if: github.actor != 'dependabot[bot]'\n"
+                            "        run: python3 scripts/check_a.py\n")])
+    errors, _ = scan_and_check(tmp_path)
+    assert len(errors) == 1, errors
+    assert "step that cannot fail" in errors[0], errors[0]
+
+
+def test_a_job_level_guard_disqualifies_the_whole_workflow(tmp_path):
+    tree(tmp_path, ["check_a.py", "check_b.py"],
+         [("a.yml", "on:\n  pull_request:\n\njobs:\n  j:\n    continue-on-error: true\n"
+                    "    steps:\n      - run: python3 scripts/check_a.py\n"
+                    "      - run: python3 scripts/check_b.py\n")])
+    errors, _ = scan_and_check(tmp_path)
+    assert len(errors) == 2, errors
+    assert all("job that cannot fail" in e for e in errors), errors
+
+
+def test_a_guarded_step_does_not_disqualify_its_neighbour(tmp_path):
+    tree(tmp_path, ["check_a.py", "check_b.py"],
+         [("a.yml", ON_PR + RUN_A + "        continue-on-error: true\n"
+                            "      - run: python3 scripts/check_b.py\n")])
+    errors, _ = scan_and_check(tmp_path)
+    assert len(errors) == 1, errors
+    assert "check_a.py" in errors[0], errors[0]
+
+
+def test_discovery_in_a_step_that_cannot_fail_does_not_run_the_tests(tmp_path):
+    tree(tmp_path, ["check_a.py", "test_check_a.py"],
+         [("a.yml", ON_PR + RUN_A + DISCOVER + "        continue-on-error: true\n")])
+    errors, _ = scan_and_check(tmp_path)
+    assert len(errors) == 1, errors
+    assert "unittest discover" in errors[0], errors[0]
+
+
 def scan_and_check(root):
     checkers, named, gating, why, discovers = scan(root)
     present = {p.name for p in (root / "scripts").glob("*.py")}
