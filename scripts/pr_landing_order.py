@@ -406,8 +406,10 @@ def checker_scripts(scripts_dir, only=None):
     discovered, alongside every other branch's tests, by the suite `run_checkers`
     runs once over the whole tree.
 
-    `only` narrows the set by name, for re-testing a tree against a checker
-    already known to fail — the other verdicts are not the question being asked.
+    `only` narrows the set by name, for asking a tree about one named gate —
+    `per_member`, where the question is a gate the round introduces and the other
+    verdicts genuinely are not it. Never where the output is an instruction about
+    the whole tree: see `clearing`, which asks for all of them.
     """
     return sorted(p for p in Path(scripts_dir).glob("check_*.py")
                   if not p.name.startswith("test_")
@@ -459,9 +461,11 @@ def run_checkers(commit, only=None):
     module-level fixture, a `sys.path` entry or a chdir that two of them share
     is visible nowhere else.
 
-    `only` restricts the run to gates of that name — used when re-testing a tree
-    against a known failure, where the other verdicts are not the question being
-    asked. `SUITE` is a name like any other there.
+    `only` restricts the run to gates of that name, for a caller whose question
+    really is about one gate. `SUITE` is a name like any other there. A caller
+    that reports a *verdict about the tree* must not narrow: a subset re-run can
+    only move the answer toward green, since no gate outside the subset is given
+    the chance to fail.
     """
     out = {}
     with checkout(commit) as tmp:
@@ -720,6 +724,15 @@ def clearing(base, landed, remaining, failing, edges, refs):
     A candidate that conflicts with the round is tested against the round minus
     those members — the tree a human would produce by resolving them — so the
     answer is not simply withheld for the PRs most likely to be the fix.
+
+    Every gate is re-run, not only the failing ones. `only=failing` is the right
+    narrowing for `per_member`, which asks about one gate on purpose; here the
+    output is an *instruction* — "move it here" — and that is a claim about the
+    whole tree the move produces. Asked about the red gates alone, the trial is
+    one-sided in the direction that costs: a candidate can only ever improve the
+    verdict, because nothing that was green is given the chance to stop being so.
+    What the operator would land is then a round that trades one red for another,
+    reported as the fix for the first.
     """
     numbers = [n for n, _ in landed]
     lines, cleared = [], {name: [] for name in failing}
@@ -729,24 +742,33 @@ def clearing(base, landed, remaining, failing, edges, refs):
         commit, _, refused = union_tree(base, trimmed + [(number, refs[number])])
         if refused:
             continue
-        for name, (code, _) in run_checkers(commit, only=failing).items():
-            if code == 0:
-                cleared[name].append((number, blocked))
+        results = run_checkers(commit)
+        # Green in the round, red once this candidate joins it. A gate missing
+        # from the fold counts as unresolved, not as cleared.
+        broke = sorted(name for name, (code, _) in results.items()
+                       if code and name not in failing)
+        for name in failing:
+            if results.get(name, (1, []))[0] == 0:
+                cleared[name].append((number, blocked, broke))
     for name in failing:
         if not cleared[name]:
             lines.append(f"  nothing in the remaining queue clears {name} — a "
                          f"defect in the assembled tree, not a landing order")
             continue
-        for number, blocked in cleared[name]:
+        for number, blocked, broke in cleared[name]:
             if blocked:
-                lines.append(
-                    f"  #{number} clears {name}, but conflicts with "
-                    + ", ".join(f"#{n}" for n in blocked)
-                    + " in this round — a green `main` means resolving them "
-                      "together, not landing the round as it stands")
+                line = (f"  #{number} clears {name}, but conflicts with "
+                        + ", ".join(f"#{n}" for n in blocked)
+                        + " in this round — a green `main` means resolving them "
+                          "together, not landing the round as it stands")
             else:
-                lines.append(f"  #{number} clears {name} and merges clean into "
-                             f"this round — move it here")
+                line = (f"  #{number} clears {name} and merges clean into "
+                        f"this round — move it here")
+            if broke:
+                line += ("; it also turns " + ", ".join(broke)
+                         + " red, which was green in the round — the move trades "
+                           "one failure for another, it does not end them")
+            lines.append(line)
     return lines
 
 

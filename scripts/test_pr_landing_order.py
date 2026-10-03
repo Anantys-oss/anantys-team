@@ -931,5 +931,126 @@ class LinkPrecedence(unittest.TestCase):
         self.assertEqual(found, {})
 
 
+class Clearing(unittest.TestCase):
+    """A red round, and three candidates for clearing it.
+
+    Two gates sit on `main`, so every fold has both. The round fails one of them;
+    the question is what the report says about a candidate that satisfies that one
+    and breaks the other. `clearing` emits an instruction, so its subject is the
+    tree the instruction produces — not the gate that prompted it.
+    """
+
+    NEEDS = ("import pathlib, sys\n"
+             "if not pathlib.Path('x.txt').exists():\n"
+             "    sys.exit('error: x.txt is missing')\n")
+    FORBIDS = ("import pathlib, sys\n"
+               "if pathlib.Path('y.txt').exists():\n"
+               "    sys.exit('error: y.txt must not exist')\n")
+
+    def git(self, *args):
+        return subprocess.run(("git",) + args, check=True, capture_output=True,
+                              text=True).stdout
+
+    def branch(self, name, files):
+        self.git("checkout", "-q", "main")
+        self.git("checkout", "-qb", name)
+        for path, text in files.items():
+            Path(path).parent.mkdir(parents=True, exist_ok=True)
+            Path(path).write_text(text)
+        self.git("add", "-A")
+        self.git("commit", "-qm", name)
+        self.git("update-ref", f"refs/remotes/origin/{name}", "HEAD")
+        self.git("checkout", "-q", "main")
+
+    def setUp(self):
+        self.dir = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.dir)
+        self.addCleanup(os.chdir, os.getcwd())
+        os.chdir(self.dir)
+        self.git("init", "-q", "-b", "main")
+        self.git("config", "user.email", "t@example.com")
+        self.git("config", "user.name", "t")
+        Path("scripts").mkdir()
+        Path("scripts/check_needs_x.py").write_text(self.NEEDS)
+        Path("scripts/check_forbids_y.py").write_text(self.FORBIDS)
+        # `run_checkers` runs the suite as a gate, and `unittest discover` exits
+        # non-zero on "NO TESTS RAN" — so a tree with checkers and no test module
+        # is red on the suite, which would read here as a candidate breaking it.
+        Path("scripts/test_nothing.py").write_text(
+            "import unittest\n\n"
+            "class T(unittest.TestCase):\n"
+            "    def test_ok(self):\n        pass\n")
+        Path("role.md").write_text("# Role\n")
+        self.git("add", "-A")
+        self.git("commit", "-qm", "base")
+        self.git("update-ref", "refs/remotes/origin/main", "main")
+        self.base = self.git("rev-parse", "main").strip()
+        self.branch("round", {"role.md": "# Role\n\nedited\n"})
+        self.branch("both", {"x.txt": "here\n", "y.txt": "also here\n"})
+        self.branch("only-x", {"x.txt": "here\n"})
+        self.branch("neither", {"other.md": "unrelated\n"})
+        self.landed = [(1, "round")]
+        self.refs = {1: "round", 2: "both", 3: "only-x", 4: "neither"}
+        self.failing = ["check_needs_x.py"]
+
+    def report(self, remaining=(2, 3, 4), edges=None):
+        return "\n".join(p.clearing(self.base, self.landed, list(remaining),
+                                    self.failing, edges or {}, self.refs))
+
+    def test_the_round_is_red_on_one_gate_and_green_on_the_other(self):
+        results = p.run_checkers(p.union_tree(self.base, self.landed)[0])
+        self.assertNotEqual(results["check_needs_x.py"][0], 0)
+        self.assertEqual(results["check_forbids_y.py"][0], 0)
+
+    def test_narrowing_to_the_failing_gate_calls_the_trade_a_fix(self):
+        # The mechanism: asked only about the gate it satisfies, the candidate
+        # that also breaks the other one is indistinguishable from the one that
+        # does not. This is why `clearing` may not narrow.
+        fold = p.union_tree(self.base, self.landed + [(2, "both")])[0]
+        narrowed = p.run_checkers(fold, only=self.failing)
+        self.assertEqual(narrowed["check_needs_x.py"][0], 0)
+        self.assertNotIn("check_forbids_y.py", narrowed)
+
+    def test_a_candidate_that_only_clears_is_the_move(self):
+        line = [ln for ln in self.report().splitlines() if "#3" in ln]
+        self.assertEqual(len(line), 1)
+        self.assertIn("move it here", line[0])
+        self.assertNotIn("trades", line[0])
+
+    def test_a_candidate_that_breaks_another_gate_says_so(self):
+        line = [ln for ln in self.report().splitlines() if "#2" in ln]
+        self.assertEqual(len(line), 1)
+        self.assertIn("clears check_needs_x.py", line[0])
+        self.assertIn("check_forbids_y.py red", line[0])
+        self.assertIn("trades", line[0])
+
+    def test_a_candidate_that_clears_nothing_is_not_reported_as_clearing(self):
+        self.assertNotIn("#4", self.report())
+
+    def test_a_gate_already_red_in_the_round_is_not_counted_as_broken(self):
+        # Only a green-to-red transition is the candidate's doing. A round that
+        # was failing both gates must not have the second one read back to the
+        # PR that fixed the first.
+        self.branch("round-and-y", {"role.md": "# Role\n\nedited\n",
+                                    "y.txt": "already here\n"})
+        self.landed = [(5, "round-and-y")]
+        self.refs[5] = "round-and-y"
+        self.failing = ["check_needs_x.py", "check_forbids_y.py"]
+        out = self.report(remaining=(3,))
+        self.assertIn("#3 clears check_needs_x.py", out)
+        self.assertNotIn("trades", out)
+        self.assertIn("nothing in the remaining queue clears "
+                      "check_forbids_y.py", out)
+
+    def test_nothing_in_the_queue_clears_it_when_nothing_adds_the_file(self):
+        self.assertIn("nothing in the remaining queue clears check_needs_x.py",
+                      self.report(remaining=(4,)))
+
+    def test_a_blocked_candidate_still_reports_what_else_it_breaks(self):
+        out = self.report(remaining=(2,), edges=edges((1, 2)))
+        self.assertIn("conflicts with #1", out)
+        self.assertIn("check_forbids_y.py red", out)
+
+
 if __name__ == "__main__":
     unittest.main()
