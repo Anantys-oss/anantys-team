@@ -135,4 +135,7 @@ a clause whose conforming path is the data loss it was written to prevent.
   requires the record and leaves the shape to the role that owns the file. Writing the
   schemas here would put this file back in the business of binding two roles out of seven.
 - **A gate on it.** Same reason the 3-role threshold is unenforced: a check whose only
-  remedy is "edit this file" serialises the queue.
+  remedy is "edit this file" serialises the queue. Not the same as a gate on *deleting*
+  C2, which `plugin-manifest-checks` adds (`check_contract_clauses`) — its remedy is to
+  leave the clause alone, so it never puts a change on these lines. Renaming `## C2 — A
+  stop is a result` used to leave the whole suite green.
