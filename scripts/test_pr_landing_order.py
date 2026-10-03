@@ -583,10 +583,6 @@ class AGateLandsWithItsSubject(unittest.TestCase):
         self.assertRegex(self.report(), r"#4\s+RED\s+check_stamp\.py")
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class Convergence(unittest.TestCase):
     """What a round risks on `main`, which is a property of paths, not of PRs."""
 
@@ -933,3 +929,7 @@ class LinkPrecedence(unittest.TestCase):
         found = p.dangling(self.pr((1, "drops", ["docs/gone.md"]),
                                    (2, "writes", ["docs/why.md"])))
         self.assertEqual(found, {})
+
+
+if __name__ == "__main__":
+    unittest.main()
