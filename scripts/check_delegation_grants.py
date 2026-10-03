@@ -13,9 +13,11 @@ are to narrow the agent, widen the skill's declared list so the capability is
 visible, stop dispatching — or *recommend* the run instead of performing it, and
 say so where the agent is named. A skill that tells the human "run `X` yourself,
 I will not" never holds X's grants, so pointing at an agent is not the same act
-as invoking one. Naming an agent still counts as a dispatch by default; only an
-explicit, machine-readable disclaimer in the same block downgrades it, which is
-documentation rather than a way to silence the check.
+as invoking one. Naming an agent still counts as a dispatch by default; only a
+disclaimer in the same block that makes *that agent* the object of a negated
+dispatch verb downgrades it — "you do not dispatch it yourself", "never invoke
+`anantys.x`". That is documentation rather than a way to silence the check, and
+the objecthood is what keeps it one: see `DECLINED_TEMPLATE`.
 
 Usage: python3 scripts/check_delegation_grants.py [root]
 Exit 1 on errors, 0 on warnings only.
@@ -26,9 +28,18 @@ import sys
 from pathlib import Path
 
 FRONTMATTER = re.compile(r"\A---\n(.*?)\n---\n(.*)\Z", re.S)
-# "you do not dispatch it", "never invoke `x`" — the prose declining the dispatch
-DECLINED = re.compile(r"\b(?:do(?:es)?\s+not|don'?t|never|rather\s+than)\s+\w*\s*"
-                      r"(?:dispatch|invoke|launch|delegate|run)", re.I)
+# "you do not dispatch it", "never invoke `x`" — the prose declining the dispatch.
+# The agent must be the *object* of the negated verb. A bare negated verb is not a
+# disclaimer: `run` and `invoke` are what these roles say about tests, commands and
+# environments, so `anantys.qa`'s "Never run on production" would downgrade a real
+# dispatch that happened to share its block — switching off the grant-union check
+# with a sentence about payment data. Two of the three negations in this tree today
+# are that shape. Objecthood is also what makes the disclaimer readable as one: a
+# human scanning the block sees which agent is being declined, not just that
+# something is forbidden somewhere nearby.
+DECLINED_TEMPLATE = (r"\b(?:do(?:es)?\s+not|don'?t|never|rather\s+than)\s+(?:\w+\s+)?"
+                     r"(?:dispatch|invoke|launch|delegate|run)\w*\s+"
+                     r"(?:it|them|this|that|`?{agent}`?)\b")
 # a markdown block: paragraph, bullet, or numbered step — the unit a disclaimer scopes to
 BLOCK = re.compile(r"\n\s*\n|\n(?=\s*(?:[-*+]\s|\d+\.\s))")
 REFERENCE_LINK = re.compile(r"`(reference/[\w.-]+\.md)`")
@@ -81,6 +92,11 @@ def prose_surface(path, body):
     return "\n\n".join(parts), warnings
 
 
+def declines(block, agent):
+    """Does `block` say that this skill does not dispatch `agent`?"""
+    return bool(re.search(DECLINED_TEMPLATE.format(agent=re.escape(agent)), block, re.I))
+
+
 def covers(grants, needed):
     """Is `needed` within `grants`? `Bash` subsumes any `Bash(...)` form."""
     if needed in grants:
@@ -99,7 +115,7 @@ def check(skills, agents):
             if not named:
                 continue
             dispatched.add(agent)
-            if all(DECLINED.search(b) for b in named):
+            if all(declines(b, agent) for b in named):
                 continue  # recommended to the human, not run by the skill
             if "Task" not in grants:
                 errors.append(

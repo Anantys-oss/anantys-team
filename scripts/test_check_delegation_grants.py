@@ -68,9 +68,29 @@ def test_declined_dispatch_is_not_an_escalation():
 
 
 def test_disclaimer_in_another_block_does_not_excuse_a_dispatch():
-    body = "- dispatch the `tester` agent now.\n\n- elsewhere: never dispatch an agent.\n"
+    body = "- dispatch the `tester` agent now.\n\n- elsewhere: you never dispatch it.\n"
     errors, _ = check([skill("review", {"Task", "Read"}, body)], {"tester": {"Write"}})
     assert any("Write" in e for e in errors), errors
+
+
+def test_a_negated_verb_about_something_else_is_not_a_disclaimer():
+    """`anantys.qa` carries two "never run on <env>" blocks whose only relation to
+    delegation is the verb. Reading one as a disclaimer would switch the grant union
+    off for a real dispatch sharing the block."""
+    body = "- **Never run on production:** it charges a real card. Then ask `tester`."
+    errors, _ = check([skill("qa", {"Task", "Read"}, body)], {"tester": {"Write"}})
+    assert any("Write" in e for e in errors), errors
+
+
+def test_a_disclaimer_names_the_agent_it_declines():
+    """Two agents, one block, one declined — the other is still dispatched."""
+    body = "- recommend `safe`; you do not dispatch `safe` yourself. Then run `wide`."
+    errors, _ = check(
+        [skill("s", {"Task", "Read"}, body)],
+        {"safe": {"Write"}, "wide": {"Edit"}},
+    )
+    assert [e for e in errors if "Edit" in e], errors
+    assert not [e for e in errors if "Write" in e], errors
 
 
 def test_declining_also_drops_the_task_grant_requirement():
@@ -145,7 +165,7 @@ def test_a_disclaimer_does_not_leak_across_the_file_join(tmp_path):
     sd = _split_skill(tmp_path, "Dispatch `wide` now.\n")
     (sd / "SKILL.md").write_text(
         "---\nname: s\nallowed-tools: Read, Task\n---\n"
-        "Procedure: `reference/run.md`. You never dispatch an agent from here."
+        "Procedure: `reference/run.md`. You never dispatch `wide` from here."
     )
     assert main(tmp_path) == 1
 
