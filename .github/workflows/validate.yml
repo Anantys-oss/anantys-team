@@ -15,3 +15,6 @@ jobs:
           # fall back to an absolute total it cannot attribute to this PR.
           fetch-depth: 0
       - run: python3 scripts/check_plugins.py
+      # Runs here because a `.gitignore` arriving on another branch is what makes this
+      # class silent, and `validate` is the job every pull_request already triggers.
+      - run: python3 scripts/check_tracked_ignored.py
