@@ -56,6 +56,43 @@ class CheckPlatform(unittest.TestCase):
         narrowed = "allowed-tools: Bash(git diff:*), Bash(gh pr view:*), Read"
         self.assertEqual(self.check(GOOD_SKILL.replace(GOOD_SKILL.splitlines()[3], narrowed)), [])
 
+    def test_block_sequence_grants_are_still_checked(self) -> None:
+        # The form a 500-character grant line invites. Read only the key's own
+        # line and the value is the empty string: nothing is iterated, and the
+        # typo below comes back as a clean tree.
+        wrapped = (
+            "allowed-tools:\n"
+            "  - mcp__claude-in-chrome__navigate\n"
+            "  - mcp_chrome_nav\n"
+            "  - Bash(git diff:*)"
+        )
+        found = self.check(GOOD_SKILL.replace(GOOD_SKILL.splitlines()[3], wrapped))
+        self.assertEqual(len(found), 1)
+        self.assertIn("mcp_chrome_nav", found[0])
+
+    def test_a_well_formed_block_sequence_stays_clean(self) -> None:
+        wrapped = "allowed-tools:\n  - Read\n  - Bash(git diff:*)\n  - mcp__chrome__read_page"
+        self.assertEqual(self.check(GOOD_SKILL.replace(GOOD_SKILL.splitlines()[3], wrapped)), [])
+
+    def test_a_flow_sequence_wrapped_onto_a_second_line_is_checked(self) -> None:
+        wrapped = "allowed-tools: [Read,\n  mcp_chrome_nav, Bash(git:*)]"
+        found = self.check(GOOD_SKILL.replace(GOOD_SKILL.splitlines()[3], wrapped))
+        self.assertEqual(len(found), 1)
+        self.assertIn("mcp_chrome_nav", found[0])
+
+    def test_a_declared_but_empty_grant_list_is_an_error(self) -> None:
+        # `allowed-tools:` with nothing under it sets no narrowing at all, and
+        # reads to any line-wise parser exactly like a file that never declared
+        # the key — the one case this gate must not report as clean.
+        found = self.check(GOOD_SKILL.replace(GOOD_SKILL.splitlines()[3], "allowed-tools:"))
+        self.assertEqual(len(found), 1)
+        self.assertIn("no tool under it", found[0])
+
+    def test_an_absent_grant_key_is_not_an_empty_one(self) -> None:
+        # The empty-list error must not fire on a component that never declared
+        # the key at all — omitting it is legitimate, declaring it blank is not.
+        self.assertEqual(self.check("---\nname: x\ndescription: y\n---\n\nbody\n"), [])
+
     def test_unclosed_frontmatter_drops_every_field(self) -> None:
         found = self.check("---\nname: x\ndescription: y\n\nbody\n")
         self.assertEqual(len(found), 1)

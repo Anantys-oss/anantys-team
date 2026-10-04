@@ -30,7 +30,9 @@ that silently stops applying:
      `mcp__server__tool`; a single underscore anywhere in that name makes it a
      tool that does not exist, the skill loads without it, and the prose that
      depends on it ("capture the console error") becomes unexecutable at the
-     one moment it is needed.
+     one moment it is needed. The grant list is read across the indented lines
+     YAML lets it wrap onto, because a check that only reads the key's own line
+     goes quiet on every wrapped form — and quiet is the thing being checked for.
 
 Neither check invents a registry of real tool names — that would go stale and
 is not ours to maintain. They check spelling and shape, which is where the
@@ -123,14 +125,32 @@ def check_component(path: Path, known: frozenset[str], tools_key: str) -> None:
                 f"{rel(path)}: unrecognized frontmatter key `{key}` — it is ignored at load "
                 f"time with no warning; known keys are {', '.join(sorted(known))}"
             )
-    declared = re.search(rf"^{tools_key}:(.*)$", block, re.MULTILINE)
+    # Read the key's whole value, not just the rest of its line. `anantys.ops`
+    # declares twelve grants on one 500-character line; the obvious thing to do
+    # with it is wrap it, and YAML lets the value continue on any indented line —
+    # as a block sequence (`- Read`) or a wrapped flow sequence. Matching `.*$`
+    # alone yields the empty string for the block form, and the check below then
+    # iterates nothing and prints `0 error(s)`: this gate's own silent-drop
+    # failure, in the half of it that exists because the loader is silent too.
+    declared = re.search(rf"^{tools_key}:(.*(?:\n[ \t]+.*)*)$", block, re.MULTILINE)
     if declared:
-        # Split on commas only — a scoped grant is one token even when it holds a
-        # space (`Bash(git diff:*)`). Splitting on whitespace instead is how a
-        # grant checker comes to reject every narrowed grant it was written to
-        # encourage.
-        value = declared.group(1).strip(" []").replace('"', "").replace("'", "")
-        for tool in (t.strip() for t in re.findall(r"[^,]*\([^)]*\)|[^,]+", value)):
+        # Split on commas and line breaks only — a scoped grant is one token even
+        # when it holds a space (`Bash(git diff:*)`). Splitting on whitespace
+        # instead is how a grant checker comes to reject every narrowed grant it
+        # was written to encourage.
+        value = re.sub(r"^[ \t]*-[ \t]*", "", declared.group(1), flags=re.MULTILINE)
+        value = re.sub(r"[\[\]\"']", " ", value)
+        tools = [t.strip() for t in re.findall(r"[^,\n]*\([^)]*\)|[^,\n]+", value)]
+        tools = [t for t in tools if t]
+        if not tools:
+            # A key with nothing under it reads exactly like no key at all, so
+            # both the narrowing and this check vanish together, silently.
+            errors.append(
+                f"{rel(path)}: `{tools_key}:` is declared with no tool under it — an empty "
+                "grant list is indistinguishable from an absent one, so the narrowing it "
+                "looks like it sets is not set"
+            )
+        for tool in tools:
             if not TOOL_SHAPE.match(tool):
                 errors.append(
                     f"{rel(path)}: `{tool}` is not a well-formed tool identifier — the skill "

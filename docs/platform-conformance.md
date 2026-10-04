@@ -56,6 +56,18 @@ names — that list is not ours to maintain and would be wrong within a release.
 `NotARealTool` is well-shaped and passes. The typo classes above are the ones
 that actually occur, and they are all detectable without a registry.
 
+The grant list is read across every indented line YAML lets it wrap onto.
+`anantys.ops` declares twelve grants on one 500-character line, so wrapping it —
+into a block sequence, or a flow sequence broken over two lines — is the obvious
+thing to do with it, and both forms are valid YAML the loader says nothing about.
+A shape check that reads only the key's own line iterates nothing on either one
+and prints `0 error(s)`: this gate's own silent-drop failure, in the half of it
+that exists *because* the loader is silent. A key declared with nothing under it
+gets the same treatment for the same reason — an empty grant list is
+indistinguishable from an absent one, and it must not read as clean. The
+line-wise reading is not unique to this file; `check_tool_grants.py` resolves
+`allowed-tools:` the same way, and whoever lands there owns that half.
+
 The gate runs non-strict in CI. `--strict` currently fails on a pre-existing
 missing-author warning in the manifests; those two files are under contention in
 the open queue, so the fix belongs with whoever lands there, not here.
