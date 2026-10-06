@@ -164,7 +164,33 @@ Resolve the source (see "Locating the feature"), then read it for the two roles 
   skipping it makes the plan FAIL the very gaps it was told to expect, which is the case this whole
   section exists to prevent. There is no Polish phase to drop. If a requirement carries no stable
   id, assign one (`R1`, `R2`, …) and write it back into the **copy** (never the operator's original)
-  — ids are referenced by runs, notes and reports forever.
+  — ids are referenced by runs, notes and reports forever, so a minted id is **carried forward by
+  text, never re-derived by position** (below).
+
+#### A minted id has no witness in the source
+
+An `FR-030` lives in the operator's source, so a regeneration re-reads it and a dropped requirement
+takes its id with it. An `R`-id does not: `plan` mints it into the copy at `.anantys/qa/<slug>/brief.md`,
+and that copy is the file the next `plan` overwrites. The only durable record of what `R5` *means* is
+destroyed by the act that re-derives it, and the operator's original — the one file a human edits
+between campaigns — never carries the id at all. Re-derived by position it is an index into an
+edited list, and it does not need an edit to move: `--from linear:` and `--from pr:` distil
+requirements from issue prose on every run, so the same source re-assembled tomorrow can order or
+word them differently. So on a regeneration, **before** overwriting the copy:
+
+- Read the existing copy's **Requirements** list. It is the id ledger; after the write there is none.
+- Carry each minted id onto the line whose requirement it matches — on the behaviour, not the
+  wording. An id follows its requirement through a rewrite.
+- Mint only for lines that match nothing, at the **next free number** — never one a prior id used,
+  even one no longer present. `R`-ids are never renumbered and never reused, for the same reason
+  assertion ids are not.
+- An unmatched minted id is **not an absent requirement.** It has no witness in the source: a
+  behaviour the product dropped and a re-distillation that phrased it beyond recognition look
+  identical. Keep the id, route its assertions into §4 (Known gaps) with the reason `cited
+  requirement not matched in this read`, and leave the product decision to an operator `note`.
+- Name the carried, added and unmatched ids when you show the operator the plan. A shift past one
+  insertion point is cheap to catch and expensive to miss: every run, note and report citing a
+  shifted id is an observation about a different requirement.
 
 Then transform into scenarios (identical for every source):
 
