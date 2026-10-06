@@ -1052,5 +1052,74 @@ class Clearing(unittest.TestCase):
         self.assertIn("check_forbids_y.py red", out)
 
 
+class TheTrimIsNotTheFix(unittest.TestCase):
+    """A blocked candidate is judged against the round it is actually tested in.
+
+    Trimming the blockers out of the round is what makes a blocked candidate
+    judgeable at all, but it also removes whatever those blockers brought — so a
+    gate they were the cause of comes back green, and the candidate is standing
+    there when it does. The control is the same shape as the one `clearing`
+    already applies across gates: compare against the tree the candidate joined,
+    not against the round it was never in.
+    """
+
+    git = Clearing.git
+    branch = Clearing.branch
+
+    def setUp(self):
+        self.dir = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.dir)
+        self.addCleanup(os.chdir, os.getcwd())
+        os.chdir(self.dir)
+        self.git("init", "-q", "-b", "main")
+        self.git("config", "user.email", "t@example.com")
+        self.git("config", "user.name", "t")
+        Path("scripts").mkdir()
+        Path("scripts/check_forbids_y.py").write_text(Clearing.FORBIDS)
+        Path("scripts/test_nothing.py").write_text(
+            "import unittest\n\n"
+            "class T(unittest.TestCase):\n"
+            "    def test_ok(self):\n        pass\n")
+        Path("role.md").write_text("# Role\n")
+        self.git("add", "-A")
+        self.git("commit", "-qm", "base")
+        self.git("update-ref", "refs/remotes/origin/main", "main")
+        self.base = self.git("rev-parse", "main").strip()
+        # #1 is the round, and it is the reason the gate is red.
+        self.branch("round", {"role.md": "# Role\n\nedited\n",
+                              "y.txt": "here\n"})
+        # #2 adds an unrelated file. It cannot clear anything.
+        self.branch("bystander", {"other.md": "unrelated\n"})
+        self.refs = {1: "round", 2: "bystander"}
+        self.failing = ["check_forbids_y.py"]
+
+    def report(self, edges_=None):
+        return "\n".join(p.clearing(self.base, [(1, "round")], [2],
+                                    self.failing, edges_ or {}, self.refs))
+
+    def test_the_round_is_red_because_of_its_own_member(self):
+        fold = p.union_tree(self.base, [(1, "round")])[0]
+        self.assertNotEqual(
+            p.run_checkers(fold)["check_forbids_y.py"][0], 0)
+
+    def test_an_unblocked_bystander_clears_nothing(self):
+        self.assertIn("nothing in the remaining queue clears "
+                      "check_forbids_y.py", self.report())
+
+    def test_a_blocked_bystander_clears_nothing_either(self):
+        # Declared conflicting, so the round is trimmed to nothing and the gate
+        # goes green with the bystander in the tree. The bystander did not do it.
+        self.assertNotIn("#2 clears", self.report(edges((1, 2))))
+
+    def test_the_removal_is_named_as_what_cleared_it(self):
+        # And the red is not a defect in the assembled tree: a member of the
+        # round is the cause, which is a landing-order fact the operator needs.
+        out = self.report(edges((1, 2)))
+        self.assertIn("nothing in the remaining queue clears "
+                      "check_forbids_y.py", out)
+        self.assertIn("the round without #1 is green on it", out)
+        self.assertNotIn("a defect in the assembled tree", out)
+
+
 if __name__ == "__main__":
     unittest.main()

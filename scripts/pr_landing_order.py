@@ -723,7 +723,17 @@ def clearing(base, landed, remaining, failing, edges, refs):
 
     A candidate that conflicts with the round is tested against the round minus
     those members — the tree a human would produce by resolving them — so the
-    answer is not simply withheld for the PRs most likely to be the fix.
+    answer is not simply withheld for the PRs most likely to be the fix. That
+    trim is itself a change to the subject, and it must be controlled for: a
+    gate whose cause was one of the removed members comes back green with the
+    candidate merely standing in the tree, and the instruction then names a PR
+    that did nothing. So a blocked candidate is credited only for gates still
+    red in the trimmed round *without* it. Same control as the one below, on the
+    other axis: there the baseline is every gate rather than the red ones, here
+    it is the tree the candidate actually joined rather than the round it was
+    never in. A removal that turns a gate green is reported as the removal —
+    it is a landing-order fact, and the only alternative wording this has is
+    "a defect in the assembled tree", which would be false.
 
     Every gate is re-run, not only the failing ones. `only=failing` is the right
     narrowing for `per_member`, which asks about one gate on purpose; here the
@@ -736,6 +746,12 @@ def clearing(base, landed, remaining, failing, edges, refs):
     """
     numbers = [n for n, _ in landed]
     lines, cleared = [], {name: [] for name in failing}
+    # Per blocker set, the gates still red once those members are out. The trim
+    # is what makes a blocked candidate judgeable, and it takes its blockers'
+    # content with it — so a gate they were the cause of comes back green with
+    # the candidate merely present for it. Keyed, because a queue's candidates
+    # share blocker sets and each entry costs a fold and a full gate run.
+    trims, removal = {}, {}
     for number in remaining:
         blocked = blockers(number, numbers, edges)
         trimmed = [pr for pr in landed if pr[0] not in blocked]
@@ -747,13 +763,28 @@ def clearing(base, landed, remaining, failing, edges, refs):
         # from the fold counts as unresolved, not as cleared.
         broke = sorted(name for name, (code, _) in results.items()
                        if code and name not in failing)
+        key = tuple(blocked)
+        if key and key not in trims:
+            kept, _, denied = union_tree(base, trimmed)
+            trims[key] = set(failing) if denied else {
+                name for name, (code, _) in run_checkers(kept).items() if code}
+            for name in set(failing) - trims[key]:
+                removal.setdefault(name, set()).update(blocked)
         for name in failing:
+            if name not in trims.get(key, failing):
+                continue
             if results.get(name, (1, []))[0] == 0:
                 cleared[name].append((number, blocked, broke))
     for name in failing:
         if not cleared[name]:
-            lines.append(f"  nothing in the remaining queue clears {name} — a "
-                         f"defect in the assembled tree, not a landing order")
+            lines.append(
+                f"  nothing in the remaining queue clears {name} — "
+                + (("the round without "
+                    + ", ".join(f"#{n}" for n in sorted(removal[name]))
+                    + " is green on it, so the cause is a member of this round, "
+                      "not the assembled tree")
+                   if name in removal else
+                   "a defect in the assembled tree, not a landing order"))
             continue
         for number, blocked, broke in cleared[name]:
             if blocked:
