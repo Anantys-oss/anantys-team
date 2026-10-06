@@ -41,14 +41,15 @@ class VersionBumpCase(unittest.TestCase):
 
     def write_marketplace(self, sources: list[str]) -> None:
         plugins = [
-            {"name": Path(s).name, "version": "0.1.0", "source": s} for s in sources
+            {"name": Path(s).name, "version": "0.1.0", "description": "a role", "source": s}
+            for s in sources
         ]
         self.write(".claude-plugin/marketplace.json", json.dumps({"plugins": plugins}))
 
     def write_plugin(self, version: str, plugin: str = PLUGIN) -> None:
         self.write(
             f"{plugin}/.claude-plugin/plugin.json",
-            json.dumps({"name": Path(plugin).name, "version": version}),
+            json.dumps({"name": Path(plugin).name, "version": version, "description": "a role"}),
         )
 
     def commit(self, message: str) -> None:
@@ -65,6 +66,16 @@ class VersionBumpCase(unittest.TestCase):
 
     def branch(self) -> None:
         self.sh("git", "checkout", "-qb", "topic")
+
+    def rewrite_descriptions(self, text: str) -> None:
+        """Change the description in both manifests, as parity requires."""
+        for rel, mutate in (
+            (".claude-plugin/marketplace.json", lambda d: d["plugins"][0]),
+            (f"{PLUGIN}/.claude-plugin/plugin.json", lambda d: d),
+        ):
+            doc = json.loads((self.repo / rel).read_text())
+            mutate(doc)["description"] = text
+            self.write(rel, json.dumps(doc))
 
     # --- the defect this exists to catch -------------------------------------
 
@@ -231,6 +242,44 @@ class VersionBumpCase(unittest.TestCase):
         result = self.check()
         self.assertEqual(result.returncode, 1)
         self.assertIn("v0.10.0", result.stderr)
+
+    # --- the manifest exclusion covers `version`, not the whole file ---------
+
+    def test_description_rewrite_is_content(self) -> None:
+        """The text a client displays and a model reads ships; it owes a bump."""
+        self.branch()
+        self.write_plugin("0.1.0")
+        self.rewrite_descriptions("a completely different discovery text")
+        self.commit("rewrite the shipped description, no bump")
+        result = self.check()
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("plugin.json", result.stderr)
+
+    def test_description_rewrite_with_a_bump_passes(self) -> None:
+        self.branch()
+        self.write_plugin("0.2.0")
+        self.rewrite_descriptions("a completely different discovery text")
+        self.commit("rewrite the description + bump")
+        self.assertEqual(self.check().returncode, 0)
+
+    def test_a_marketplace_only_field_is_content(self) -> None:
+        """`category` has no plugin.json counterpart, so parity cannot catch it."""
+        self.branch()
+        catalog = json.loads((self.repo / ".claude-plugin/marketplace.json").read_text())
+        catalog["plugins"][0]["category"] = "productivity"
+        self.write(".claude-plugin/marketplace.json", json.dumps(catalog))
+        self.commit("recategorise the listing")
+        result = self.check()
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("marketplace.json", result.stderr)
+
+    def test_reformatting_a_manifest_is_not_content(self) -> None:
+        """The comparison is semantic — reindenting a manifest ships nothing."""
+        self.branch()
+        manifest = self.repo / f"{PLUGIN}/.claude-plugin/plugin.json"
+        manifest.write_text(json.dumps(json.loads(manifest.read_text()), indent=4) + "\n")
+        self.commit("reindent the manifest")
+        self.assertEqual(self.check().returncode, 0)
 
     # --- a bump must be a real one ------------------------------------------
 

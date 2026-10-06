@@ -45,6 +45,15 @@ base branch has moved past the newest tag. That is a warning, never an error —
 failing the PR would put the queue back on N distinct values, and the debt
 belongs to the release, not to whoever happens to push next.
 
+The two manifests are excluded from the content set so that a lone bump cannot
+justify itself. That reason is about one key — `version` — and excluding the
+files wholesale extended it to every other key in them. `description` is shipped
+content by the same argument the check rests on: it is the text a marketplace
+client displays and a model reads to decide whether to load the plugin at all.
+So the exclusion is narrowed to what its reason covers: a manifest counts as
+content whenever anything *other than* `version` differs from the base. The
+comparison is semantic, not textual — reindenting a manifest ships nothing.
+
 Usage: check_version_bump.py [base-ref]
 Exit 0 = clean or nothing to compare, 1 = a content change with no bump.
 """
@@ -57,6 +66,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+MARKETPLACE = ".claude-plugin/marketplace.json"
 
 
 def git(*args: str) -> str:
@@ -85,6 +95,22 @@ def released_tag() -> str | None:
     return next((t for t in tags if re.fullmatch(r"v?\d+\.\d+\.\d+", t)), None)
 
 
+def json_at(ref: str, path: str) -> dict | None:
+    """The JSON document at `path` in `ref`, or None if it is absent or unreadable."""
+    try:
+        return json.loads(git("show", f"{ref}:{path}"))
+    except (subprocess.CalledProcessError, json.JSONDecodeError):
+        return None
+
+
+def entry_of(catalog: dict | None, name: str) -> dict | None:
+    return next((e for e in (catalog or {}).get("plugins", []) if e.get("name") == name), None)
+
+
+def sans_version(doc: dict | None) -> dict | None:
+    return None if doc is None else {k: v for k, v in doc.items() if k != "version"}
+
+
 def semver(raw: str, where: str) -> tuple[int, ...]:
     if not re.fullmatch(r"\d+\.\d+\.\d+", raw):
         sys.exit(f"error: {where} version {raw!r} is not MAJOR.MINOR.PATCH")
@@ -110,14 +136,26 @@ def main(argv: list[str]) -> int:
 
     errors: list[str] = []
     unreleased: list[str] = []
-    marketplace = json.loads((ROOT / ".claude-plugin/marketplace.json").read_text())
+    marketplace = json.loads((ROOT / MARKETPLACE).read_text())
+    base_catalog = json_at(base, MARKETPLACE)
 
     for entry in marketplace["plugins"]:
         source = str(Path(entry["source"]).relative_to("."))
         manifest = f"{source}/.claude-plugin/plugin.json"
-        touched = sorted(f for f in changed if f.startswith(f"{source}/") and f != manifest)
+        touched = [f for f in changed if f.startswith(f"{source}/") and f != manifest]
+
+        # A manifest is excluded so a lone bump cannot justify itself — `version`
+        # only. Any other key in either one is shipped content.
+        for path, before, after_doc in (
+            (manifest, json_at(base, manifest), json.loads((ROOT / manifest).read_text())),
+            (MARKETPLACE, entry_of(base_catalog, entry["name"]), entry),
+        ):
+            if before is not None and sans_version(before) != sans_version(after_doc):
+                touched.append(path)
+
         if not touched:
             continue
+        touched.sort()
 
         try:
             shipped = json.loads(git("show", f"{shipped_ref}:{manifest}"))["version"]
