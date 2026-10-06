@@ -134,6 +134,42 @@ class InlineCommands(unittest.TestCase):
         self.assertIn("`find`", errors[0])
 
 
+class NamingIsNotRunning(unittest.TestCase):
+    """A role that justifies a grant it withholds must not be read as wanting it.
+
+    This is the one direction where a false positive inverts the gate: the
+    cheapest way to discharge it is to add the grant, or to delete the sentence
+    explaining why the grant is absent. Live in this tree — `ops` writes
+    "`allowed-tools` grants no `git`", and `git` is `UNBOUNDED`, so the head
+    anchor read the justification as an invocation.
+    """
+
+    def test_a_grant_the_prose_says_it_withholds_is_not_an_invocation(self):
+        errors, _ = role(
+            ["Bash(mkdir:*)", "Bash(ls:*)"],
+            "`allowed-tools` grants no `git` — this role never needs it.",
+        )
+        self.assertEqual(errors, [])
+
+    def test_a_forbidden_command_is_not_an_invocation(self):
+        errors, _ = role(["Bash(ls:*)"], "Never run `git reset --hard` here.")
+        self.assertEqual(errors, [])
+
+    def test_negation_does_not_reach_across_a_sentence(self):
+        """Otherwise one `not` anywhere above discharges the rest of the file."""
+        errors, _ = role(["Bash(ls:*)"], "This is not a runbook. Record it with `git log`.")
+        self.assertIn("`git log`", errors[0])
+
+    def test_an_unnegated_mention_is_still_a_command(self):
+        errors, _ = role(["Bash(ls:*)"], "Record it with `git log --oneline`.")
+        self.assertIn("`git log --oneline`", errors[0])
+
+    def test_a_fenced_command_is_an_invocation_whatever_the_prose_says(self):
+        """A fence is a runbook line. Negation reads spans, never fences."""
+        errors, _ = role(["Bash(ls:*)"], "Never do this:\n\n```bash\ngit reset --hard\n```\n")
+        self.assertIn("`git reset --hard`", errors[0])
+
+
 class MentionIsNotSpelling(unittest.TestCase):
     """What counts as referencing a grant. Both cases here were live in this tree."""
 
