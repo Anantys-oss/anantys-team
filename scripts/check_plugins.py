@@ -110,6 +110,19 @@ def load_parts(path: Path, read) -> list[tuple[Path, int]]:
     return parts
 
 
+def named_parts(path: Path, pattern: re.Pattern, text: str, read) -> list[tuple[Path, str]]:
+    """Every companion ``pattern`` names in ``text``, as ``(file, body)`` pairs.
+
+    Bodies rather than line counts, because one caller needs the text back to
+    search it: a companion can name a companion.
+    """
+    found = []
+    for name in sorted(set(pattern.findall(text))):
+        if (body := read(target := (path.parent / name).resolve())) is not None:
+            found.append((target, body))
+    return found
+
+
 def worst_action_part(path: Path, read) -> list[tuple[Path, int]]:
     """The largest companion file per companion directory, as ``(file, lines)`` pairs.
 
@@ -130,21 +143,37 @@ def worst_action_part(path: Path, read) -> list[tuple[Path, int]]:
     One per directory, summed: an action reads at most one topic and at most one
     template, but it can read both, so maxing across the union would understate it.
 
-    ``check_tool_grants`` and ``check_delegation_grants`` read ``reference/`` only,
-    and deliberately — a template names no tools, so it grants nothing to union.
+    **A template is named where its action's detail lives, which is not always this
+    file.** Scanning the role alone made the template arm dead on the only role it
+    was written for: `anantys.qa` names none of its three templates in `SKILL.md` —
+    every mention sits in the `reference/` topic whose action follows it (`plan` in
+    `reference/sources.md`, `init` in `reference/init.md`). And that is not an
+    accident of style, it is this very check's remedy: splitting an over-ceiling role
+    moves action detail into `reference/`, so the fix for the warning is what hides
+    the template mention from a scan of the role file. The arm therefore switched off
+    at exactly the load where it mattered — on the assembled queue `anantys.qa`
+    reported 283 while its `plan` action reads 491, the 208-line `templates/qa-plan.md`
+    uncharged, and unsplit `anantys.ops` was charged normally. So templates are
+    discovered in the role **plus the topics it names**.
+
+    Topic discovery stays one level deep: a `reference/` page naming another is a
+    question ``check_tool_grants`` and ``check_delegation_grants`` answer the same way,
+    and one gate must not widen alone. Nor is there a directory glob here — on the
+    assembled queue every companion on disk is named, and the two grant gates already
+    warn about a `reference/` file no action names.
 
     A floor, not an exact load: an action that reads two topic files pays for both.
     """
     text = read(path) or ""
-    parts = []
-    for pattern in (REFERENCE_LINK, TEMPLATE_LINK):
-        sized = []
-        for name in sorted(set(pattern.findall(text))):
-            if (body := read(target := (path.parent / name).resolve())) is not None:
-                sized.append((target, len(body.splitlines())))
-        if sized:
-            parts.append(max(sized, key=lambda part: part[1]))
-    return parts
+    topics = named_parts(path, REFERENCE_LINK, text, read)
+    templates = named_parts(
+        path, TEMPLATE_LINK, "\n".join([text, *(body for _, body in topics)]), read
+    )
+    return [
+        max(((p, len(b.splitlines())) for p, b in group), key=lambda part: part[1])
+        for group in (topics, templates)
+        if group
+    ]
 
 
 def measured_load(path: Path, read) -> list[tuple[Path, int]]:

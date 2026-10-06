@@ -147,6 +147,37 @@ class ATemplateIsReadLikeATopic(Harness):
         self.companion("templates", "unused.md", 20)
         self.assertEqual(self.check("preamble only\n"), [])
 
+    def body(self, folder: str, name: str, text: str) -> None:
+        (cp.ROOT / folder).mkdir(exist_ok=True)
+        (cp.ROOT / folder / name).write_text(text, encoding="utf-8")
+
+    def test_a_template_named_only_in_a_topic_is_charged(self) -> None:
+        # The shape every split role has: the action that follows the template was
+        # moved into reference/, taking the mention with it. Charging only what the
+        # role file names switched the arm off at exactly the load it was built for.
+        self.body("reference", "sources.md", "`templates/plan.md`\n" + lines(4))
+        self.companion("templates", "plan.md", 8)
+        warning, = self.check("`reference/sources.md`\n")
+        self.assertIn("loads 14 lines", warning)
+        self.assertIn("5 reference/sources.md", warning)
+        self.assertIn("8 templates/plan.md", warning)
+
+    def test_the_largest_template_is_found_across_role_and_topics(self) -> None:
+        self.body("reference", "init.md", "`templates/config.md`\n")
+        self.companion("templates", "config.md", 20)
+        self.companion("templates", "brief.md", 4)
+        warning, = self.check("`reference/init.md` `templates/brief.md`\n")
+        self.assertIn("20 templates/config.md", warning)
+        self.assertNotIn("brief.md", warning)
+
+    def test_a_topic_named_only_in_a_topic_is_not_followed(self) -> None:
+        # Deliberate: topic discovery stays one level, as the two grant gates read it.
+        self.body("reference", "a.md", "`reference/b.md`\n")
+        self.companion("reference", "b.md", 20)
+        warning, = self.check("`reference/a.md`\n" + lines(9))
+        self.assertIn("loads 11 lines", warning)
+        self.assertNotIn("reference/b.md", warning)
+
 
 class AgainstTheBaseline(Harness):
     """A ceiling report is only actionable if it says what *this* change did to it."""

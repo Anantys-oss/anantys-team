@@ -74,6 +74,25 @@ the escape is closed by **directory, not by file**: the total carries the larges
 `reference/*.md` *and* the largest named `templates/*.md`. They sum rather than compete —
 one action reads at most one of each, but it can read both.
 
+**A directory is only closed if the mention is scanned where it is written.** The rule above
+was applied to the role file alone, and that is not where a template is named: the action
+told to follow one is the action whose detail the split moved into `reference/`, so the
+mention went with it. `anantys.qa` names none of its three templates in `SKILL.md` — `plan`
+names `templates/qa-plan.md` from `reference/sources.md`, `init` names `templates/qa-config.md`
+from `reference/init.md` — so the arm that this page introduced, citing that exact `plan`
+sentence, charged nothing on the one role it was written for. On the queue as it assembles
+today the gate reported `anantys.qa` at **283** (153 + 130 `reference/sources.md`) where its
+`plan` action reads **491**, the 208-line `templates/qa-plan.md` uncharged; unsplit
+`anantys.ops` was charged normally. Templates are therefore discovered in the role **plus
+the topics it names**, and the escape is worth stating plainly: this check's own remedy is
+the thing that hid the mention, so the arm switched off at exactly the load it exists to
+price.
+
+Topic discovery stays one level deep — a `reference/` page naming another is a question the
+two grant gates answer the same way, and one gate must not widen alone. There is no
+directory glob either: every companion on disk is named today, and those gates already warn
+about a `reference/` file no action names.
+
 The two grant gates stay on `reference/` alone, and that is not an oversight: a template is
 a file shape, it names no tools, and there is nothing in it to union into a grant set. Load
 is a claim about bytes; authority is not. The units genuinely differ here, which is why this
