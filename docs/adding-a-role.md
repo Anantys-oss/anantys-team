@@ -37,6 +37,21 @@ file some other change lands, and a gate that reddens every branch until it arri
 an order on changes that have none. It is not silent either — a check whose input is absent
 must say so rather than print the output of a healthy run.
 
+**A clause is what it says, not the heading a role cites.** `check_contract_clauses` held
+the clause *labels*: deleting or relabelling `## C2` is an error, because `C2` is what the
+role files cite. Keeping both headings and deleting the 95 lines under them left the label
+set identical — and that is the same unbinding, reached by the one route the check did not
+look down. It is also the profitable one. The contract is what puts `anantys.design` (221),
+`anantys.ops` (238) and `anantys.spec-tester` (204) over the ceiling below, so gutting it
+turned five load warnings into one, reading *"loads 668 lines, down from 754"*. Relabelling
+one clause errors; emptying every clause was reported as the roles getting better.
+
+So an emptied clause is an error too. A shrink *short* of empty is a **warning**: content
+legitimately moves out of this file — the candidates split moved 400 lines — and a gate
+whose remedy is "put the lines back" would forbid the split it asked for. Silence is what it
+may not be, because the only other check that reads these lines reports losing them as an
+improvement, so the warning names the clause and the delta.
+
 A role over 200 lines is a *warning*, not an error: a role file is loaded in full on every
 invocation, so past that size the per-action detail belongs in a `reference/` page the
 actions table links to — and that page is counted too, see below.

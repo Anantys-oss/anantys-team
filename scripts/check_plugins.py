@@ -174,7 +174,8 @@ def check_load(path: Path) -> None:
         "largest reference/ and the largest templates/ the role names are counted too, "
         "so one big topic file, or a template carrying the prose, relocates the load "
         f"without lowering it; never into the {CONTRACT}, whose lines every role pays "
-        "and whose clauses `check_contract_clauses` holds in place"
+        "and whose clauses — labels and bodies both — `check_contract_clauses` holds "
+        "in place, so shrinking it is not a route under this ceiling either"
     )
     before = sum(n for _, n in measured_load(path, lambda p: at(BASE, p))) if BASE else None
 
@@ -211,13 +212,21 @@ def check_contract(path: Path, contract: Path) -> None:
         )
 
 
-def clauses(text: str) -> set[str]:
-    """The contract's binding rules, keyed by their `## C<N>` label.
+def clauses(text: str) -> dict[str, int]:
+    """The contract's binding rules: each `## C<N>` label mapped to its body's size.
 
     The title after the dash is prose and may be reworded; the label is what the
     role files cite (`say so and stop (C2)`), so it is the identity.
+
+    The count is what that identity is worth. A clause's force is the prose under
+    the heading, and keying on the label alone left the prose unread: emptying every
+    clause in place keeps the label set identical, so the gate below saw no change.
     """
-    return set(re.findall(r"^## (C\d+)\b", text, re.MULTILINE))
+    return {
+        found.group(1): sum(1 for line in section.splitlines()[1:] if line.strip())
+        for section in re.split(r"^## ", text, flags=re.MULTILINE)[1:]
+        if (found := re.match(r"(C\d+)\b", section))
+    }
 
 
 def check_contract_clauses(contract: Path) -> None:
@@ -235,9 +244,23 @@ def check_contract_clauses(contract: Path) -> None:
     the contract to stop binding, which takes *every* role under the ceiling at once
     and is invisible in both the error list and the warning list.
 
-    Only deletion is an error. Adding a clause is how the contract grows, and a
-    reworded title is not a changed rule — the label is the identity because the
-    label is what the role files cite.
+    Holding the label set is not holding the contract, and the gap between the two
+    is the same move again. On the queue as it assembles, this file is 99 lines and
+    it is what puts `anantys.design` (221), `anantys.ops` (238) and
+    `anantys.spec-tester` (204) over a 200 ceiling. Keep both headings, delete the
+    95 lines under them: the clause set is identical, so the check above says
+    nothing, and `check_load` goes from five warnings to one — *"loads 668 lines,
+    down from 754"*. Relabelling one clause is an error; emptying every clause is
+    reported as the roles getting better. The profitable edit was the quiet one.
+
+    So an emptied clause is an error too — a clause is what it says, not the heading
+    the role files cite. A shrink short of empty is a *warning*: content legitimately
+    moves out of this file, and a gate whose remedy is "put the lines back" would
+    forbid the split it asked for. It may not be silent, though, because the only
+    other check that reads these lines reports losing them as an improvement.
+
+    Adding a clause is how the contract grows, and a reworded title is not a changed
+    rule — the label is the identity because the label is what the role files cite.
     """
     if BASE is None:
         warnings.append(
@@ -270,11 +293,32 @@ def check_contract_clauses(contract: Path) -> None:
             "that removes the citations"
         )
         return
-    if gone := sorted(clauses(before) - clauses(here)):
+    was, now = clauses(before), clauses(here)
+    if gone := sorted(set(was) - set(now)):
         errors.append(
             f"{rel(contract)}: {', '.join(gone)} present at the baseline and gone here — "
             "a clause the role files cite may not be dropped or relabelled silently; "
             "retire it by name in the same change that removes the citations"
+        )
+    # Keeping the label and deleting the prose under it is the drop above, taken the
+    # one step that evades it: the set is unchanged, so nothing above fires, and every
+    # role's load falls by the whole body at once. The role files still cite the label.
+    if emptied := sorted(label for label, size in was.items() if size and not now.get(label, 1)):
+        errors.append(
+            f"{rel(contract)}: {', '.join(emptied)} kept the label and lost the body — "
+            "a clause is what it says, not the heading the role files cite; retire it by "
+            "name in the same change that removes the citations"
+        )
+    # Short of empty, a shrink is legitimate — content moves out, as the candidates
+    # split did. It may not be *silent*, because `check_load` prices the same lines and
+    # reports their loss as every role getting better: the queue's greenest possible
+    # commit is the one that guts this file. So the delta is named where the clause is.
+    thinned = [f"{c} {was[c]} -> {now[c]}" for c in sorted(now) if 0 < now[c] < was.get(c, 0)]
+    if thinned:
+        warnings.append(
+            f"{rel(contract)}: {', '.join(thinned)} lost body lines — the roles that link "
+            "this file all load less as a result, so `check_load` reports the loss as an "
+            "improvement; say in the change what moved out of the clause and where it went"
         )
 
 
