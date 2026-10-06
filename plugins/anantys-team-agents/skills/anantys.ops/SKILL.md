@@ -79,6 +79,44 @@ Navigate to the Analytics (e.g. GA4) report URL. If not logged in, tell the user
 
 For each **target query** the user provided, navigate to a clean search URL (`https://www.google.com/search?q=<encoded query>&hl=<lang>`), screenshot, and use `get_page_text`/`find` to locate the site's domain in results. Record: the site's position (or absence), competitors ranking above/below, featured snippets / People-Also-Ask / rich results, and ad presence (competitors bidding). Check the first 2 result pages max — do not scroll endlessly.
 
+## Phase 4b: Score Last Audit's Recommendations
+
+You have just observed, live, the pages your previous recommendations were about. Settle the old
+roadmap before you write a new one — otherwise this audit reports a delta on every metric it
+measured and none on the only thing it authored.
+
+Give each **Next Action** carried in `current.md` a status from **this audit's own observations** —
+never from the previous copy of the file, and never from the operator's word alone:
+
+- **applied** — the recommended change is present in what Phase 1/1b extracted (the title is the
+  title you asked for, the JSON-LD block is there, the page exists at that slug). Record the audit
+  date it first appeared.
+- **not applied** — the page still shows the state that produced the recommendation. Keep it, keep
+  its age.
+- **unverifiable** — the recommendation leaves no observable signature on the site (an outreach
+  push, a publishing cadence, anything off-domain). Say so and leave it pending. Never infer it from
+  a metric that moved; that is the coincidence this phase exists to separate out.
+
+Then score every action that became **applied** in an earlier audit against the metric it named:
+
+- **worked** — the target metric moved in the intended direction over the windows since it was
+  applied. Move it to Completed **with the delta**, so the next audit inherits a number and not a
+  checkbox.
+- **no effect** — applied, at least one full window elapsed, target metric flat or worse. This is a
+  **finding**, and it goes in the report: the work was done and the model behind it was wrong. Do
+  **not** return it to Next Actions, and do not re-issue the same class of change on other pages in
+  this audit. A recommendation that cost the operator work and bought nothing is the most expensive
+  thing this skill produces, and the only audit that can catch it is the next one.
+
+An action with no named target metric cannot be scored at all. So when you write a recommendation in
+§8, name the metric it should move and that metric's value today — that is what lets the next audit
+tell a win from a coincidence.
+
+The operator may report an action as done. Record it as **applied** only once you have observed it;
+until then it is a claim, and note whose. "Done" that never reached the page is the failure mode
+this phase exists to catch — and a claim you promote without looking is how an audit certifies its
+own advice.
+
 ## Phase 5: Analysis & Report
 
 Compile findings into a markdown report at **`<workspace>/journal/<YYYY-MM-DD>-analysis.md`** (`mkdir -p` the dir). Then give a brief in-conversation summary linking the file. Suggested structure (adapt to the business):
@@ -89,6 +127,7 @@ Date: <today>
 Objective: <current> -> <target> daily visitors
 
 ## 1. Current Performance Summary   (Daily visitors, GSC clicks/impressions, CTR, avg position — with deltas)
+## 1b. Last Audit's Recommendations (per action: applied / not applied / unverifiable, then worked / no effect — with the delta)
 ## 2. Landing Page Health            (title/meta/H1/structure/links/structured-data, OK or IMPROVE)
 ## 3. Top Performing Queries         (table: query, clicks, impressions, CTR, position)
 ## 4. High-Potential Queries         (high impressions, low CTR — quick wins)
@@ -111,8 +150,9 @@ Overwrite **`<workspace>/current.md`** — the living snapshot that persists bet
 ## KPI Dashboard         (Metric | Current | Previous | Delta | Target)
 ## SERP Positions        (Query | Position | Trend | Target)
 ## Top Pages Performance (Page | Clicks 28d | Impressions | CTR | Position)
-## Completed Actions     (carried forward from previous current.md, marked [x])
-## Next Actions          (priority-ordered; flag how many audits each has been pending)
+## Completed Actions     (carried forward from previous current.md, marked [x]; each with the delta it produced)
+## Applied, No Effect    (observed live, a full window elapsed, target metric flat or worse — do not re-issue)
+## Next Actions          (priority-ordered; each names its target metric and that metric's current value; flag how many audits each has been pending)
 ## New Landing Pages     (Slug | Target Query | Priority | Status)
 ## Key Findings This Session
 ## Audit History         (Date | Clicks | Impressions | CTR | Pos | VU/day | Journal — accumulates all past rows)
