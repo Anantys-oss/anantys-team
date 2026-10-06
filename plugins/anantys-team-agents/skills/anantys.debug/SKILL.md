@@ -59,7 +59,15 @@ This is a **Ralf loop** — the model's limit is rarely the model; it's the feed
 
 - **Reload / re-run the exact repro path.** A normal reload re-fetches your changes.
 - Observe the same signal you captured in step 1: the console error is gone, the network call returns 200, the log shows the right value, the test passes, the screenshot is correct.
-- **Not resolved? Iterate** — back to step 2 with the new signal. Do NOT mark fixed on a plausible diff. Wrong hypotheses are normal; an unverified "fix" is not allowed.
+- **Not resolved? Revert that hypothesis, then iterate** — `git checkout -- <the files it edited>`,
+  `rm <the files it created>`, scoped to that hypothesis alone (precondition 3's two lists, kept
+  per-hypothesis). Only then back to step 2 with the new signal. A rejected hypothesis was *rejected
+  by observation*; leaving its edit in the tree makes every later re-proof an observation of the
+  accumulation, so a signal that flips on hypothesis 3 may be flipping because 1 is still there — and
+  step 3's statement ("**this change** should make <observable> become <expected>") is a claim about
+  one edit, not a conjunction. Carrying rejected edits costs the verdict, not just the diff: it can
+  make FIXED true and the reported root cause wrong.
+- Do NOT mark fixed on a plausible diff. Wrong hypotheses are normal; an unverified "fix" is not allowed.
 
 ### 4b. Stop when the loop stops learning
 
@@ -82,7 +90,9 @@ agent (or the human) should not pay for it twice. Then **restore the tree to the
 `git status --porcelain` back to the snapshot you reported: empty of your edits, still carrying the
 `??` entries that were there before you. Not *empty* — a run that reports an empty porcelain in a
 tree that started with untracked files deleted something that was not its to delete.
-An UNRESOLVED handoff that also ships four dead edits is worse than no attempt.
+An UNRESOLVED handoff that also ships four dead edits is worse than no attempt. If step 4 reverted
+each rejected hypothesis as it was rejected, only the current one is left to undo here — and that is
+the point: this restore is the loop's last check, not its only one.
 (That is the *tree*'s starting state. The word "baseline" in step 1 means the failure signal you
 captured, which you keep — it is the evidence.)
 
@@ -116,6 +126,11 @@ got, Fix is empty, and Re-proof lists each hypothesis with the observation that 
 - One hypothesis per iteration; wrong ones are expected, unverified ones are not.
 - **UNRESOLVED is a result, not a failure** — three rejected hypotheses with no new signal, or a
   blocker you must not work around, ends the loop. Never buy an exit by lowering the bar for proof.
+- **A rejected hypothesis is reverted where it was rejected** — in step 4, before the next one, not
+  only at 4b. The success path is the one that accumulates: UNRESOLVED restores the tree, FIXED ships
+  it, and this role never commits, so no diff boundary tells the fix from the debris. Worse, the proof
+  here *is* an observation over the tree, so a retained rejected edit can carry the verdict and
+  misattribute the root cause.
 - **Record the tree before you edit it, and say where you are.** Clean tree, named branch, both
   reported. A loop that may have to undo cannot start from a state it did not read, and a fix
   verified on a branch nobody chose is not delivered.
