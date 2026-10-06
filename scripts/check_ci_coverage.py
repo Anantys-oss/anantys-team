@@ -102,6 +102,15 @@ A step that reaches a gate by any route other than `run:` — a composite action
 say — is now uncovered. That is the `paths:` trade again, taken the same way:
 fail closed, and let the wiring be visible in the file that claims it.
 
+Confining the match to `run:` was still not enough, because a `run:` line only
+runs something if the workflow around it parses. GitHub refuses an invalid file
+whole — no jobs, no steps, an invalid-workflow banner instead of a run — so a
+single stray tab anywhere in `gates.yml` un-runs every gate it names while this
+file reports full coverage. That is a better false certificate than either route
+above: the `run:` line is a real `run:` line naming the real script, and the only
+thing wrong is that nothing ever loaded it. `unloadable` therefore disqualifies
+the workflow before `blocking` is consulted.
+
 Coverage is satisfied by *any* PR-triggered workflow, so a gate may keep its own
 workflow file or join an existing one — this fixes the wiring, not the layout.
 
@@ -140,6 +149,16 @@ NEUTERED = re.compile(r"^\s*(?:-\s*)?(?:continue-on-error:\s*true|if:)(?:\s|$)",
 # The `pull_request` activity types that fire while the branch is still a branch.
 # Anything outside this set reports on a decision already taken.
 PREVENTIVE = {"opened", "synchronize", "reopened", "ready_for_review", "edited"}
+# A tab used as indentation. YAML forbids it outright, in every parser.
+TABBED = re.compile(r"^ *\t", re.M)
+# A plain scalar holding `: ` — `name: gate: the gates`. Also fatal in every
+# parser, and the one a human writes by accident. Values that open with a quote,
+# a block indicator or a flow collector may legally contain it, so they are
+# exempt; both patterns see structural lines only, since a `run: |` body may hold
+# a tab or a colon as ordinary shell.
+PLAIN_COLON = re.compile(
+    r"""(?m)^\s*(?:-\s*)?[\w.-]+:[ ]+(?![-#|>&*!'"\[{])[^'"\n]*?:(?:[ ]|$)"""
+)
 
 
 def nested(lines, index):
@@ -194,6 +213,30 @@ def commands(block):
     return "\n".join(body)
 
 
+def unloadable(text, bodies):
+    """None if GitHub can load this workflow, else why it cannot.
+
+    Two unconditionally-fatal shapes, not a parser: PyYAML is not stdlib and
+    every checker in `scripts/` is. Duplicate keys, bad anchors and the rest are
+    not caught — stated here rather than hidden, the same way the `paths:` and
+    composite-action apertures are. The direction is the safe one: a shape this
+    misses leaves coverage as it was, it never invents an error.
+
+    `text` is comment-stripped, which is what makes the tab pattern safe to run:
+    a tab-indented *comment* is legal YAML, and stripping leaves it as a
+    whitespace-only line that the filter below drops.
+    """
+    structural = text
+    for body in bodies:
+        structural = structural.replace(body, "")
+    structural = "\n".join(ln for ln in structural.splitlines() if ln.strip())
+    if TABBED.search(structural):
+        return "indents with a tab, which no YAML parser accepts — GitHub loads no jobs from it"
+    if PLAIN_COLON.search(structural):
+        return "has an unquoted `: ` in a plain scalar — GitHub loads no jobs from it"
+    return None
+
+
 def blocking(text):
     """None if this workflow can fail before the merge, else why it cannot.
 
@@ -239,7 +282,7 @@ def scan(root):
         outside = text
         for block in blocks:
             outside = outside.replace(block, "")
-        reason = blocking(text) or (
+        reason = unloadable(text, [commands(b) for b in blocks]) or blocking(text) or (
             "runs its gates in a job that cannot fail the check"
             if NEUTERED.search(outside) else None
         )

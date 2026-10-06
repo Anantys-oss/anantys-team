@@ -7,7 +7,15 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
-from check_ci_coverage import check, main, scan  # noqa: E402
+from check_ci_coverage import (  # noqa: E402
+    COMMENT,
+    check,
+    commands,
+    main,
+    scan,
+    steps,
+    unloadable,
+)
 
 ON_PR = "on:\n  pull_request:\n\njobs:\n  j:\n    steps:\n"
 ON_PUSH = "on:\n  push:\n    branches: [main]\n\njobs:\n  j:\n    steps:\n"
@@ -291,6 +299,67 @@ def test_discovery_in_a_step_that_cannot_fail_does_not_run_the_tests(tmp_path):
     errors, _ = scan_and_check(tmp_path)
     assert len(errors) == 1, errors
     assert "unittest discover" in errors[0], errors[0]
+
+
+def test_a_tab_indented_workflow_is_not_coverage(tmp_path):
+    tree(tmp_path, ["check_a.py"], [("a.yml", ON_PR.replace("  j:", "\tj:") + RUN_A)])
+    errors, _ = scan_and_check(tmp_path)
+    assert len(errors) == 1, errors
+    assert "tab" in errors[0], errors[0]
+
+
+def test_an_unquoted_colon_in_a_plain_scalar_is_not_coverage(tmp_path):
+    tree(tmp_path, ["check_a.py"],
+         [("a.yml", ON_PR + "      - name: gate: the gates\n" + RUN_A)])
+    errors, _ = scan_and_check(tmp_path)
+    assert len(errors) == 1, errors
+    assert "plain scalar" in errors[0], errors[0]
+
+
+def test_a_tab_inside_a_run_body_is_still_coverage(tmp_path):
+    tree(tmp_path, ["check_a.py"],
+         [("a.yml", ON_PR + "      - run: |\n          if x; then\n"
+                            "          \techo y\n          fi\n" + RUN_A)])
+    assert scan_and_check(tmp_path) == ([], [])
+
+
+def test_a_colon_inside_a_run_body_is_still_coverage(tmp_path):
+    tree(tmp_path, ["check_a.py"],
+         [("a.yml", ON_PR + "      - run: |\n          echo note: skipped\n" + RUN_A)])
+    assert scan_and_check(tmp_path) == ([], [])
+
+
+def test_a_tab_indented_comment_is_still_coverage(tmp_path):
+    tree(tmp_path, ["check_a.py"], [("a.yml", ON_PR + "\t# why this job exists\n" + RUN_A)])
+    assert scan_and_check(tmp_path) == ([], [])
+
+
+def test_a_quoted_value_may_hold_a_colon(tmp_path):
+    tree(tmp_path, ["check_a.py"],
+         [("a.yml", ON_PR + '      - name: "gate: the gates"\n' + RUN_A)])
+    assert scan_and_check(tmp_path) == ([], [])
+
+
+def test_an_expression_value_may_hold_a_colon(tmp_path):
+    tree(tmp_path, ["check_a.py"],
+         [("a.yml", ON_PR + "      - if: ${{ matrix.os == 'linux' }}\n" + RUN_A + DISCOVER)])
+    errors, _ = scan_and_check(tmp_path)
+    assert all("plain scalar" not in e for e in errors), errors
+
+
+def test_discovery_in_an_unloadable_workflow_does_not_run_the_tests(tmp_path):
+    tree(tmp_path, ["check_a.py", "test_check_a.py"],
+         [("a.yml", ON_PR.replace("  j:", "\tj:") + RUN_A + DISCOVER)])
+    errors, _ = scan_and_check(tmp_path)
+    assert any("unittest discover" in e for e in errors), errors
+
+
+def test_the_repos_own_workflows_load(tmp_path):
+    root = Path(__file__).resolve().parent.parent
+    for workflow in sorted((root / ".github/workflows").glob("*.y*ml")):
+        text = COMMENT.sub("", workflow.read_text(encoding="utf-8"))
+        why = unloadable(text, [commands(b) for b in steps(text)])
+        assert why is None, f"{workflow.name}: {why}"
 
 
 def scan_and_check(root):
