@@ -78,6 +78,20 @@ diff, wrong for a second opinion.
   Answer each one with evidence — the caller it names does not exist, the convention it cites was
   superseded — or recommend **Audit** and let the human arbitrate. Settling a disagreement with your
   own auditor by not reporting it is the one outcome that makes dispatching it worthless.
+- **Carry what the audit says about its own limits — that is not a finding, so nothing above reaches
+  it.** The three rules so far enumerate the handoff by severity tier, and every item in such a tier
+  is something the auditor *found*. So the audit's power to foreclose keys on it having found
+  something, and an audit that found nothing arrives at your verdict identically to one that did not
+  look. The report itself distinguishes them: it closes on a fraction over the perimeter it
+  enumerated, and its tiers are sections it may leave empty. Reproduce that closing line verbatim
+  beside your own, and **name every tier the report omitted** — "no 🔴" and "no 🔴 section" are
+  different reports, and only the first is a negative answer. An omitted tier is an unanswered
+  question; recording it as a cleared one is how a truncated audit becomes a clean one.
+- **Merge is not available on an audit that disclosed a limit it did not resolve** — an
+  un-enumerated perimeter, a surface it never reached, a tier it never reported. Re-dispatch it at a
+  narrower scope and say you did, or recommend **Audit**. You may not resolve the gap yourself: you
+  are the context the audit was dispatched to check, so your reading of what it missed is the
+  opinion it exists to be independent of.
 
 ### Step E — Recommend, then STOP
 Give one clear recommendation with a one-line rationale:
