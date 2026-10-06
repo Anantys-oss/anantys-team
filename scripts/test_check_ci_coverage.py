@@ -188,6 +188,55 @@ def test_a_comment_does_not_make_a_missing_script_an_error_either(tmp_path):
     assert main([str(tmp_path)]) == 0
 
 
+def test_a_step_named_after_a_gate_does_not_run_it(tmp_path):
+    tree(tmp_path, ["check_a.py"],
+         [("a.yml", ON_PR + "      - name: scripts/check_a.py\n"
+                            "        run: echo skipping for now\n")])
+    errors, _ = scan_and_check(tmp_path)
+    assert any("guards nothing" in e for e in errors), errors
+
+
+def test_a_name_citing_a_deleted_script_is_not_an_error_either(tmp_path):
+    tree(tmp_path, ["check_a.py"],
+         [("a.yml", ON_PR + "      - name: replaces scripts/check_gone.py\n"
+                            "        run: python3 scripts/check_a.py\n")])
+    assert main([str(tmp_path)]) == 0
+
+
+def test_an_env_value_naming_a_gate_is_not_coverage(tmp_path):
+    tree(tmp_path, ["check_a.py"],
+         [("a.yml", ON_PR + "      - env:\n"
+                            "          GATE: scripts/check_a.py\n"
+                            "        run: echo noop\n")])
+    errors, _ = scan_and_check(tmp_path)
+    assert any("guards nothing" in e for e in errors), errors
+
+
+def test_a_gate_inside_a_block_scalar_is_coverage(tmp_path):
+    tree(tmp_path, ["check_a.py"],
+         [("a.yml", ON_PR + "      - run: |\n"
+                            "          python3 scripts/check_a.py\n")])
+    assert main([str(tmp_path)]) == 0
+
+
+def test_a_block_scalar_does_not_swallow_the_next_step_key(tmp_path):
+    tree(tmp_path, ["check_a.py"],
+         [("a.yml", ON_PR + "      - run: |\n"
+                            "          echo noop\n"
+                            "        env:\n"
+                            "          GATE: scripts/check_a.py\n")])
+    errors, _ = scan_and_check(tmp_path)
+    assert any("guards nothing" in e for e in errors), errors
+
+
+def test_discovery_only_counts_when_a_run_line_performs_it(tmp_path):
+    tree(tmp_path, ["check_a.py", "test_check_a.py"],
+         [("a.yml", ON_PR + "      - name: unittest discover -s scripts\n"
+                            "        run: python3 scripts/check_a.py\n")])
+    errors, _ = scan_and_check(tmp_path)
+    assert any("nothing runs the tests" in e for e in errors), errors
+
+
 def test_a_hash_that_opens_no_comment_is_not_stripped(tmp_path):
     tree(tmp_path, ["check_a.py"],
          [("a.yml", ON_PR + "      - run: python3 scripts/check_a.py --tag=v1#rc2\n")])

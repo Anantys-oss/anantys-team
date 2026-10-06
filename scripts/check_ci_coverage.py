@@ -78,8 +78,29 @@ neuters another; a job-level guard disqualifies the whole file.
 And the `run:` line itself has to be a `run:` line. `NAMED` used to scan the
 whole file, so `# we used to run scripts/check_a.py here` certified the gate it
 documents the removal of — the rename direction above, arriving by the one route
-that leaves a plausible-looking trail. Comments are stripped before matching,
-and matching is confined to step bodies.
+that leaves a plausible-looking trail. Comments are stripped before matching.
+
+Stripping them is not enough, because a comment is the *weakest* trail a removed
+gate can leave, not the only one. Confining the match to step bodies still read
+every key of the step, and a step has keys that cite a command without running
+it — `name:`, `env:`, `with:`. So
+
+    - name: scripts/check_a.py
+      run: echo skipping for now
+
+certified the gate, and the trail here is strictly better-looking than the
+comment's: GitHub renders `name:` in the checks UI, so the evidence a reviewer
+sees is a green tick carrying the gate's own name. Matching is therefore confined
+to `run:` values — inline and block-scalar alike, per step, nothing else.
+
+Both of this file's directions were wrong together, as they have to be when the
+input to each is the same mis-scoped text: a `name:` citing a *deleted* script
+raised `runs scripts/X, which does not exist`, an assertion about a `run:` line
+nobody had read. A false certificate and a false error are one defect.
+
+A step that reaches a gate by any route other than `run:` — a composite action,
+say — is now uncovered. That is the `paths:` trade again, taken the same way:
+fail closed, and let the wiring be visible in the file that claims it.
 
 Coverage is satisfied by *any* PR-triggered workflow, so a gate may keep its own
 workflow file or join an existing one — this fixes the wiring, not the layout.
@@ -99,6 +120,10 @@ NAMED = re.compile(r"scripts/([\w.-]+\.py)")
 # The step `NAMED` is written not to see. Nothing else runs a test module here, so
 # its absence has to be an error of its own.
 DISCOVER = re.compile(r"unittest\s+discover")
+# The only step key that executes anything. `NAMED` and `DISCOVER` are matched
+# against these values and nowhere else in the step: a `name:`, an `env:` or a
+# `with:` may cite a gate without running it.
+RUN = re.compile(r"^\s*(?:-\s*)?run:(.*)$")
 # `on:` at column 0 — the key, not the phrase. `pull_request` also appears in
 # comments and in `github.event.pull_request.*` expressions inside a step. YAML
 # lets the key be quoted, because bare `on` is also the boolean `true`.
@@ -143,6 +168,30 @@ def steps(text):
             end = starts[n + 1] if n + 1 < len(starts) else len(body)
             blocks.append("\n".join(body[start:end]))
     return blocks
+
+
+def commands(block):
+    """What one step actually executes — its `run:` values, and nothing else.
+
+    Indentation is measured from the `run:` key rather than the line start, so a
+    block scalar stops at the step's next key instead of swallowing it.
+    """
+    lines = block.splitlines()
+    body = []
+    for i, line in enumerate(lines):
+        if not (run := RUN.match(line)):
+            continue
+        if (inline := run.group(1).strip()) and inline[0] not in "|>":
+            body.append(inline)
+            continue
+        outer = line.index("run:")
+        for after in lines[i + 1:]:
+            if not after.strip():
+                continue
+            if len(after) - len(after.lstrip()) <= outer:
+                break
+            body.append(after)
+    return "\n".join(body)
 
 
 def blocking(text):
@@ -201,9 +250,10 @@ def scan(root):
                 "runs the gate in a step that cannot fail the check"
                 if NEUTERED.search(block) else None
             )
-            if not guarded and DISCOVER.search(block):
+            executed = commands(block)
+            if not guarded and DISCOVER.search(executed):
                 discovers = True
-            for name in NAMED.findall(block):
+            for name in NAMED.findall(executed):
                 named.setdefault(name, []).append(workflow.name)
                 if guarded:
                     why.setdefault(workflow.name, guarded)
