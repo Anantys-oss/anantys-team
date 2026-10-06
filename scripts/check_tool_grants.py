@@ -67,6 +67,14 @@ UNBOUNDED = {
 
 BASELINE = Path(__file__).with_name("tool-grants-baseline.txt")
 
+# Prose that withholds or forbids a command, up to the span it governs. Anchored
+# at the end so it must reach the span, and `[^.`\n]*` keeps it inside the one
+# clause — a `not` in an earlier sentence governs nothing here. See `negated`.
+WITHHELD = re.compile(
+    r"\b(?:no|not|never|without|forbids?|forbidden|withholds?|denies|denied)\b[^.`\n]*\Z",
+    re.I,
+)
+
 MCP_IN_PROSE = re.compile(r"`([a-z_]+)`|mcp__[a-z-]+__([a-z_]+)")
 BASH_FENCE = re.compile(r"```(?:bash|sh|shell)\n(.*?)```", re.S)
 INLINE_CODE = re.compile(r"`([a-z][\w./-]*(?: [^`\n]*)?)`")
@@ -149,6 +157,14 @@ def bash_commands(body, heads=frozenset(), known_mcp=frozenset()):
     a command and a tool, and `find` is live in this tree as both — an
     `UNBOUNDED` shell command and a granted browser tool `ops` calls by name.
 
+    A span the surrounding clause withholds or forbids is then dropped: prose
+    saying a grant is absent is documenting the narrowing, not asking for it.
+    Without this the gate's own purpose is reversed — `ops` justifies holding no
+    `git`, and the two cheapest ways to silence the resulting error are to grant
+    `Bash(git:*)` (which `UNBOUNDED` rejects) or to delete the justification.
+    Only spans are read this way; a fence line is a runbook line whatever the
+    prose around it says.
+
     What still escapes: a bare, flagless command that heads no grant and is
     not in `UNBOUNDED` — `` `curl` `` on its own. Without a command
     vocabulary it is indistinguishable from a backticked noun, and guessing
@@ -160,10 +176,11 @@ def bash_commands(body, heads=frozenset(), known_mcp=frozenset()):
             line = line.strip()
             if line and not line.startswith("#"):
                 found.add(line)
-    for span in INLINE_CODE.findall(body):
-        word, _, rest = span.partition(" ")
+    for m in INLINE_CODE.finditer(body):
+        word, _, rest = m.group(1).partition(" ")
         if word not in known_mcp and (word in heads or rest.startswith("-")):
-            found.add(span.strip())
+            if not WITHHELD.search(body[:m.start()]):
+                found.add(m.group(1).strip())
     return found
 
 
