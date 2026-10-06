@@ -46,6 +46,10 @@ The user typically provides a page/URL and a list of design issues to fix.
 Before touching anything, discover and read the project's design conventions so fixes respect the system:
 - Look for a design-system / style guide doc: search the repo for files like `**/*design*guide*.md`, `DESIGN.md`, `STYLEGUIDE.md`, `CONTRIBUTING.md`, or a `documentation/` / `docs/` folder.
 - Look for design tokens: CSS custom properties (`--*` variables), a Tailwind/theme config, a tokens file, or a component library in use.
+- **Write down the project's genuinely semantic classes** — the ones where a green or a grey
+  carries meaning (a status badge, a diff marker, a perf delta) rather than decoration. This
+  list is step 6's `ALLOWED` exemption set, and it has to be collected here, before you edit
+  anything: a suppression list written after the fixes is written by the party it exempts.
 - The active feature spec or ticket, if one exists.
 
 If no explicit guide exists, **infer the system from the existing code**: dominant fonts, the spacing scale, the color palette already in use, the component patterns. Match what is there — do not introduce new tokens, fonts, gradients, glows, or AI-cliché iconography (sparkles, magic wands, decorative gradients).
@@ -144,7 +148,7 @@ const zone = document.querySelector('main') || document.body;
 const isLightGrey=(r,g,b)=>(r>150&&g>150&&b>150)&&Math.abs(r-g)<40&&Math.abs(g-b)<40&&r<210;
 const isGreen=(r,g,b)=>g>120&&g>r+30&&g>b+20;
 const ALLOWED=/perf|value|variation|semantic|badge/; // adapt to the project's legit semantic classes
-const out=new Map();
+const out=new Map(), exempt=new Map();
 let visited=0;
 zone.querySelectorAll('*').forEach(el=>{
   if(![...el.childNodes].some(n=>n.nodeType===3&&n.textContent.trim().length>1)) return;
@@ -152,19 +156,20 @@ zone.querySelectorAll('*').forEach(el=>{
   if(s.display==='none'||s.visibility==='hidden'||!el.getClientRects().length) return;
   visited++;
   const m=s.color.match(/\d+/g); if(!m) return; const [r,g,b]=m.map(Number);
-  const cls=''+(el.className||'');
-  if(ALLOWED.test(cls)) return;
   const t=isLightGrey(r,g,b)?'grey':isGreen(r,g,b)?'green':''; if(!t) return;
+  const cls=''+(el.className||'');
   const k=t+'|'+cls.slice(0,40)+'|'+s.position;
-  const hit=out.get(k)||{t,cls:cls.slice(0,40),pos:s.position,n:0,txt:el.textContent.trim().slice(0,28)};
-  hit.n++; out.set(k,hit);
+  const bucket=ALLOWED.test(cls)?exempt:out;   // suppressed, but still counted
+  const hit=bucket.get(k)||{t,cls:cls.slice(0,40),pos:s.position,n:0,txt:el.textContent.trim().slice(0,28)};
+  hit.n++; bucket.set(k,hit);
 });
-({zone:zone.tagName, visited, hits:[...out.values()].sort((a,b)=>b.n-a.n)});
+const byCount=m=>[...m.values()].sort((a,b)=>b.n-a.n);
+({zone:zone.tagName, visited, hits:byCount(out), exempt:byCount(exempt)});
 ```
 
 **A clean scan and a scan that looked at nothing return the same answer.** So report
 `visited` and `zone` with the result — an empty `hits` over 400 visited elements is a
-finding about the page; an empty `hits` over 3 is a finding about your selector. Three
+finding about the page; an empty `hits` over 3 is a finding about your selector. Four
 reasons the number can collapse without the page being clean, all of which this scan
 is written to avoid and an adapted one can reintroduce:
 
@@ -179,6 +184,15 @@ is written to avoid and an adapted one can reintroduce:
 - **Hits were deduplicated by class.** Every unclassed element shares the key `''`, so a
   whole template's worth of grey text collapses to one row. Grouping with a count (`n`)
   keeps the magnitude; `pos` in the key keeps the chrome separate from the body copy.
+- **`ALLOWED` ate them.** This is the only one of the four that `visited` cannot see, and
+  it is the adaptation the paragraph above explicitly asks you to make. The exemption ran
+  *before* the grey/green test, so a suppressed violation was never classified as one and
+  its count did not exist to report: `visited: 400, hits: []` on a filthy page, with the
+  strongest possible denominator standing behind it. Classify first, then route — the
+  `exempt` bucket is the same hit shape, counted and reported, just not demanding a fix.
+  **Report `exempt` whenever it is non-empty**, and say which entries you accept as
+  genuinely semantic. A suppression you disclose is a judgement the operator can overturn;
+  one that returns early is a defect with the audit's signature on it.
 
 Then say what the pass **did not** cover. It reads one property, `color`, on one page
 state. The DS rules in step 1 also forbid stray typefaces, decorative gradients, glow
@@ -188,6 +202,17 @@ color violation found in `<zone>`", never "DS-clean". Report it in those words: 
 that fired nothing, not a verdict.
 
 Anything in `hits` is a new fix.
+
+**Write `ALLOWED` in step 1, not here.** The project's legitimate semantic classes are
+part of the design system you read *before* editing anything — discover them there and
+state the list in your report at that point. By the time you reach this step you have
+spent a session making the fixes this pass scores, and a hit costs you one more: the
+context with that incentive is not the one that should be deciding what counts as exempt.
+This is the team's standing rule about yardsticks — *never derive the standard from the
+thing you are measuring* — applied one step earlier than the reviewing roles need it,
+because here the thing being measured is your own work. If a hit turns out to be semantic
+and step 1 missed the class, widening `ALLOWED` is allowed — say in the report that you
+widened it, and with what, so the one scan nobody else ran is still reviewable.
 
 ### 7. Mobile + edge states
 
@@ -228,6 +253,9 @@ List the source files touched. Note anything deliberately left as-is (with reaso
 - **An empty audit pass reports what it visited.** The global scan's clean answer and its broken
   answer are the same answer, so `hits: []` is only evidence next to `zone` and `visited`. It reads
   one property on one page state: say "no color violation in `<zone>`", never "DS-clean".
+- **What the scan exempts, it still counts.** `ALLOWED` is the one collapse cause `visited` cannot
+  see, so suppressed violations go to the reported `exempt` bucket, never to an early `return`. The
+  list is collected in step 1, before the fixes it exempts — widen it later only out loud.
 - Respect the project's existing design system and tokens; never invent new color tokens, gradients, glows, or AI-cliché iconography.
 - **Never commit, push, or open a PR** unless the user explicitly asks — stop at validated local edits.
 - Report what the screenshot actually shows, not what you expect.
