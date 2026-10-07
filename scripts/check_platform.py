@@ -21,11 +21,17 @@ So the loader is one input here, not the gate. The two checks below cover the
 gap that matters, both of which end the same way — a capability declaration
 that silently stops applying:
 
-  1. **Frontmatter keys must be recognized.** `allowed_tools:` is not
-     `allowed-tools:`; the block parses, the key is ignored, and the skill loads
-     with its grants unset. `anantys.ops` narrows Bash to three verbs — one
+  1. **Frontmatter keys must be recognized, and declared once.** `allowed_tools:`
+     is not `allowed-tools:`; the block parses, the key is ignored, and the skill
+     loads with its grants unset. `anantys.ops` narrows Bash to three verbs — one
      underscore un-narrows it, and nothing anywhere in this repo or in the
-     loader says a word.
+     loader says a word. A key declared *twice* is the same silent drop without
+     the typo: YAML keeps the last occurrence, discards the earlier one, and
+     `claude plugin validate` was measured to pass the file. Both declarations
+     read as live in the block, so the one that is not loaded is the one a
+     reviewer is as likely to be reading — and the check below must read the
+     one the loader keeps, or it shape-checks a list that was thrown away and
+     leaves the live one unexamined.
   2. **Tool identifiers must be well-shaped.** An MCP tool is
      `mcp__server__tool`; a single underscore anywhere in that name makes it a
      tool that does not exist, the skill loads without it, and the prose that
@@ -125,6 +131,17 @@ def check_component(path: Path, known: frozenset[str], tools_key: str) -> None:
                 f"{rel(path)}: unrecognized frontmatter key `{key}` — it is ignored at load "
                 f"time with no warning; known keys are {', '.join(sorted(known))}"
             )
+    # A key declared twice is the same silent drop as a key spelled wrong, minus the
+    # typo: YAML keeps the last occurrence and discards the earlier one without a
+    # word, and `claude plugin validate` passes the file. Both declarations read as
+    # live to anyone looking at the block, so the one that is not loaded is the one a
+    # reviewer is as likely to be reading.
+    for key in sorted({k for k in keys if keys.count(k) > 1}):
+        errors.append(
+            f"{rel(path)}: frontmatter declares `{key}` {keys.count(key)} times — the loader "
+            "keeps the last one and drops the rest silently; a reader cannot tell which "
+            "declaration is in force"
+        )
     # Read the key's whole value, not just the rest of its line. `anantys.ops`
     # declares twelve grants on one 500-character line; the obvious thing to do
     # with it is wrap it, and YAML lets the value continue on any indented line —
@@ -132,13 +149,20 @@ def check_component(path: Path, known: frozenset[str], tools_key: str) -> None:
     # alone yields the empty string for the block form, and the check below then
     # iterates nothing and prints `0 error(s)`: this gate's own silent-drop
     # failure, in the half of it that exists because the loader is silent too.
-    declared = re.search(rf"^{tools_key}:(.*(?:\n[ \t]+.*)*)$", block, re.MULTILINE)
-    if declared:
+    # Last, not first: YAML resolves a repeated key to its final occurrence, so
+    # `re.search` would shape-check a list the loader threw away — and leave the one
+    # it actually loaded unexamined. The duplicate is reported above; reading it the
+    # loader's way is what keeps this check pointed at the live declaration anyway.
+    found = re.findall(rf"^{tools_key}:(.*(?:\n[ \t]+.*)*)$", block, re.MULTILINE)
+    declared = found[-1] if found else None
+    # `is not None`, not truthiness: a key declared with nothing under it yields the
+    # empty string, and that is the case the empty-grant error below exists for.
+    if declared is not None:
         # Split on commas and line breaks only — a scoped grant is one token even
         # when it holds a space (`Bash(git diff:*)`). Splitting on whitespace
         # instead is how a grant checker comes to reject every narrowed grant it
         # was written to encourage.
-        value = re.sub(r"^[ \t]*-[ \t]*", "", declared.group(1), flags=re.MULTILINE)
+        value = re.sub(r"^[ \t]*-[ \t]*", "", declared, flags=re.MULTILINE)
         value = re.sub(r"[\[\]\"']", " ", value)
         tools = [t.strip() for t in re.findall(r"[^,\n]*\([^)]*\)|[^,\n]+", value)]
         tools = [t for t in tools if t]

@@ -103,6 +103,31 @@ class CheckPlatform(unittest.TestCase):
         self.assertEqual(len(found), 1)
         self.assertIn("no frontmatter", found[0])
 
+    def test_a_key_declared_twice_is_reported(self) -> None:
+        # `claude plugin validate` passes this file and YAML keeps only the last
+        # occurrence, so neither the loader nor a reader says which one is in force.
+        found = self.check(GOOD_SKILL.replace("\n---\n\nbody", "\nallowed-tools: Read\n---\n\nbody"))
+        self.assertTrue(any("declares `allowed-tools` 2 times" in e for e in found), found)
+
+    def test_the_shape_check_reads_the_declaration_the_loader_keeps(self) -> None:
+        # A malformed identifier in the *last* declaration is the one that loads.
+        # Reading the first instead shape-checks a list that was thrown away.
+        found = self.check(
+            GOOD_SKILL.replace("\n---\n\nbody", "\nallowed-tools: mcp_bad_tool\n---\n\nbody")
+        )
+        self.assertTrue(any("`mcp_bad_tool` is not a well-formed" in e for e in found), found)
+
+    def test_a_single_declaration_is_not_reported_as_duplicated(self) -> None:
+        self.assertEqual(self.check(GOOD_SKILL), [])
+
+    def test_a_block_sequence_grant_list_still_reads_as_declared(self) -> None:
+        # The value is the empty string on the key's own line; the grants follow on
+        # indented lines. Truthiness on that string is how this check goes quiet.
+        found = self.check(
+            "---\nname: x\ndescription: y\nallowed-tools:\n  - Read\n  - mcp_bad\n---\n\nbody\n"
+        )
+        self.assertTrue(any("`mcp_bad` is not a well-formed" in e for e in found), found)
+
     def test_agent_keys_differ_from_skill_keys(self) -> None:
         path = cp.ROOT / "agent.md"
         path.write_text(
