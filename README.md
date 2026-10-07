@@ -80,6 +80,13 @@ anantys-team/
 - **plugin** = the installable, versioned unit a user enables in one shot.
 - **skills** = the actual capabilities Claude invokes.
 
+## Conventions
+
+Cross-cutting rules — the ones that bind every role rather than one skill — live in
+[`docs/`](./docs/), one file per rule. A new convention is a new file there, never
+another section here: README has a single append point, and every PR that used it
+collided with every other PR that used it.
+
 ## License
 
 Provided as-is for consulting and educational use.
