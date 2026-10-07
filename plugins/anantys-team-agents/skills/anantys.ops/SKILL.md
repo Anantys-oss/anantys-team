@@ -132,7 +132,7 @@ Rules for `current.md`: overwrite the whole file (it is a snapshot; the journal 
 
 - Phase 0 read it and parsed it → overwrite normally.
 - It genuinely does not exist (first audit) → create it.
-- It exists but Phase 0 didn't read it, or the Audit History didn't parse → **do not overwrite.** Write `<workspace>/current.next.md` beside it and tell the user which rows you could not carry, so they can reconcile the two by hand.
+- It exists but Phase 0 didn't read it, or the Audit History didn't parse → **do not overwrite.** Write `<workspace>/current.next.md` beside it and tell the user which rows you could not carry, so they can reconcile the two by hand. That path is in [the artifact table](../../../../docs/artifacts-declare-their-git-status.md) and is **tracked**, like the file it stands in for — say so when you create it. A reconciliation copy nobody can see is the data loss this branch exists to avoid, taken one step later.
 
 Rebuilding Audit History from the journal's `<!-- kpi -->` rows is always a valid recovery — prefer it over dropping rows you can't find.
 

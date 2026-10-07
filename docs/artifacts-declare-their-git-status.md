@@ -5,7 +5,7 @@ Two of these roles write into the operator's repository, not just into the conve
 | role | writes |
 |---|---|
 | `anantys.qa` | `.anantys/qa.md`, and per campaign `.anantys/qa/<slug>/{qa-plan,qa-report,qa-runs}.md` |
-| `anantys.ops` | `.anantys/ops.md`, `<workspace>/{current.md,rulings.md}`, `<workspace>/journal/<date>-analysis.md` |
+| `anantys.ops` | `.anantys/ops.md`, `<workspace>/{current.md,current.next.md,rulings.md}`, `<workspace>/journal/<date>-analysis.md` |
 
 Search the plugin for what git is supposed to do with any of them:
 
@@ -51,6 +51,12 @@ down at all. There is no third class, so in practice:
   mistake it for work.
 - `.gitignore` is therefore where nothing a role writes belongs — if a path wants to be ignored,
   it wanted to be a temp file.
+- **A repair copy inherits the status of the file it stands in for.** `current.next.md` is not a
+  third class: it is the un-mergeable half of `current.md`, so it is **tracked**, and the
+  reconciliation that folds it back is the change that deletes it. It belongs in the table for
+  the same reason the file it shadows does — it is the artifact a role writes when the
+  destructive path is the one it must not take, and an artifact the table omits is an artifact
+  the rule below forbids writing.
 
 ## The table is the write set, and it is the only copy
 
