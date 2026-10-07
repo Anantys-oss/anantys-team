@@ -88,10 +88,20 @@ class CheckPlatform(unittest.TestCase):
         self.assertEqual(len(found), 1)
         self.assertIn("no tool under it", found[0])
 
-    def test_an_absent_grant_key_is_not_an_empty_one(self) -> None:
-        # The empty-list error must not fire on a component that never declared
-        # the key at all — omitting it is legitimate, declaring it blank is not.
-        self.assertEqual(self.check("---\nname: x\ndescription: y\n---\n\nbody\n"), [])
+    def test_an_absent_grant_key_is_charged_as_the_widest_grant(self) -> None:
+        # Not the empty-list error — a distinct one. Both end in grants unset, but
+        # only this shape leaves nothing in the file for a reviewer to read, and
+        # only this one is reached by deleting a line rather than mangling it.
+        found = self.check("---\nname: x\ndescription: y\n---\n\nbody\n")
+        self.assertEqual(len(found), 1)
+        self.assertIn("no `allowed-tools:`", found[0])
+
+    def test_an_unreadable_block_is_reported_once(self) -> None:
+        # The absent-key error must not pile onto a file whose frontmatter never
+        # parsed: nothing was declared because nothing was read.
+        found = self.check("---\nname: x\ndescription: y\n\nbody\n")
+        self.assertEqual(len(found), 1)
+        self.assertIn("never closed", found[0])
 
     def test_unclosed_frontmatter_drops_every_field(self) -> None:
         found = self.check("---\nname: x\ndescription: y\n\nbody\n")

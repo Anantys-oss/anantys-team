@@ -21,11 +21,16 @@ So the loader is one input here, not the gate. The two checks below cover the
 gap that matters, both of which end the same way — a capability declaration
 that silently stops applying:
 
-  1. **Frontmatter keys must be recognized.** `allowed_tools:` is not
+  1. **A grant key must be present, and recognized.** `allowed_tools:` is not
      `allowed-tools:`; the block parses, the key is ignored, and the skill loads
      with its grants unset. `anantys.ops` narrows Bash to three verbs — one
      underscore un-narrows it, and nothing anywhere in this repo or in the
-     loader says a word.
+     loader says a word. Deleting the key outright lands in that same state by
+     a cleaner-looking edit, so it is charged the same way: a component with no
+     grant key holds every tool the session holds, which is strictly wider than
+     any list it could have written, and no narrowing a reader sees in the diff
+     survives. Omitting the key is legal upstream; it is not legal here, and
+     `check_plugins.py` already errors on an agent that omits `tools`.
   2. **Tool identifiers must be well-shaped.** An MCP tool is
      `mcp__server__tool`; a single underscore anywhere in that name makes it a
      tool that does not exist, the skill loads without it, and the prose that
@@ -119,6 +124,10 @@ def frontmatter_keys(path: Path) -> tuple[list[str], str]:
 
 def check_component(path: Path, known: frozenset[str], tools_key: str) -> None:
     keys, block = frontmatter_keys(path)
+    if not block:
+        # No readable block: `frontmatter_keys` already said why, and every check
+        # below would restate the same drop under a narrower name.
+        return
     for key in keys:
         if key not in known:
             errors.append(
@@ -133,7 +142,25 @@ def check_component(path: Path, known: frozenset[str], tools_key: str) -> None:
     # iterates nothing and prints `0 error(s)`: this gate's own silent-drop
     # failure, in the half of it that exists because the loader is silent too.
     declared = re.search(rf"^{tools_key}:(.*(?:\n[ \t]+.*)*)$", block, re.MULTILINE)
-    if declared:
+    if not declared and any(key.replace("_", "-") == tools_key for key in keys):
+        # A near-miss spelling is already an error above, and it names the cause.
+        # Adding "no `allowed-tools:`" on top of it is a second diagnosis for one
+        # edit — the failure mode this whole check exists to stop.
+        return
+    if not declared:
+        # The empty-list error below is justified by reading "exactly like a file
+        # that never declared the key" — so the absent key cannot be the clean
+        # case. It is the same load-time state reached by the tidiest edit of the
+        # three, and the one no other gate names: `check_tool_grants` keys off the
+        # same input and answers "prose uses browser tool `navigate` but it is not
+        # granted", prescribing more authority for a component that just acquired
+        # all of it.
+        errors.append(
+            f"{rel(path)}: no `{tools_key}:` — the component loads with every tool the "
+            "session holds, wider than any list it could declare, and wider than the "
+            "narrowing a reader sees in its prose"
+        )
+    else:
         # Split on commas and line breaks only — a scoped grant is one token even
         # when it holds a space (`Bash(git diff:*)`). Splitting on whitespace
         # instead is how a grant checker comes to reject every narrowed grant it
