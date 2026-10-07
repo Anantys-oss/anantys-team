@@ -385,10 +385,33 @@ def main() -> int:
         # new role joined the user-facing surface on one line of ASCII tree. Same unit
         # mismatch as the ceiling above — the reason says "reads", the measurement
         # accepted "appears". Fenced blocks are not read; drop them first.
-        readme = FENCED.sub("", (ROOT / "README.md").read_text(encoding="utf-8"))
+        raw_readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        readme = FENCED.sub("", raw_readme)
         for name in [d.name for d in skills] + [a.stem for a in agents]:
             if name not in readme:
                 errors.append(f"README.md does not describe `{name}` outside a code block")
+
+        # One fenced block is not like the others. The install snippet is the only text
+        # in this repo a user *executes*, and both names in it are names this check
+        # already reads for the drift test. The strip above was justified by "fenced
+        # blocks are not read" — true of the layout listing, false of this one. So:
+        # renaming the catalog in both manifests kept drift satisfied and killed the
+        # command at 0 errors; deleting the Install section outright, 0 errors; pointing
+        # it at a plugin and a marketplace that exist nowhere, 0 errors. Read the fences
+        # back in for this one question. The `marketplace add <owner>/<repo>` line above
+        # it stays unchecked: the repo slug is in no manifest, so the tree cannot answer.
+        if market := marketplace.get("name"):
+            target = f"{manifest['name']}@{market}"
+            if not re.search(rf"/plugin\s+install\s+{re.escape(target)}(?!\S)", raw_readme):
+                errors.append(
+                    f"README.md has no `/plugin install {target}` — the install snippet "
+                    "is the one text a user runs, and nothing else gates its names"
+                )
+        else:
+            warnings.append(
+                "marketplace.json has no `name`, so the `@<marketplace>` half of the "
+                "`/plugin install` line in README.md went unmeasured"
+            )
 
     for warning in warnings:
         print(f"warning: {warning}")

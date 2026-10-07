@@ -425,5 +425,51 @@ class ARoleIsDescribedNotJustNamed(unittest.TestCase):
         self.assertEqual(len(self.readme("# anantys-team\n")), 1)
 
 
+class TheInstallSnippetIsExecuted(unittest.TestCase):
+    """The one fenced block the strip above may not drop.
+
+    `/plugin install <plugin>@<marketplace>` is the only text in the repo a user
+    runs, and both its names are ones the drift check already reads. Stripping every
+    fence left it gated by nothing: renaming the catalog in both manifests, deleting
+    the Install section, and naming a plugin that exists nowhere were each 0 errors.
+    """
+
+    def setUp(self) -> None:
+        # Same one-role tree, borrowed rather than copied — but not by subclassing, or
+        # that class's READMEs would be re-run against a check they were not written for.
+        ARoleIsDescribedNotJustNamed.setUp(self)
+        catalog = cp.ROOT / ".claude-plugin/marketplace.json"
+        catalog.write_text(json.dumps(dict(json.loads(catalog.read_text()), name="m")))
+
+    def install(self, text: str) -> list[str]:
+        prose = "`anantys.newrole` refines a page.\n"  # satisfies the prose check
+        (cp.ROOT / "README.md").write_text(prose + text, encoding="utf-8")
+        with contextlib.redirect_stdout(io.StringIO()):
+            cp.main()
+        return [e for e in cp.errors if "install snippet" in e]
+
+    def test_the_command_in_a_fenced_block_satisfies_it(self) -> None:
+        self.assertEqual(self.install("```bash\n/plugin install p@m\n```\n"), [])
+
+    def test_no_install_command_at_all_is_an_error(self) -> None:
+        self.assertEqual(len(self.install("")), 1)
+
+    def test_a_renamed_marketplace_breaks_the_command(self) -> None:
+        # Both manifests agreeing is what the drift check tests; it is not this.
+        self.assertEqual(len(self.install("```\n/plugin install p@anantys-oss\n```\n")), 1)
+
+    def test_a_plugin_that_exists_nowhere_is_an_error(self) -> None:
+        self.assertEqual(len(self.install("```\n/plugin install nope@m\n```\n")), 1)
+
+    def test_a_longer_name_does_not_satisfy_a_shorter_one(self) -> None:
+        self.assertEqual(len(self.install("```\n/plugin install p@my-other-market\n```\n")), 1)
+
+    def test_a_catalog_with_no_name_is_a_warning_naming_what_went_unmeasured(self) -> None:
+        catalog = cp.ROOT / ".claude-plugin/marketplace.json"
+        catalog.write_text(json.dumps({"plugins": json.loads(catalog.read_text())["plugins"]}))
+        self.assertEqual(self.install(""), [])
+        self.assertTrue(any("unmeasured" in w for w in cp.warnings))
+
+
 if __name__ == "__main__":
     unittest.main()
