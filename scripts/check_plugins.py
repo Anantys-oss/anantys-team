@@ -32,6 +32,11 @@ REFERENCE_LINK = re.compile(r"`(reference/[\w.-]+\.md)`")
 #: load is a claim about bytes, authority is not, and the units do not coincide.
 TEMPLATE_LINK = re.compile(r"`(templates/[\w.-]+\.md)`")
 
+#: How a role names a file it loads *before* acting — an ordinary markdown link, read
+#: from the preamble only. Shared with ``load_parts`` so the discovery surface this
+#: file resolves and the surface ``check_companions`` holds in place are one literal.
+PREAMBLE_LINK = re.compile(r"\]\(([^)]+\.md)\)")
+
 #: Commit the working tree departs from, so a load can be reported as a *change*
 #: rather than as a standing fact. ``None`` = no baseline available; see ``merge_base``.
 BASE: str | None = None
@@ -106,7 +111,7 @@ def load_parts(path: Path, read) -> list[tuple[Path, int]]:
     if text is None:
         return []
     parts = [(path, len(text.splitlines()))]
-    for link in re.findall(r"\]\(([^)]+\.md)\)", text.split("\n## ", 1)[0]):
+    for link in PREAMBLE_LINK.findall(text.split("\n## ", 1)[0]):
         target = (path.parent / link).resolve()
         if (body := read(target)) is not None:
             parts.append((target, len(body.splitlines())))
@@ -182,6 +187,64 @@ def worst_action_part(path: Path, read) -> list[tuple[Path, int]]:
 def measured_load(path: Path, read) -> list[tuple[Path, int]]:
     """Every file one action of ``path`` reads, worst case, as ``(file, lines)`` pairs."""
     return load_parts(path, read) + worst_action_part(path, read)
+
+
+def named_companions(path: Path) -> list[str]:
+    """Every companion path ``path`` names, as written — the surface ``measured_load`` resolves.
+
+    Same three patterns, same two levels: the preamble's markdown links, the
+    ``reference/`` topics the role names, and the ``templates/`` the role or one of
+    those topics names. Returned as the written strings rather than resolved paths,
+    because the question here is about a name that resolves to nothing.
+    """
+    text = disk(path) or ""
+    topics = named_parts(path, REFERENCE_LINK, text, disk)
+    return (
+        PREAMBLE_LINK.findall(text.split("\n## ", 1)[0])
+        + REFERENCE_LINK.findall(text)
+        + TEMPLATE_LINK.findall("\n".join([text, *(body for _, body in topics)]))
+    )
+
+
+def check_companions(path: Path) -> None:
+    """Error when a role names a companion file that is not in the tree.
+
+    Every discovery path above resolves a name and moves on when the file is not
+    there — ``load_parts`` and ``named_parts`` both skip a missing target silently.
+    That makes *named but absent* indistinguishable from *not named*, and the two
+    are opposite failures: one is a role that reads nothing where it says it reads a
+    page, the other is a role with nothing to say.
+
+    ``check_tool_grants`` has the same blind spot from the other end. It builds a
+    skill's prose surface by globbing ``reference/*.md`` on disk and reporting the
+    files no action names — so it cannot reach a name with no file at all, because
+    the loop never visits one. Deleting a topic page and leaving its citation in
+    ``SKILL.md`` passes all seven gates: the only output that moves is a *misdirected*
+    warning, ``grants `AskUserQuestion` but the prose never mentions it``, naming the
+    grant as the suspect when the real defect is that the page documenting the need
+    is gone. Its remedy — drop the grant — removes a capability the role still uses.
+    Citing a page that was never created at all produces no output anywhere.
+
+    So the dangling direction belongs here, where the names are iterated, exactly as
+    the orphan direction belongs there, where the files are. An error rather than a
+    warning: a companion lives inside the role's own directory and arrives in the
+    role's own change, so there is no other branch for it to be waiting on, and a
+    role shipped with a dead citation is broken for the user who installs it
+    whatever tree it came from. Across every open head today, zero citations dangle —
+    this is a regression gate with live input, not one waiting for its input to land.
+
+    Links a role writes *below* its first ``## `` heading are out of this surface, as
+    they are out of ``measured_load``'s: widening discovery is a separate question,
+    and ``check_tool_grants`` and ``check_delegation_grants`` answer it the same way
+    this file does. One gate must not widen alone.
+    """
+    for name in sorted(set(named_companions(path))):
+        if not (path.parent / name).is_file():
+            errors.append(
+                f"{rel(path)}: names `{name}`, which is not in the tree — an action "
+                "told to read it reads nothing, and every check that resolves this "
+                "path treats the absence as if the role had never named it"
+            )
 
 
 def check_load(path: Path) -> None:
@@ -361,12 +424,14 @@ def main() -> int:
             require(skill, frontmatter(skill), ("name", "description"), skill_dir.name)
             if contract:
                 check_contract(skill, contract)
+            check_companions(skill)
             check_load(skill)
 
         for agent in agents:
             require(agent, frontmatter(agent), ("name", "description", "tools", "model"), agent.stem)
             if contract:
                 check_contract(agent, contract)
+            check_companions(agent)
             check_load(agent)
 
         # The description advertises counts ("5 skills … 2 review agents") to users browsing

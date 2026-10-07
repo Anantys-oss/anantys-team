@@ -471,5 +471,62 @@ class TheInstallSnippetIsExecuted(unittest.TestCase):
         self.assertTrue(any("unmeasured" in w for w in cp.warnings))
 
 
+class ANamedCompanionMustBeThere(Harness):
+    """A name that resolves to nothing is not the same state as no name at all.
+
+    Two tests above assert that an absent companion is *ignored* — correct for
+    pricing a load, and the whole diagnosis for everything else: the role instructs
+    an action to read a page that is not there, and no checker in the tree says so.
+    """
+
+    def companion(self, folder: str, name: str, n: int) -> None:
+        (cp.ROOT / folder).mkdir(exist_ok=True)
+        (cp.ROOT / folder / name).write_text(lines(n), encoding="utf-8")
+
+    def companions(self, text: str) -> list[str]:
+        path = cp.ROOT / "SKILL.md"
+        path.write_text(text, encoding="utf-8")
+        cp.check_companions(path)
+        return cp.errors
+
+    def test_a_role_whose_companions_all_exist_is_silent(self) -> None:
+        self.companion("reference", "run.md", 3)
+        self.companion("templates", "plan.md", 3)
+        self.assertEqual(self.companions("`reference/run.md` `templates/plan.md`\n"), [])
+
+    def test_a_preamble_link_to_a_file_that_is_not_there_is_an_error(self) -> None:
+        error, = self.companions("Read [the contract](CONTRACT.md) first.\n")
+        self.assertIn("names `CONTRACT.md`, which is not in the tree", error)
+
+    def test_a_named_topic_that_is_not_there_is_an_error(self) -> None:
+        error, = self.companions("The `run` action reads `reference/gone.md`.\n")
+        self.assertIn("names `reference/gone.md`", error)
+
+    def test_a_named_template_that_is_not_there_is_an_error(self) -> None:
+        error, = self.companions("Follow `templates/gone.md`.\n")
+        self.assertIn("names `templates/gone.md`", error)
+
+    def test_a_template_named_only_in_a_named_topic_is_checked(self) -> None:
+        # The surface `worst_action_part` reaches: a role's own split moves the
+        # template mention into the topic, so a dangling one hides there too.
+        self.companion("reference", "sources.md", 3)
+        (cp.ROOT / "reference/sources.md").write_text("Follow `templates/gone.md`.\n")
+        error, = self.companions("`reference/sources.md`\n")
+        self.assertIn("names `templates/gone.md`", error)
+
+    def test_a_markdown_link_below_the_first_heading_is_out_of_scope(self) -> None:
+        # Stated boundary, not an oversight: widening discovery past the preamble is
+        # a question the two grant gates answer the same way, and one must not widen
+        # alone. `measured_load` draws the line in the same place.
+        self.assertEqual(self.companions("pre\n\n## Step\n\n[x](GONE.md)\n"), [])
+
+    def test_a_dangling_citation_does_not_lower_the_reported_load(self) -> None:
+        # Both checks run: the absence is still uncharged, and now also reported.
+        self.companion("reference", "big.md", 16)
+        warning, = self.check("`reference/big.md` `reference/gone.md`\n")
+        self.assertIn("loads 17 lines", warning)
+        self.assertEqual(len(self.companions("`reference/big.md` `reference/gone.md`\n")), 1)
+
+
 if __name__ == "__main__":
     unittest.main()

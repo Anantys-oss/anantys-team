@@ -103,3 +103,37 @@ the checker charges one. Measured on the assembled queue, `anantys.qa` — the o
 role today — invokes at 385 (160 + 95 contract + 130 `reference/sources.md`) where the
 always-loaded set alone reported 255. No individual branch shows this: the split lands on
 one head, the contract on another, and this checker on a third.
+
+## A companion you name has to be there
+
+Everything above discovers a companion by resolving a path the role wrote, and every one of
+those sites moves on when the file is absent. That makes **named but absent** the same state
+as **not named**, and the two are opposite failures: the first is a role whose action reads
+nothing where it says it reads a page, the second is a role with nothing to say. Only the
+second was ever reported.
+
+`check_tool_grants` is blind to it from the other end, and for a reason worth stating. It
+builds a skill's prose surface by globbing `reference/*.md` **on disk** and reporting the
+pages no action names — the orphan direction — so a name with no file is one its loop never
+visits. Delete a topic page and leave its citation in `SKILL.md` and all seven gates pass.
+The one line that moves is worse than silence: `grants `AskUserQuestion` but the prose never
+mentions it`, which names the *grant* as the suspect when the defect is that the page
+documenting the need is gone, and whose remedy — drop the grant — removes a capability the
+role still uses. Cite a page that was never created at all and nothing anywhere prints.
+
+So the dangling direction lives here, where the names are iterated, exactly as the orphan
+direction lives there, where the files are. It is an **error**, not a warning: a companion
+sits inside the role's own directory and arrives in the role's own change, so there is no
+other branch for it to be waiting on — the absent-input rule the contract check follows does
+not apply — and a role shipped with a dead citation is broken for the user who installs it
+whatever tree it came from. Across every open head today zero citations dangle, so this
+reddens nothing: it is a regression gate with live input, not one waiting for its input to
+land.
+
+The surface is exactly the one `measured_load` resolves — the preamble's markdown links, the
+`reference/` topics the role names, and the `templates/` the role or one of those topics
+names. A link a role writes **below** its first `## ` heading is out of it, as it is out of
+the ceiling above. Widening discovery past the preamble is a question `check_tool_grants` and
+`check_delegation_grants` answer the same way, and one gate must not widen alone. The
+`docs/*.md` pages a role links from a rule body are the live case that boundary leaves
+unmeasured, and closing it is a change to all three gates at once.
