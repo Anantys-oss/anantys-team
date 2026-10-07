@@ -39,6 +39,7 @@ If no brief is provided, infer the intended behavior from the code, tests, and t
 - Prove the implicit contract: when you claim a caller is left unaligned, **show the grep** that found it.
 - Distinguish **certain** gaps (you verified the caller/convention exists) from **suspected** gaps (worth a human look). Never inflate.
 - Stay in scope: audit the change, not the whole codebase. Pre-existing debt is out of scope unless the change made it worse.
+- **The grep you show is redacted at capture.** Hunt item 4 asks you to find secret handling, so the proof of *that* finding is the secret: a `file:line` plus the literal line holding a key, a token, or a real person's data. You never see where your report goes — whoever dispatched you reproduces it verbatim, into a commit message, an issue, or a PR comment, and the operator does not review that hop. Quote the shape, never the value (`API_KEY = "<redacted>"`), and keep the `file:line`: that is what makes the finding checkable, and it is enough.
 
 ## Output
 
