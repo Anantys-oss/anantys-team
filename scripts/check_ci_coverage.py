@@ -64,10 +64,8 @@ with no while the trigger still says yes, and neither is visible to a reader of
 the `on:` block:
 
 - `continue-on-error: true` on the step, or on the job around it. The gate runs,
-  prints every error it found, exits 1, and the check is green. This is the worst
-  of the lot: it reads as a considered exemption, it is one line, and it is the
-  only way to neuter a gate while leaving the `run:` line a reviewer looks for
-  exactly where they expect it.
+  prints every error it found, exits 1, and the check is green. It reads as a
+  considered exemption, and it is one line.
 - an `if:` on the step or the job. Whether the condition holds on the pull
   request that matters is not a fact in the YAML — the same unknowable the
   `paths:` case already fails closed on, so this one fails closed too.
@@ -111,6 +109,35 @@ above: the `run:` line is a real `run:` line naming the real script, and the onl
 thing wrong is that nothing ever loaded it. `unloadable` therefore disqualifies
 the workflow before `blocking` is consulted.
 
+That paragraph used to call `continue-on-error:` the *only* way to neuter a gate
+while leaving the `run:` line where a reviewer looks for it, and used that to
+justify reading the two guards per step and stopping. The claim is false, and the
+route it misses is the better-looking one, because it is inside the `run:` value
+the rest of this file worked to confine matching to:
+
+    - run: python3 scripts/check_a.py || true
+
+Eight characters, no new key, nothing for a reviewer scanning the step's keys to
+see — and GitHub's default `bash -e` stops at none of the three shapes that throw
+the gate's exit status away:
+
+- `|| …` — `-e` does not apply to the left of a `||`, and the list succeeds.
+- a pipeline — the step's status is the *last* command's, and `pipefail` is not
+  set. `python3 scripts/check_a.py | tee gate.log` is the accidental form; it is
+  a natural thing to write and it is a total neuter.
+- a trailing `&` — the gate is backgrounded and the shell exits 0 without it.
+
+`;` is deliberately not among them: under `-e` the shell stops at the failing
+command, so `gate; echo done` still fails the step. `set +e`, `if gate; then`,
+and `! gate` are the remaining apertures — stated, not covered, the same way
+`paths:` and composite actions are.
+
+These are read per *line* of a step's `run:` values rather than per step, because
+one `run: |` body legitimately gates one checker on one line and discards
+another's status on the next. The same per-line test applies to the discovery
+step, which is otherwise the one place a single `|| true` buys back every
+assertion the third error above makes.
+
 Coverage is satisfied by *any* PR-triggered workflow, so a gate may keep its own
 workflow file or join an existing one — this fixes the wiring, not the layout.
 
@@ -146,6 +173,10 @@ COMMENT = re.compile(r"(?m)(?:(?<=\s)|^)#.*$")
 # included unconditionally: whether the condition holds on the pull request that
 # matters is not a fact this file can read.
 NEUTERED = re.compile(r"^\s*(?:-\s*)?(?:continue-on-error:\s*true|if:)(?:\s|$)", re.M)
+# The same thing one level further in: a shell construct on the `run:` line that
+# throws the gate's exit status away. Matched per line, against lines that already
+# name a gate, so an unrelated pipe elsewhere in the body is not read.
+DISCARDED = re.compile(r"\|\||\||&\s*$")
 # The `pull_request` activity types that fire while the branch is still a branch.
 # Anything outside this set reports on a decision already taken.
 PREVENTIVE = {"opened", "synchronize", "reopened", "ready_for_review", "edited"}
@@ -293,15 +324,19 @@ def scan(root):
                 "runs the gate in a step that cannot fail the check"
                 if NEUTERED.search(block) else None
             )
-            executed = commands(block)
-            if not guarded and DISCOVER.search(executed):
-                discovers = True
-            for name in NAMED.findall(executed):
-                named.setdefault(name, []).append(workflow.name)
-                if guarded:
-                    why.setdefault(workflow.name, guarded)
-                else:
-                    gating.setdefault(name, []).append(workflow.name)
+            for line in commands(block).splitlines():
+                discarded = guarded or (
+                    "runs the gate in a shell construct that discards its exit status"
+                    if DISCARDED.search(line) else None
+                )
+                if not discarded and DISCOVER.search(line):
+                    discovers = True
+                for name in NAMED.findall(line):
+                    named.setdefault(name, []).append(workflow.name)
+                    if discarded:
+                        why.setdefault(workflow.name, discarded)
+                    else:
+                        gating.setdefault(name, []).append(workflow.name)
     return checkers, named, gating, why, discovers
 
 

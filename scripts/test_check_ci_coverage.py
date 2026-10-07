@@ -293,6 +293,72 @@ def test_a_guarded_step_does_not_disqualify_its_neighbour(tmp_path):
     assert "check_a.py" in errors[0], errors[0]
 
 
+def test_a_gate_whose_failure_is_swallowed_by_or_true_is_not_coverage(tmp_path):
+    tree(tmp_path, ["check_a.py"],
+         [("a.yml", ON_PR + "      - run: python3 scripts/check_a.py || true\n")])
+    errors, _ = scan_and_check(tmp_path)
+    assert len(errors) == 1, errors
+    assert "discards its exit status" in errors[0], errors[0]
+
+
+def test_a_gate_piped_to_a_log_is_not_coverage(tmp_path):
+    tree(tmp_path, ["check_a.py"],
+         [("a.yml", ON_PR + "      - run: python3 scripts/check_a.py | tee gate.log\n")])
+    errors, _ = scan_and_check(tmp_path)
+    assert len(errors) == 1, errors
+    assert "discards its exit status" in errors[0], errors[0]
+
+
+def test_a_backgrounded_gate_is_not_coverage(tmp_path):
+    tree(tmp_path, ["check_a.py"],
+         [("a.yml", ON_PR + "      - run: python3 scripts/check_a.py &\n")])
+    errors, _ = scan_and_check(tmp_path)
+    assert len(errors) == 1, errors
+    assert "discards its exit status" in errors[0], errors[0]
+
+
+def test_a_gate_chained_with_and_still_gates(tmp_path):
+    """`a && b` fails the step when `a` fails — the status is not discarded."""
+    tree(tmp_path, ["check_a.py", "check_b.py"],
+         [("a.yml", ON_PR + "      - run: python3 scripts/check_a.py && "
+                            "python3 scripts/check_b.py\n")])
+    assert scan_and_check(tmp_path) == ([], [])
+
+
+def test_a_gate_followed_by_a_semicolon_still_gates(tmp_path):
+    """GitHub runs `bash -e`, which stops at the failing command."""
+    tree(tmp_path, ["check_a.py"],
+         [("a.yml", ON_PR + "      - run: python3 scripts/check_a.py; echo done\n")])
+    assert scan_and_check(tmp_path) == ([], [])
+
+
+def test_one_discarded_line_does_not_disqualify_its_neighbour_line(tmp_path):
+    tree(tmp_path, ["check_a.py", "check_b.py"],
+         [("a.yml", ON_PR + "      - run: |\n"
+                            "          python3 scripts/check_a.py || true\n"
+                            "          python3 scripts/check_b.py\n")])
+    errors, _ = scan_and_check(tmp_path)
+    assert len(errors) == 1, errors
+    assert "check_a.py" in errors[0], errors[0]
+
+
+def test_a_pipe_elsewhere_in_the_body_does_not_uncover_the_gate(tmp_path):
+    tree(tmp_path, ["check_a.py"],
+         [("a.yml", ON_PR + "      - run: |\n"
+                            "          ls | wc -l\n"
+                            "          python3 scripts/check_a.py\n")])
+    assert scan_and_check(tmp_path) == ([], [])
+
+
+def test_discovery_whose_failure_is_swallowed_does_not_run_the_tests(tmp_path):
+    tree(tmp_path, ["check_a.py", "test_check_a.py"],
+         [("a.yml", ON_PR + RUN_A
+                    + "      - run: python3 -m unittest discover -s scripts || true\n")])
+    errors, _ = scan_and_check(tmp_path)
+    assert len(errors) == 1, errors
+    assert "unittest discover" in errors[0], errors[0]
+
+
 def test_discovery_in_a_step_that_cannot_fail_does_not_run_the_tests(tmp_path):
     tree(tmp_path, ["check_a.py", "test_check_a.py"],
          [("a.yml", ON_PR + RUN_A + DISCOVER + "        continue-on-error: true\n")])
