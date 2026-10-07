@@ -408,6 +408,9 @@ A full re-run after a fix pass is expensive and mostly re-confirms green. Instea
 4. Run that subset with the same rules as `run` — run mode included — and append a run section
    marked `retest` with its environment.
 
+A subset containing only `PASS (unstable)` rows is a retest worth running: there is no fix to
+confirm, the point is the second trial the first run did not give them. Say that is what it is.
+
 State the subset before running it, and say plainly what you are **not** re-testing.
 
 ### A green retest is a fix only when something names the change
@@ -460,8 +463,18 @@ then PASS inside one scenario. Record it rather than discard it:
   FAIL that would not reproduce. What they must not have to do is notice it themselves from a
   progress table reading 100% green.
 
+The retest subset is not enough on its own, because it is a channel that only opens when something
+*else* failed. An unstable PASS keeps its PASS status everywhere a status is counted — correctly: it
+did pass — so a campaign whose only shaky result is this one produces a green table, an empty
+defect list, and no reason for anyone to invoke `retest`. The run log holds the evidence and nothing
+reads it. **So an unstable PASS is carried, by id, on every surface that answers "can this ship?"** —
+the progress table, `status` and `qa-report.md`'s release verdict (each says how below), and it makes
+a `retest` due even when nothing failed. Not as a status and not as a column: a `PASS (unstable)` is
+a PASS whose evidence disagrees with itself, which is a sentence the counts cannot hold.
+
 An assertion that answers differently on the same build has been verified neither way — and that
-sentence does not stop being true when the run that disagreed with itself was the first one.
+sentence does not stop being true when the run that disagreed with itself was the first one, nor
+when it is the only one the campaign recorded.
 
 ## `note` — record an operator adjudication
 
@@ -513,8 +526,10 @@ session** that has the spec context but not yours. For each open defect:
   regress. This is the part a fresh dev agent cannot know, and the reason over-fixes ship.
 
 Close with the release verdict: the blocker list, its status, and — explicitly — the assertions
-that were never observed. **Passing every blocker is not the same as having tested everything**;
-say which gaps a green list is hiding.
+that were never observed, plus the ones recorded `PASS (unstable)` on this environment and not yet
+adjudicated. Those two groups answer different questions and both belong here: one was never
+observed, the other was observed twice and disagreed. **Passing every blocker is not the same as
+having tested everything**; say which gaps a green list is hiding.
 
 Tell the operator the file is ready to paste into a dev session. Do not open issues or PRs.
 
@@ -523,8 +538,9 @@ Tell the operator the file is ready to paste into a dev session. Do not open iss
 For the selected environment (`--env <name>`, else the most recent run's — say which), read
 `qa-plan.md` + `qa-runs.md` and report, without running anything: the progress table
 (PASS / DEFECT / BLOCKED / Not run), the blocker list with each blocker's status, the open
-defects, and the never-observed gaps. One short table, then the single sentence that answers
-"can this ship?".
+defects, the never-observed gaps, and the un-adjudicated `PASS (unstable)` assertions. One short
+table, then the single sentence that answers "can this ship?" — which cannot be an unqualified yes
+while an unstable PASS is open: name it there, and say a retest or a `note` is what closes it.
 
 ---
 
@@ -557,6 +573,19 @@ as PASS. **Done** = has a result on this environment (PASS, DEFECT or BLOCKED). 
 percentages, so never adjust a count to make the percentages add up. Round each percentage to a
 whole number on its own; show a non-zero value below 1% as `<1%` (never `0%`) and a value above
 99% but short of 100% as `>99%` (never `100%`).
+
+A `PASS (unstable)` counts as PASS here too, so the table alone cannot show one — the counts are
+read from `qa-plan.md` and instability is recorded in `qa-runs.md` (see "A PASS is a single
+observation too"). When the selected environment's run log holds any un-adjudicated one, follow the
+table with exactly one line naming them, which is the only thing in this section read from the run
+log:
+
+```markdown
+⚠️ Unstable: A7, A12 — passed on a retry, verified neither way. `retest` or `note` closes them.
+```
+
+Not a column and not a status: a sixth column would break `Done = PASS + DEFECT + BLOCKED`, and the
+assertion genuinely passed. The line is what stops a green table from being the whole answer.
 
 ---
 
