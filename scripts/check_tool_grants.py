@@ -26,6 +26,16 @@ and it has no bash fence — it runs `mkdir -p` mid-sentence. The three grants i
 narrows were never compared against anything, and the gate printed OK. See
 `bash_commands`.
 
+Both directions have one blind spot, and it is the widest grant in the tree.
+Bare `Bash` is in `GENERIC`, so the mention check skips it; it is no `Bash(...)`
+prefix, so `UNBOUNDED` cannot see it; and it permits every command the prose
+runs, so the comparison has nothing to reject. `Bash(git:*)` — strictly
+narrower — is an error whose remedy is more work than writing `Bash`, which is
+more authority and no findings. A gate may not forbid the grant most roles here
+genuinely need, so `main` prices it instead: one per-tree warning naming the
+roles it cannot speak about. What it does forbid is a prefix sitting *beside*
+bare `Bash`, where the audit records a restriction the same frontmatter voids.
+
 Errors that predate this gate are declared in `tool-grants-baseline.txt` rather
 than fixed here — see `baseline()` for why the gate may not fix its own subject.
 
@@ -207,23 +217,38 @@ def check(path, grants, body, known_mcp, agents=()):
     if "browser" in lowered and not mcp_granted:
         errors.append("prose commits to driving a browser but grants no browser tool")
 
-    # A narrowing that bounds only the first word is not a narrowing, and the
-    # mention check cannot catch it: its single warning says the prose never
-    # names the grant, so its remedy is to write the word. Discharging it leaves
-    # the unbounded grant in place and removes the last signal about it.
-    for prefix in sorted(bash_grants & UNBOUNDED):
-        errors.append(
-            f"`Bash({prefix}:*)` is not a narrowing — `{prefix}` runs other "
-            f"commands; grant the subcommands it needs"
-        )
+    if has_bare_bash:
+        # A prefix alongside bare `Bash` bounds nothing — the same frontmatter
+        # already permits everything it excludes. The `UNBOUNDED` error below
+        # would read as if the prefix were the problem, and its remedy — name
+        # the subcommands — leaves the set just as wide. So the contradiction
+        # is the error, and `drop one` is the only remedy that changes anything.
+        for prefix in sorted(bash_grants):
+            errors.append(
+                f"`Bash({prefix}:*)` is void — bare `Bash` is granted in the "
+                f"same set, so the prefix excludes nothing; drop one"
+            )
+    else:
+        # A narrowing that bounds only the first word is not a narrowing, and the
+        # mention check cannot catch it: its single warning says the prose never
+        # names the grant, so its remedy is to write the word. Discharging it leaves
+        # the unbounded grant in place and removes the last signal about it.
+        for prefix in sorted(bash_grants & UNBOUNDED):
+            errors.append(
+                f"`Bash({prefix}:*)` is not a narrowing — `{prefix}` runs other "
+                f"commands; grant the subcommands it needs"
+            )
 
-    if bash_grants and not has_bare_bash:
-        # First word of each prefix: `Bash(git diff:*)` heads at `git`, so a
-        # one-word span `git` is a candidate the narrowed grant then rejects.
+        # No `bash_grants` at all is this direction's severest case, not a reason
+        # to skip it: the role documents a command it cannot run. The guard used
+        # to require a non-empty set, which is why the module's *first*-named
+        # failure — prose needs a tool the frontmatter withholds — was reachable
+        # only for a role that already held some `Bash(...)`.
         heads = {p.split()[0] for p in bash_grants} | UNBOUNDED
         for cmd in sorted(bash_commands(body, heads, known_mcp)):
             if not permitted(cmd, bash_grants):
-                errors.append(f"prose runs `{cmd}` but only {sorted(bash_grants)} are granted")
+                held = f"only {sorted(bash_grants)} are" if bash_grants else "no Bash grant is"
+                errors.append(f"prose runs `{cmd}` but {held} granted")
 
     # Dispatching an agent needs `Task`, and the prose names the agent, never the
     # tool — so this direction is invisible to the mention check below. It is the
@@ -317,6 +342,21 @@ def main(root):
 
     for stale in sorted(declared - matched):
         print(f"WARN  fixed, so delete from {BASELINE.name}: {stale}")
+
+    # Bare `Bash` is the widest grant in this tree and the one shape both
+    # directions are blind to: `GENERIC` exempts it from the mention check, it
+    # is no `Bash(...)` prefix so `UNBOUNDED` cannot see it, and it permits
+    # every command the prose runs. `Bash(git:*)` — strictly narrower — is an
+    # error, so widening to bare `Bash` is the cheapest way to clear that error
+    # and lands on the only grant nothing reports. Most roles here legitimately
+    # need broad shell, so this is coverage, not a ruling: it is per-tree and a
+    # warning, and it names the roles so the silence is attributable.
+    bare = [str(path.relative_to(root)) for path, p in parsed if p and "Bash" in p[0]]
+    if bare:
+        print(
+            f"WARN  {len(bare)}/{len(parsed)} roles grant bare `Bash` — unrestricted "
+            f"shell, unmeasured in both directions: {', '.join(bare)}"
+        )
 
     print("tool-grant check: FAILED" if failed else "tool-grant check: OK")
     return 1 if failed else 0

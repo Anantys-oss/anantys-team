@@ -253,6 +253,78 @@ class ProseSurface(unittest.TestCase):
         self.assertEqual(warnings, ["reference/orphan.md is not named in SKILL.md — no action loads it"])
 
 
+class BareBash(unittest.TestCase):
+    """The widest grant must not be the quietest one."""
+
+    def test_a_prefix_beside_bare_bash_is_void(self):
+        errors, _ = role(["Bash", "Bash(git:*)", "Read"], "Classify the report.")
+        self.assertEqual(len(errors), 1)
+        self.assertIn("is void", errors[0])
+        self.assertIn("drop one", errors[0])
+
+    def test_the_void_error_replaces_the_narrowing_error(self):
+        """Both would name the same grant; only one remedy changes the set."""
+        errors, _ = role(["Bash", "Bash(git:*)", "Read"], "Classify the report.")
+        self.assertNotIn("is not a narrowing", " ".join(errors))
+
+    def test_a_bounded_prefix_beside_bare_bash_is_void_too(self):
+        """`Bash(git log:*)` excludes nothing once bare `Bash` is in the set."""
+        errors, _ = role(["Bash", "Bash(git log:*)"], "Classify the report.")
+        self.assertIn("is void", errors[0])
+
+    def test_bare_bash_alone_is_not_an_error(self):
+        """Most roles here need broad shell — the gate prices it, never forbids it."""
+        errors, _ = role(["Bash", "Read"], "Classify the report.")
+        self.assertEqual(errors, [])
+
+    def test_prose_runs_a_command_with_no_bash_grant_at_all(self):
+        """The module's first-named direction, on the population it is worst for."""
+        errors, _ = role(["Read"], "```bash\nrm -rf build\n```")
+        self.assertIn("`rm -rf build`", errors[0])
+        self.assertIn("no Bash grant is granted", errors[0])
+
+    def test_no_bash_grant_and_no_commands_still_passes(self):
+        errors, _ = role(["Read"], "Classify the report. Nothing else.")
+        self.assertEqual(errors, [])
+
+
+class BareBashCoverage(unittest.TestCase):
+    """`main` must name the roles it cannot speak about."""
+
+    def setUp(self):
+        import tempfile
+
+        self.root = Path(tempfile.mkdtemp())
+        self.skill = self.root / "plugins/p/skills/s/SKILL.md"
+        self.skill.parent.mkdir(parents=True)
+        self.addCleanup(setattr, c, "BASELINE", c.BASELINE)
+        c.BASELINE = self.root / "baseline.txt"
+
+    def _run(self, grants):
+        import contextlib
+        import io
+
+        self.skill.write_text(
+            f"---\nallowed-tools: {grants}\n---\nClassify the report.\n", encoding="utf-8"
+        )
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            code = c.main(self.root)
+        return code, out.getvalue()
+
+    def test_bare_bash_is_reported_and_attributed(self):
+        code, report = self._run("Bash, Read")
+        self.assertEqual(code, 0)
+        self.assertIn("1/1 roles grant bare `Bash`", report)
+        self.assertIn("plugins/p/skills/s/SKILL.md", report)
+
+    def test_a_narrowed_role_is_not_reported(self):
+        """Positive control: the warning must distinguish the two grant shapes."""
+        code, report = self._run("Bash(git log:*), Read")
+        self.assertEqual(code, 0)
+        self.assertNotIn("grant bare `Bash`", report)
+
+
 class Baseline(unittest.TestCase):
     """A gate must be introducible green while its violations still exist."""
 
