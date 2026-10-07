@@ -367,5 +367,63 @@ class DeletingTheContractIsNotAnAbsentContract(unittest.TestCase):
         self.assertTrue(cp.warnings)
 
 
+class ARoleIsDescribedNotJustNamed(unittest.TestCase):
+    """README's mention has to be prose, because prose is what a user reads.
+
+    The membership test ran over the whole file. The "Repository layout" block names
+    every role's path, so that listing alone answered for all of them: the role table
+    could be deleted with zero errors, and a new role joined the user-facing surface
+    on one line of ASCII tree. The install and usage snippets do the same.
+    """
+
+    def setUp(self) -> None:
+        cp.errors.clear()
+        cp.warnings.clear()
+        self.tmp = tempfile.TemporaryDirectory()
+        cp.ROOT = Path(self.tmp.name).resolve()
+        self.addCleanup(self.tmp.cleanup)
+        self.addCleanup(setattr, cp, "merge_base", cp.merge_base)
+        cp.merge_base = lambda: None  # the tmp tree is not a git repo
+
+        plugin = cp.ROOT / "plugins/p"
+        (plugin / ".claude-plugin").mkdir(parents=True)
+        (plugin / "agents").mkdir()
+        role = plugin / "skills/anantys.newrole"
+        role.mkdir(parents=True)
+        (role / "SKILL.md").write_text(
+            "---\nname: anantys.newrole\ndescription: d\n---\n", encoding="utf-8"
+        )
+        entry = {"name": "p", "version": "1.0.0", "description": "a plugin"}
+        (plugin / ".claude-plugin/plugin.json").write_text(json.dumps(entry))
+        (cp.ROOT / ".claude-plugin").mkdir()
+        (cp.ROOT / ".claude-plugin/marketplace.json").write_text(
+            json.dumps({"plugins": [dict(entry, source="plugins/p")]})
+        )
+
+    def readme(self, text: str) -> list[str]:
+        (cp.ROOT / "README.md").write_text(text, encoding="utf-8")
+        with contextlib.redirect_stdout(io.StringIO()):
+            cp.main()
+        return [e for e in cp.errors if "README" in e]
+
+    def test_a_prose_description_satisfies_it(self) -> None:
+        self.assertEqual(self.readme("`anantys.newrole` refines a page.\n"), [])
+
+    def test_a_path_in_a_layout_block_does_not(self) -> None:
+        errors = self.readme("```\nskills/anantys.newrole/SKILL.md\n```\n")
+        self.assertEqual(len(errors), 1)
+        self.assertIn("outside a code block", errors[0])
+
+    def test_a_usage_snippet_does_not(self) -> None:
+        self.assertEqual(len(self.readme("```bash\n/anantys.newrole go\n```\n")), 1)
+
+    def test_prose_between_two_blocks_survives_the_strip(self) -> None:
+        # A non-greedy fence match that spanned block-to-block would eat the middle.
+        self.assertEqual(self.readme("```\na\n```\nanantys.newrole\n```\nb\n```\n"), [])
+
+    def test_a_role_named_nowhere_is_still_an_error(self) -> None:
+        self.assertEqual(len(self.readme("# anantys-team\n")), 1)
+
+
 if __name__ == "__main__":
     unittest.main()

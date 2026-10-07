@@ -17,6 +17,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 ROLE_MAX_LINES = 200  # see docs/adding-a-role.md — a role loads in full, every invocation
 CONTRACT = "TEAM-CONTRACT.md"  # the rules every role in a plugin shares; each must link it
+#: A fenced block in README — a layout listing, an install snippet, a usage example.
+#: Matched non-greedily from one fence to the next so the gaps between blocks survive.
+FENCED = re.compile(r"^```.*?^```", re.S | re.M)
 
 #: How a role names a topic file an action loads on top of its always-loaded set.
 #: Same literal as ``check_tool_grants`` and ``check_delegation_grants``: the
@@ -375,11 +378,17 @@ def main() -> int:
                     f"description claims {claimed.group(1)} {noun}, tree has {actual}"
                 )
 
-        # README is the only place a user reads before installing.
-        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        # README is the only place a user reads before installing — so the mention has
+        # to be prose. Tested over the whole file, the "Repository layout" block named
+        # every role's path, and that listing alone satisfied all seven: the role table,
+        # the only text that says what a role *does*, deleted with zero errors, and a
+        # new role joined the user-facing surface on one line of ASCII tree. Same unit
+        # mismatch as the ceiling above — the reason says "reads", the measurement
+        # accepted "appears". Fenced blocks are not read; drop them first.
+        readme = FENCED.sub("", (ROOT / "README.md").read_text(encoding="utf-8"))
         for name in [d.name for d in skills] + [a.stem for a in agents]:
             if name not in readme:
-                errors.append(f"README.md does not mention `{name}`")
+                errors.append(f"README.md does not describe `{name}` outside a code block")
 
     for warning in warnings:
         print(f"warning: {warning}")
