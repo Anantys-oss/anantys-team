@@ -73,6 +73,12 @@ diff, wrong for a second opinion.
   from *suspected* by whether it can point at the caller, convention or requirement that makes the
   gap a gap. Restate those items in your own voice and every one of them is silently re-graded by
   your confidence instead of its anchor.
+- **One edit to a quoted item is not a paraphrase: redacting a secret out of its evidence field.**
+  The auditor's own hunt list includes secret handling, so a 🔴 of that class carries the value it
+  reports *as* its proof — and your Close and Merge outcomes publish `<reason>` to a PR comment,
+  which is public and permanent. Keep the `file:line`, the tier and the anchor; replace the value
+  with its shape (`Bearer <redacted>`). Calibration lives in those three, never in the literal — so
+  this is the one case where reproducing the report unchanged is the lossy option.
 - **An un-rebutted 🔴 forecloses Merge.** That tier is named *Must-fix before merge*: it is the
   auditor's verdict on the same question as yours, from a context constituted to disagree with you.
   Answer each one with evidence — the caller it names does not exist, the convention it cites was
