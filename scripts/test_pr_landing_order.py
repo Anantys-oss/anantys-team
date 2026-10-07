@@ -1512,5 +1512,98 @@ class AnEditBothSidesAgreeOnIsNotAConflict(unittest.TestCase):
         self.assertEqual(p.relocations("main", self.prs(), edges), {})
 
 
+class TheTrimIsNotTheRegression(unittest.TestCase):
+    """The same control, on the blame half of the same sentence.
+
+    `clearing` already refuses to *credit* a blocked candidate for a gate the
+    trim turned green. The symmetric case is a gate the trim turned **red**: it
+    was green in the round, it is red in the tree the candidate was tested in,
+    and the candidate had nothing to do with either. The baseline for "what else
+    does this break" is therefore the trimmed round, not the round — the same
+    tree the credit half is already measured against.
+
+    Two gates, each wanting a file. The round provides one of them, so it is red
+    on the other. The candidate provides the missing file and conflicts with the
+    member that provided the first — so trimming its blocker out takes that file
+    with it, and the gate it satisfied goes red beside the one the candidate just
+    fixed.
+    """
+
+    NEEDS_X = Clearing.NEEDS
+    NEEDS_Z = ("import pathlib, sys\n"
+               "if not pathlib.Path('z.txt').exists():\n"
+               "    sys.exit('error: z.txt is missing')\n")
+
+    git = Clearing.git
+    branch = Clearing.branch
+
+    def setUp(self):
+        self.dir = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.dir)
+        self.addCleanup(os.chdir, os.getcwd())
+        os.chdir(self.dir)
+        self.git("init", "-q", "-b", "main")
+        self.git("config", "user.email", "t@example.com")
+        self.git("config", "user.name", "t")
+        Path("scripts").mkdir()
+        Path("scripts/check_needs_x.py").write_text(self.NEEDS_X)
+        Path("scripts/check_needs_z.py").write_text(self.NEEDS_Z)
+        Path("scripts/check_forbids_y.py").write_text(Clearing.FORBIDS)
+        Path("scripts/test_nothing.py").write_text(
+            "import unittest\n\n"
+            "class T(unittest.TestCase):\n"
+            "    def test_ok(self):\n        pass\n")
+        Path("role.md").write_text("# Role\n")
+        self.git("add", "-A")
+        self.git("commit", "-qm", "base")
+        self.git("update-ref", "refs/remotes/origin/main", "main")
+        self.base = self.git("rev-parse", "main").strip()
+        # #1 satisfies check_needs_z, and owns `shared.md`.
+        self.branch("provides-z", {"z.txt": "here\n", "shared.md": "z\n"})
+        # #2 is the rest of the round: it satisfies nothing.
+        self.branch("round", {"role.md": "# Role\n\nedited\n"})
+        # #3 satisfies check_needs_x, and collides with #1 on `shared.md`.
+        self.branch("provides-x", {"x.txt": "here\n", "shared.md": "x\n"})
+        self.landed = [(1, "provides-z"), (2, "round")]
+        self.refs = {1: "provides-z", 2: "round", 3: "provides-x"}
+        self.failing = ["check_needs_x.py"]
+
+    def report(self, edges_=None):
+        return "\n".join(p.clearing(self.base, self.landed, [3],
+                                    self.failing, edges_ or {}, self.refs))
+
+    def test_the_round_is_red_on_x_and_green_on_z(self):
+        results = p.run_checkers(p.union_tree(self.base, self.landed)[0])
+        self.assertNotEqual(results["check_needs_x.py"][0], 0)
+        self.assertEqual(results["check_needs_z.py"][0], 0)
+
+    def test_the_trim_is_what_turns_the_other_gate_red(self):
+        # The premise: without #1 the tree loses z.txt, and the candidate is
+        # standing in it when check_needs_z goes red.
+        trimmed = p.union_tree(self.base, [(2, "round"), (3, "provides-x")])[0]
+        results = p.run_checkers(trimmed)
+        self.assertEqual(results["check_needs_x.py"][0], 0)
+        self.assertNotEqual(results["check_needs_z.py"][0], 0)
+
+    def test_a_blocked_candidate_is_credited_for_what_it_clears(self):
+        self.assertIn("#3 clears check_needs_x.py", self.report(edges((1, 3))))
+
+    def test_a_gate_the_trim_turned_red_is_not_the_candidates_doing(self):
+        out = self.report(edges((1, 3)))
+        self.assertNotIn("check_needs_z.py red", out)
+        self.assertNotIn("trades", out)
+
+    def test_an_unblocked_candidate_is_still_judged_against_the_round(self):
+        # Control: no conflict means no trim, so the round is the baseline and a
+        # genuine green-to-red transition must still be reported.
+        self.branch("breaks-y", {"x.txt": "here\n", "y.txt": "here\n"})
+        self.refs[4] = "breaks-y"
+        out = "\n".join(p.clearing(self.base, self.landed, [4],
+                                   self.failing, {}, self.refs))
+        self.assertIn("#4 clears check_needs_x.py", out)
+        self.assertIn("check_forbids_y.py red", out)
+        self.assertIn("trades", out)
+
+
 if __name__ == "__main__":
     unittest.main()

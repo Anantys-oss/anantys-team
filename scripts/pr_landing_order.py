@@ -924,6 +924,16 @@ def clearing(base, landed, remaining, failing, edges, refs):
     it is a landing-order fact, and the only alternative wording this has is
     "a defect in the assembled tree", which would be false.
 
+    The trim runs in the other direction too, and the baseline is one baseline.
+    A blocker can be the *provider* a gate wants, not the cause of its red: take
+    it out and a gate green in the round is red in the tree the candidate was
+    tested in, with the candidate again merely standing there. Measured against
+    the round, that reads back as "it also turns X red — the move trades one
+    failure for another", which is an instruction to decline a move that fixed
+    what it claimed to. Credit and blame are the same comparison and must use the
+    same tree: green in the trimmed round, red once the candidate joins it.
+    Unblocked, nothing was removed and the trimmed round is the round.
+
     Every gate is re-run, not only the failing ones. `only=failing` is the right
     narrowing for `per_member`, which asks about one gate on purpose; here the
     output is an *instruction* — "move it here" — and that is a claim about the
@@ -948,10 +958,6 @@ def clearing(base, landed, remaining, failing, edges, refs):
         if refused:
             continue
         results = run_checkers(commit)
-        # Green in the round, red once this candidate joins it. A gate missing
-        # from the fold counts as unresolved, not as cleared.
-        broke = sorted(name for name, (code, _) in results.items()
-                       if code and name not in failing)
         key = tuple(blocked)
         if key and key not in trims:
             kept, _, denied = union_tree(base, trimmed)
@@ -959,8 +965,15 @@ def clearing(base, landed, remaining, failing, edges, refs):
                 name for name, (code, _) in run_checkers(kept).items() if code}
             for name in set(failing) - trims[key]:
                 removal.setdefault(name, set()).update(blocked)
+        # One baseline, both directions: the tree the candidate actually joined.
+        # Unblocked, nothing was removed and that tree is the round itself.
+        baseline = trims.get(key, failing)
+        # Green in the baseline, red once this candidate joins it. A gate missing
+        # from the fold counts as unresolved, not as cleared.
+        broke = sorted(name for name, (code, _) in results.items()
+                       if code and name not in baseline)
         for name in failing:
-            if name not in trims.get(key, failing):
+            if name not in baseline:
                 continue
             if results.get(name, (1, []))[0] == 0:
                 cleared[name].append((number, blocked, broke))
