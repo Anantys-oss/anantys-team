@@ -21,17 +21,24 @@ So the loader is one input here, not the gate. The two checks below cover the
 gap that matters, both of which end the same way — a capability declaration
 that silently stops applying:
 
-  1. **Frontmatter keys must be recognized, and declared once.** `allowed_tools:`
-     is not `allowed-tools:`; the block parses, the key is ignored, and the skill
-     loads with its grants unset. `anantys.ops` narrows Bash to three verbs — one
-     underscore un-narrows it, and nothing anywhere in this repo or in the
-     loader says a word. A key declared *twice* is the same silent drop without
-     the typo: YAML keeps the last occurrence, discards the earlier one, and
-     `claude plugin validate` was measured to pass the file. Both declarations
-     read as live in the block, so the one that is not loaded is the one a
-     reviewer is as likely to be reading — and the check below must read the
-     one the loader keeps, or it shape-checks a list that was thrown away and
-     leaves the live one unexamined.
+  1. **A grant key must be present, recognized, and declared once.** The three
+     edits land in one load-time state, so they are charged one way.
+     `allowed_tools:` is not `allowed-tools:`; the block parses, the key is
+     ignored, and the skill loads with its grants unset. `anantys.ops` narrows
+     Bash to three verbs — one underscore un-narrows it, and nothing anywhere
+     in this repo or in the loader says a word. Deleting the key outright lands
+     in that same state by a cleaner-looking edit: a component with no grant
+     key holds every tool the session holds, which is strictly wider than any
+     list it could have written, and no narrowing a reader sees in the diff
+     survives. Omitting the key is legal upstream; it is not legal here, and
+     `check_plugins.py` already errors on an agent that omits `tools`. A key
+     declared *twice* is the same silent drop without the typo: YAML keeps the
+     last occurrence, discards the earlier one, and `claude plugin validate`
+     was measured to pass the file. Both declarations read as live in the
+     block, so the one that is not loaded is the one a reviewer is as likely to
+     be reading — and the check below must read the one the loader keeps, or it
+     shape-checks a list that was thrown away and leaves the live one
+     unexamined.
   2. **Tool identifiers must be well-shaped.** An MCP tool is
      `mcp__server__tool`; a single underscore anywhere in that name makes it a
      tool that does not exist, the skill loads without it, and the prose that
@@ -125,6 +132,10 @@ def frontmatter_keys(path: Path) -> tuple[list[str], str]:
 
 def check_component(path: Path, known: frozenset[str], tools_key: str) -> None:
     keys, block = frontmatter_keys(path)
+    if not block:
+        # No readable block: `frontmatter_keys` already said why, and every check
+        # below would restate the same drop under a narrower name.
+        return
     for key in keys:
         if key not in known:
             errors.append(
@@ -154,10 +165,29 @@ def check_component(path: Path, known: frozenset[str], tools_key: str) -> None:
     # it actually loaded unexamined. The duplicate is reported above; reading it the
     # loader's way is what keeps this check pointed at the live declaration anyway.
     found = re.findall(rf"^{tools_key}:(.*(?:\n[ \t]+.*)*)$", block, re.MULTILINE)
+    # `is None`, not truthiness, on every branch below: a key declared with nothing
+    # under it yields the empty string, and that is the absent-key case's opposite —
+    # it is the case the empty-grant error further down exists for.
     declared = found[-1] if found else None
-    # `is not None`, not truthiness: a key declared with nothing under it yields the
-    # empty string, and that is the case the empty-grant error below exists for.
-    if declared is not None:
+    if declared is None and any(key.replace("_", "-") == tools_key for key in keys):
+        # A near-miss spelling is already an error above, and it names the cause.
+        # Adding "no `allowed-tools:`" on top of it is a second diagnosis for one
+        # edit — the failure mode this whole check exists to stop.
+        return
+    if declared is None:
+        # The empty-list error below is justified by reading "exactly like a file
+        # that never declared the key" — so the absent key cannot be the clean
+        # case. It is the same load-time state reached by the tidiest edit of the
+        # three, and the one no other gate names: `check_tool_grants` keys off the
+        # same input and answers "prose uses browser tool `navigate` but it is not
+        # granted", prescribing more authority for a component that just acquired
+        # all of it.
+        errors.append(
+            f"{rel(path)}: no `{tools_key}:` — the component loads with every tool the "
+            "session holds, wider than any list it could declare, and wider than the "
+            "narrowing a reader sees in its prose"
+        )
+    else:
         # Split on commas and line breaks only — a scoped grant is one token even
         # when it holds a space (`Bash(git diff:*)`). Splitting on whitespace
         # instead is how a grant checker comes to reject every narrowed grant it
