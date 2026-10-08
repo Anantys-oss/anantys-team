@@ -1121,5 +1121,67 @@ class TheTrimIsNotTheFix(unittest.TestCase):
         self.assertNotIn("a defect in the assembled tree", out)
 
 
+class TheQueueIsAnInput(unittest.TestCase):
+    """Every wave, round and verdict is a claim about the set collected first.
+
+    Both shapes here are silent downstream: an unknown ref answers `merge-tree`
+    with a conflict's exit status, and a truncated page answers `gh` with a
+    perfectly well-formed queue.
+    """
+
+    def git(self, *args):
+        subprocess.run(("git",) + args, check=True, capture_output=True)
+
+    def setUp(self):
+        self.dir = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.dir)
+        self.addCleanup(os.chdir, os.getcwd())
+        os.chdir(self.dir)
+        self.git("init", "-q", "-b", "main")
+        self.git("config", "user.email", "t@example.com")
+        self.git("config", "user.name", "t")
+        Path("doc.md").write_text("# Doc\n")
+        self.git("add", "doc.md")
+        self.git("commit", "-qm", "base")
+        oid = subprocess.run(["git", "rev-parse", "HEAD"], check=True,
+                             capture_output=True, text=True).stdout.strip()
+        self.git("update-ref", "refs/remotes/origin/here", oid)
+
+    def pr(self, *refs):
+        return [(n, ref, f"pr {n}", set()) for n, ref in enumerate(refs, 1)]
+
+    def test_a_fetched_head_is_reportable(self):
+        self.assertIsNone(p.unreportable(self.pr("here"), 50))
+
+    def test_an_unknown_head_is_refused_by_name(self):
+        why = p.unreportable(self.pr("here", "never-fetched"), 50)
+        self.assertIn("never-fetched", why)
+        self.assertIn("#2", why)
+
+    def test_merge_tree_cannot_tell_an_unknown_ref_from_a_conflict(self):
+        # The reason the refusal above has to exist: `conflicts()` reads exit
+        # status, and git spends status 1 on both answers.
+        unknown = subprocess.run(
+            ["git", "merge-tree", "--write-tree", "origin/here", "origin/nope"],
+            capture_output=True)
+        self.assertEqual(unknown.returncode, 1)
+
+    def test_an_unknown_head_would_otherwise_conflict_with_everything(self):
+        edges = p.conflicts(self.pr("here", "never-fetched"))
+        self.assertEqual(edges, {frozenset((1, 2)): []})
+
+    def test_a_full_page_is_read_as_a_truncated_queue(self):
+        why = p.unreportable(self.pr("here", "here"), 2)
+        self.assertIn("--limit 4", why)
+
+    def test_a_short_page_is_the_whole_queue(self):
+        self.assertIsNone(p.unreportable(self.pr("here"), 2))
+
+    def test_truncation_is_reported_before_the_refs_are_read(self):
+        # A truncated page's members are all fetchable, so checking refs first
+        # would report nothing and let the subset through.
+        self.assertIn("--limit", p.unreportable(self.pr("here", "nope"), 2))
+
+
 if __name__ == "__main__":
     unittest.main()

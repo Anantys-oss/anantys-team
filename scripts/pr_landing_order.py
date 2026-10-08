@@ -90,8 +90,16 @@ each one. It renders no judgement — the fold is prose, and a script has no
 opinion about prose. It puts the whole fold on one screen, which is the only form
 in which a human has one.
 
+Every claim above is about the queue, and the queue is an input this file reads
+from two places that can disagree: the open list comes from the API, every tree
+comes from `origin/<head>`. Nothing downstream can tell a stale or absent ref
+from a real answer — `merge-tree` returns the same status for an unknown ref as
+for a conflict — so the whole report is as good as that one collection step and
+no better. `unreportable` is where it refuses.
+
 Usage: python3 scripts/pr_landing_order.py [--limit N] [--verify] [--contracts]
-Exit 0 always — this is an operator report, not a gate.
+Exit 0 on any queue it could read — this is an operator report, not a gate. Exit
+1 only when it could not read one, which is not a verdict about the queue.
 """
 
 import argparse
@@ -110,13 +118,61 @@ def run(*args):
     return subprocess.run(args, capture_output=True, text=True, check=True).stdout
 
 
+def unreportable(prs, limit):
+    """Why this queue cannot be reported on, or None.
+
+    Two ways the input set is wrong while every line below still prints.
+
+    A head this clone has never seen is not a merge conflict, but
+    `git merge-tree --write-tree` exits 1 for an unknown ref exactly as it does
+    for a conflicted merge — `merge-tree: <ref> - not something we can merge`,
+    status 1, and `conflicts()` reads status only. So an unfetched PR is
+    recorded as colliding with *every* other PR, which files it in a terminal
+    wave of its own and keeps it out of every round `--verify` certifies. The
+    conflict graph is invented and nothing says so. `open_prs` fetches first,
+    which is what makes the API's queue and these trees one moment; what
+    survives a fetch is a head not on `origin` — a fork, a deleted branch — and
+    that is named rather than merged.
+
+    And `gh` truncates at `--limit` in silence. A queue cut short still prints
+    waves, `N-1 rebase rounds for the whole queue`, and a verified-green round,
+    each a claim about a subset presented as the queue — and the PRs it drops
+    are the oldest, which are the ones landing next. `len(prs) == limit` is the
+    only signal the API offers, so an exactly-full page is read as truncated:
+    the safe direction, since the remedy is one flag.
+    """
+    if len(prs) == limit:
+        return (f"--limit {limit} returned exactly {limit} open PRs — the page is "
+                f"full, so the queue is probably longer than this and every wave, "
+                f"rebase count and verified round below would describe a subset. "
+                f"Re-run with --limit {limit * 2}.")
+    unknown = [f"#{n} ({ref})" for n, ref, _, _ in prs
+               if subprocess.run(["git", "rev-parse", "--verify", f"origin/{ref}"],
+                                 capture_output=True).returncode]
+    if unknown:
+        return ("no `origin` ref for " + ", ".join(unknown) + " — a fork or a "
+                "deleted head. `merge-tree` reads an unknown ref as a conflict, "
+                "so these would be reported as colliding with the whole queue.")
+    return None
+
+
 def open_prs(limit):
-    """[(number, headRefName, title, {files})] for the open queue, oldest first."""
+    """[(number, headRefName, title, {files})] for the open queue, oldest first.
+
+    Fetches first: the queue is read from the API and every tree below from
+    `origin/<head>`, and nothing else makes those the same moment. A failed
+    fetch raises rather than falling back to whatever this clone last saw —
+    see `unreportable` for what a stale or missing ref does to the graph.
+    """
+    run("git", "fetch", "--quiet", "origin")
     raw = run("gh", "pr", "list", "--state", "open", "--limit", str(limit),
               "--json", "number,headRefName,title,files")
     prs = [(p["number"], p["headRefName"], p["title"],
             {f["path"] for f in p["files"]}) for p in json.loads(raw)]
-    return sorted(prs)
+    prs = sorted(prs)
+    if why := unreportable(prs, limit):
+        sys.exit(why)
+    return prs
 
 
 def stacked(prs):
