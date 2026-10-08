@@ -111,6 +111,42 @@ def test_parse_reads_both_grant_dialects(tmp_path):
     assert parse(sk) == ("y", {"Read", "Task"}, "body\n")
 
 
+def test_parse_reads_a_block_sequence_grant_list(tmp_path):
+    """The dialect the loader accepts that nothing in this tree writes yet."""
+    agent = tmp_path / "a.md"
+    agent.write_text("---\nname: x\ntools:\n  - Bash\n  - Write\nmodel: opus\n---\nbody\n")
+    assert parse(agent) == ("x", {"Bash", "Write"}, "body\n")
+
+
+def test_an_absent_grant_key_is_not_an_empty_one(tmp_path):
+    """No `tools:` key means every tool, so it cannot parse as no tools."""
+    agent = tmp_path / "a.md"
+    agent.write_text("---\nname: x\nmodel: opus\n---\nbody\n")
+    assert parse(agent) == ("x", None, "body\n")
+
+    empty = tmp_path / "b.md"
+    empty.write_text("---\nname: y\ntools: []\n---\nbody\n")
+    assert parse(empty) == ("y", set(), "body\n")
+
+
+def test_dispatching_an_agent_that_declares_no_tools_is_an_escalation():
+    """The widest grant the format has must not read as the narrowest."""
+    errors, _ = check([skill("s", {"Task", "Read"}, "ask `a` about it")], {"a": None})
+    assert len(errors) == 1, errors
+    assert "every tool" in errors[0]
+
+
+def test_an_unbounded_skill_absorbs_an_unbounded_agent():
+    """Neither declares a ceiling, so the dispatch widens nothing."""
+    errors, _ = check([("s", None, "ask `a` about it")], {"a": None})
+    assert errors == [], errors
+
+
+def test_an_unbounded_skill_holds_the_task_grant():
+    errors, _ = check([("s", None, "ask `a` about it")], {"a": {"Read"}})
+    assert errors == [], errors
+
+
 def test_parse_returns_none_without_frontmatter(tmp_path):
     plain = tmp_path / "p.md"
     plain.write_text("# no frontmatter\n")

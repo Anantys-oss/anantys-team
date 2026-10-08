@@ -19,12 +19,17 @@ dispatch verb downgrades it — "you do not dispatch it yourself", "never invoke
 `anantys.x`". That is documentation rather than a way to silence the check, and
 the objecthood is what keeps it one: see `DECLINED_TEMPLATE`.
 
+The union is only as honest as the two lists it reads, so an absent `tools:` key
+is read as the loader reads it — every tool, the widest grant in the format —
+and not as the empty set it textually resembles. See `parse()`.
+
 Usage: python3 scripts/check_delegation_grants.py [root]
 Exit 1 on errors, 0 on warnings only.
 """
 
 import re
 import sys
+from itertools import takewhile
 from pathlib import Path
 
 FRONTMATTER = re.compile(r"\A---\n(.*?)\n---\n(.*)\Z", re.S)
@@ -43,21 +48,39 @@ DECLINED_TEMPLATE = (r"\b(?:do(?:es)?\s+not|don'?t|never|rather\s+than)\s+(?:\w+
 # a markdown block: paragraph, bullet, or numbered step — the unit a disclaimer scopes to
 BLOCK = re.compile(r"\n\s*\n|\n(?=\s*(?:[-*+]\s|\d+\.\s))")
 REFERENCE_LINK = re.compile(r"`(reference/[\w.-]+\.md)`")
+# a YAML block sequence item under the grant key: "  - Bash"
+BLOCK_ITEM = re.compile(r"\A\s+-\s*(.+?)\s*\Z")
 
 
 def parse(path):
-    """Return (name, grants, body), or None when the file has no frontmatter."""
+    """Return (name, grants, body), or None when the file has no frontmatter.
+
+    `grants` is `None` when the file declares no grant key at all. That is not
+    an empty set — it is the widest declaration the format has. The loader hands
+    a `tools:`-less agent every tool the dispatcher holds, so reading the absent
+    key as `set()` scores the unbounded case as the narrowest one and certifies
+    every dispatch of it. `tools: []` is the opposite claim and stays a set.
+
+    Both YAML sequence dialects count. A flow list on the key line is what the
+    agents in this tree write today; the block form under it is equally valid to
+    the loader, and an escalation written that way must not read as no grants.
+    """
     m = FRONTMATTER.match(path.read_text(encoding="utf-8"))
     if not m:
         return None
     name, field = path.stem, None
-    for line in m.group(1).splitlines():
+    lines = m.group(1).splitlines()
+    for i, line in enumerate(lines):
         if line.startswith("name:"):
             name = line.split(":", 1)[1].strip()
         elif line.startswith(("allowed-tools:", "tools:")):
-            field = line.split(":", 1)[1].strip()
+            field = line.split(":", 1)[1].strip() or ",".join(
+                it.group(1) for it in
+                takewhile(bool, map(BLOCK_ITEM.match, lines[i + 1:])))
+    if field is None:
+        return name, None, m.group(2)
     # agents write tools: ["Bash", "Read"]; skills write a bare comma list
-    grants = {g.strip().strip('"[]') for g in (field or "").split(",")}
+    grants = {g.strip().strip('"[]') for g in field.split(",")}
     return name, grants - {""}, m.group(2)
 
 
@@ -98,8 +121,12 @@ def declines(block, agent):
 
 
 def covers(grants, needed):
-    """Is `needed` within `grants`? `Bash` subsumes any `Bash(...)` form."""
-    if needed in grants:
+    """Is `needed` within `grants`? `Bash` subsumes any `Bash(...)` form.
+
+    `grants is None` is an absent grant key — the role declares no ceiling, so
+    nothing it dispatches can exceed one.
+    """
+    if grants is None or needed in grants:
         return True
     return needed.startswith("Bash(") and "Bash" in grants
 
@@ -117,12 +144,18 @@ def check(skills, agents):
             dispatched.add(agent)
             if all(declines(b, agent) for b in named):
                 continue  # recommended to the human, not run by the skill
-            if "Task" not in grants:
+            if not covers(grants, "Task"):
                 errors.append(
                     f"{name}: dispatches `{agent}` but has no Task grant — "
                     f"the prose describes a step the skill cannot take"
                 )
-            escalation = sorted(g for g in agent_grants if not covers(grants, g))
+            if agent_grants is None:
+                # the agent declares no tools: key, so it runs with everything
+                # the dispatcher has. Only a skill with no ceiling of its own
+                # can absorb that.
+                escalation = [] if grants is None else ["every tool (it declares none)"]
+            else:
+                escalation = sorted(g for g in agent_grants if not covers(grants, g))
             if escalation:
                 errors.append(
                     f"{name}: dispatching `{agent}` grants it {', '.join(escalation)}, "
