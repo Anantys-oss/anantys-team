@@ -37,9 +37,25 @@ file some other change lands, and a gate that reddens every branch until it arri
 an order on changes that have none. It is not silent either — a check whose input is absent
 must say so rather than print the output of a healthy run.
 
-A role over 200 lines is a *warning*, not an error: a role file is loaded in full on every
-invocation, so past that size the per-action detail belongs in a `reference/` page the
-actions table links to — and that page is counted too, see below.
+A role over 200 lines is loaded in full on every invocation, so past that size the per-action
+detail belongs in a `reference/` page the actions table links to — and that page is counted
+too, see below.
+
+**Taking a role over the ceiling is an error; finding it there is a warning.** The checker
+prices the load against the merge-base so it can tell those apart, and for a while the
+distinction changed only the wording of a warning. Measured over the open queue, four
+branches each take a role that is *clean at the base* past the ceiling on their own —
+`anantys.design` 115 → 261 and 115 → 221, `anantys.ops` 131 → 204, 131 → 213, 131 → 238 —
+and ten more add to `anantys.qa`, already at 648, one of them by 253 lines. Every one of
+those runs exits 0. A ceiling nothing ever fails is a number in a docstring.
+
+So the line is the one the contract-clause and version-bump gates already draw: a regression
+is an error, inherited debt is a warning. A crossing is a regression, and it is wholly inside
+the branch's own diff — the role, its `reference/` pages and its `templates/` all arrive in
+the same change, so the remedy is available on that branch and there is no other branch to
+wait on. That is the same test the dangling-companion error earns below. Growth above a
+ceiling the base already broke is *not* this branch's regression; it stays a warning until
+the head that splits the role lands, and the gate then holds the result.
 
 **The 200 is a ceiling on the load, not on the file.** A role's preamble — everything above
 its first `## ` heading — is where it names what binds it before it acts, so every local

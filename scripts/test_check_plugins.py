@@ -30,10 +30,16 @@ class Harness(unittest.TestCase):
         (cp.ROOT / name).write_text(lines(n), encoding="utf-8")
 
     def check(self, text: str) -> list[str]:
+        """What `check_load` reported, whichever list it went to.
+
+        The measurement and the severity are separate questions: every test below
+        about *what* is counted reads this, and the two that care *which list* read
+        `cp.errors` / `cp.warnings` directly.
+        """
         path = cp.ROOT / "SKILL.md"
         path.write_text(text, encoding="utf-8")
         cp.check_load(path)
-        return cp.warnings
+        return cp.errors + cp.warnings
 
     def baseline(self, **texts: str) -> None:
         """Pretend `texts` (file name -> content) is what the baseline commit held."""
@@ -214,6 +220,53 @@ class AgainstTheBaseline(Harness):
         cp.BASE = None
         warning, = self.check(lines(20))
         self.assertIn("loads 20 lines (> 10)", warning)
+
+
+class TheCrossingIsTheError(Harness):
+    """A ceiling nothing fails is a number in a docstring.
+
+    The baseline above separates a crossing from a standing fact; these say the
+    separation reaches the exit code. Four open heads take a clean role over the
+    ceiling on their own and every run exits 0, so this is the arm with live input.
+    """
+
+    def test_pushing_a_clean_role_over_the_ceiling_is_an_error(self) -> None:
+        self.baseline(**{"SKILL.md": lines(8)})
+        self.check(lines(20))
+        self.assertEqual([], cp.warnings)
+        error, = cp.errors
+        self.assertIn("pushes the load over the ceiling, 8 -> 20", error)
+
+    def test_a_role_this_change_adds_over_the_ceiling_is_an_error(self) -> None:
+        # Nothing to wait on: the role and its companions arrive in this diff.
+        self.baseline()
+        self.check(lines(20))
+        self.assertEqual([], cp.warnings)
+        self.assertEqual(1, len(cp.errors))
+
+    def test_growing_a_role_the_baseline_already_broke_stays_a_warning(self) -> None:
+        # Not this branch's regression — it waits on the head that fixes the role.
+        self.baseline(**{"SKILL.md": lines(20)})
+        self.check(lines(26))
+        self.assertEqual([], cp.errors)
+        self.assertEqual(1, len(cp.warnings))
+
+    def test_an_untouched_over_role_stays_a_warning(self) -> None:
+        self.baseline(**{"SKILL.md": lines(20)})
+        self.check(lines(20))
+        self.assertEqual([], cp.errors)
+
+    def test_no_baseline_is_not_an_error(self) -> None:
+        # An absent baseline cannot tell a crossing from inherited debt, and
+        # guessing the stricter reading reddens every branch git cannot price.
+        cp.BASE = None
+        self.check(lines(20))
+        self.assertEqual([], cp.errors)
+
+    def test_a_shrink_that_is_still_over_stays_a_warning(self) -> None:
+        self.baseline(**{"SKILL.md": lines(26)})
+        self.check(lines(20))
+        self.assertEqual([], cp.errors)
 
 
 class TheContractBinds(Harness):

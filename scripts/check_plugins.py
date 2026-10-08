@@ -248,7 +248,7 @@ def check_companions(path: Path) -> None:
 
 
 def check_load(path: Path) -> None:
-    """Warn when a role's worst-case *one-action load* exceeds the ceiling — and say who did it.
+    """Report a role whose worst-case *one-action load* exceeds the ceiling — and say who did it.
 
     An absolute total is the same number on every branch, so a warning phrased
     only as "loads N lines" says nothing about the change being reviewed: a commit
@@ -256,7 +256,24 @@ def check_load(path: Path) -> None:
     identically. That is how a queue of individually-clean changes walks a role
     past the ceiling without any single one of them being the branch that did it.
 
-    So the load is also priced against ``BASE``, and the warning names the delta.
+    So the load is also priced against ``BASE``, and the message names the delta.
+
+    **The crossing is an error; the standing fact is a warning.** The baseline was
+    added to separate those two, and for a while the separation changed only the
+    wording. It should not: measured over the open queue, four branches each take a
+    role that is *clean at the base* past the ceiling on their own — `anantys.design`
+    115 -> 261 and 115 -> 221, `anantys.ops` 131 -> 204, 131 -> 213, 131 -> 238 — and
+    ten more add to `anantys.qa`, already at 648, one of them by 253 lines. Every one
+    of those runs exits 0. A ceiling nothing ever fails is a number in a docstring.
+
+    The line between them is the one `check_contract_clauses` and `check_version_bump`
+    already draw: a regression is an error, inherited debt is a warning. A crossing is
+    a regression and it is **wholly inside the branch's own diff** — the role, its
+    `reference/` pages and its `templates/` all arrive in the same change, so the
+    remedy is available on that branch and there is no other branch to wait on. That
+    is exactly the test ``check_companions`` used to earn its error. Growth above a
+    ceiling the base already broke is not this branch's regression, so it stays a
+    warning until the head that fixes the role lands; the gate then holds the result.
     """
     parts = measured_load(path, disk)
     total = sum(n for _, n in parts)
@@ -273,15 +290,16 @@ def check_load(path: Path) -> None:
     )
     before = sum(n for _, n in measured_load(path, lambda p: at(BASE, p))) if BASE else None
 
+    crossed = before is not None and before != total and before <= ROLE_MAX_LINES
     if before is None or before == total:
         change = f"loads {total} lines (> {ROLE_MAX_LINES})"
-    elif before <= ROLE_MAX_LINES:
+    elif crossed:
         change = f"this change pushes the load over the ceiling, {before} -> {total} (> {ROLE_MAX_LINES})"
     elif total > before:
         change = f"this change grows a load already over the ceiling, {before} -> {total} (+{total - before})"
     else:
         change = f"loads {total} lines (> {ROLE_MAX_LINES}), down from {before}"
-    warnings.append(f"{rel(path)}: {change} — {breakdown}; {remedy}")
+    (errors if crossed else warnings).append(f"{rel(path)}: {change} — {breakdown}; {remedy}")
 
 
 def check_contract(path: Path, contract: Path) -> None:
