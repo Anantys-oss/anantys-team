@@ -1029,7 +1029,8 @@ def main():
             gates = introduced(base, union_tree(base, cumulative)[0])
             if gates:
                 print("\n  A gate landing with the content it judges has judged "
-                      "none of it — the union answers it once, CI asks per PR:")
+                      "none of it — the union answers it once, and CI will ask "
+                      "per PR only once these are on the base:")
                 for line in per_member(base, cumulative, gates):
                     print(line)
     return 0
