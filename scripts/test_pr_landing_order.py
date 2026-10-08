@@ -892,7 +892,7 @@ class LinkPrecedence(unittest.TestCase):
     def test_the_pair_that_needs_ordering_has_no_conflict_to_find_it_by(self):
         prs = self.pr((1, "cites", ["docs/role.md"]),
                       (2, "writes", ["docs/why.md"]))
-        self.assertEqual(p.conflicts(prs), {})
+        self.assertEqual(p.conflicts("main", prs), {})
 
     def test_waves_place_the_provider_first(self):
         prs = self.pr((1, "cites", ["docs/role.md"]),
@@ -1167,7 +1167,7 @@ class TheQueueIsAnInput(unittest.TestCase):
         self.assertEqual(unknown.returncode, 1)
 
     def test_an_unknown_head_would_otherwise_conflict_with_everything(self):
-        edges = p.conflicts(self.pr("here", "never-fetched"))
+        edges = p.conflicts("main", self.pr("here", "never-fetched"))
         self.assertEqual(edges, {frozenset((1, 2)): []})
 
     def test_a_full_page_is_read_as_a_truncated_queue(self):
@@ -1181,6 +1181,95 @@ class TheQueueIsAnInput(unittest.TestCase):
         # A truncated page's members are all fetchable, so checking refs first
         # would report nothing and let the subset through.
         self.assertIn("--limit", p.unreportable(self.pr("here", "nope"), 2))
+
+
+class TheMergeBaseIsTheLanding(unittest.TestCase):
+    """Two heads that share a lineage past `main`, each editing it further.
+
+    The shape the queue produces constantly: a session branches off the last
+    session's head to keep its work, both stay open, and they diverge. Neither
+    contains the other, so both are in the plan — and their own merge base is
+    the tip they share, which already holds the file they now disagree about.
+    """
+
+    def git(self, *args):
+        subprocess.run(("git",) + args, check=True, capture_output=True)
+
+    def head(self, name):
+        oid = subprocess.run(["git", "rev-parse", "HEAD"], check=True,
+                             capture_output=True, text=True).stdout.strip()
+        self.git("update-ref", f"refs/remotes/origin/{name}", oid)
+
+    def setUp(self):
+        self.dir = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.dir)
+        self.addCleanup(os.chdir, os.getcwd())
+        os.chdir(self.dir)
+        self.git("init", "-q", "-b", "main")
+        self.git("config", "user.email", "t@example.com")
+        self.git("config", "user.name", "t")
+        Path("README.md").write_text("# Base\n")
+        self.git("add", "README.md")
+        self.git("commit", "-qm", "base")
+        self.head("main")
+
+        # `main` has no gate.py at all — both heads add one.
+        self.git("checkout", "-qb", "shared")
+        Path("gate.py").write_text("A\nB\nC\n")
+        self.git("add", "gate.py")
+        self.git("commit", "-qm", "the work both sessions share")
+
+        # `first` carries the shared gate.py and goes on to do its own thing
+        # elsewhere; `second` is the one that edits the gate further. From the
+        # shared tip that is a one-sided change. From `main` they are two
+        # branches adding the same new file with different contents.
+        self.git("checkout", "-qb", "first")
+        Path("notes.md").write_text("first\n")
+        self.git("add", "notes.md")
+        self.git("commit", "-qm", "first")
+        self.head("first")
+
+        self.git("checkout", "-q", "shared")
+        self.git("checkout", "-qb", "second")
+        Path("gate.py").write_text("A\nsecond\nC\n")
+        self.git("commit", "-qam", "second")
+        self.head("second")
+        self.git("checkout", "-q", "main")
+
+    def pr(self):
+        return [(1, "first", "pr 1", {"gate.py"}),
+                (2, "second", "pr 2", {"gate.py"})]
+
+    def test_git_calls_the_pair_clean_on_the_base_it_infers(self):
+        # Why the flag has to be explicit: with no `--merge-base`, git merges
+        # from `shared`, which already has gate.py, and there is nothing left
+        # to conflict over.
+        inferred = subprocess.run(
+            ["git", "merge-tree", "--write-tree", "origin/first",
+             "origin/second"], capture_output=True)
+        self.assertEqual(inferred.returncode, 0)
+
+    def test_the_pair_conflicts_on_the_base_it_will_land_against(self):
+        edges = p.conflicts("main", self.pr())
+        self.assertEqual(edges, {frozenset((1, 2)): ["gate.py"]})
+
+    def test_neither_head_is_dropped_as_contained(self):
+        # `stacked` is the other place a shared lineage is read, and it is
+        # right to keep both: each holds a commit the other does not.
+        self.assertEqual(p.stacked(self.pr()), {})
+
+    def test_the_wave_the_fold_refuses_is_not_a_wave(self):
+        # The consequence, end to end: seated together on the inferred base,
+        # the wave the operator is told to land in any order is one the fold
+        # cannot even assemble.
+        numbers = [n for n, _, _, _ in self.pr()]
+        seated = p.waves(numbers, {})
+        self.assertEqual(seated, [[1, 2]])
+        _, _, refused = p.union_tree("main", [(1, "first"), (2, "second")])
+        self.assertEqual(refused, [2])
+
+        self.assertEqual(p.waves(numbers, p.conflicts("main", self.pr())),
+                         [[1], [2]])
 
 
 if __name__ == "__main__":

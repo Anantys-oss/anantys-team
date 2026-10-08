@@ -10,7 +10,10 @@ it happens to walk into, and the cost is invisible until the merge button.
 This computes the graph instead of guessing it. Conflicts come from
 `git merge-tree --write-tree`, which performs a real merge in memory — not a
 filename-overlap heuristic, which over-reports (two PRs appending to different
-sections of one file merge cleanly) and would hide nothing useful.
+sections of one file merge cleanly) and would hide nothing useful. Always
+against `main` as the merge base, never the pair's own: the merge being
+predicted is the one onto `main`, and two heads that share a lineage past it
+share a tree that already holds whatever they contest.
 
 Output is a set of waves. A wave is a set of PRs that are mutually clean: land
 them in any order, no rebase between them. Only crossing a wave boundary costs
@@ -223,13 +226,32 @@ def rounds(order, refs):
     return out
 
 
-def conflicts(prs):
-    """{frozenset({a, b}): sorted(shared files)} for pairs that do not merge."""
+def conflicts(base, prs):
+    """{frozenset({a, b}): sorted(shared files)} for pairs that do not merge.
+
+    Measured against `base`, explicitly, because the merge the operator is
+    going to perform is onto `main` and no other tree. Left to itself
+    `merge-tree` infers the pair's own merge base, which is `main` only for
+    branches that share nothing else — and in a queue where each session
+    builds on the last, two heads routinely share a lineage well past it. That
+    shared tip already holds the content the pair contests, so the merge git
+    answers about is a no-op and the conflict is simply not there.
+
+    One such pair is enough to empty the second half of this report. Its two
+    members look independent, so `waves` seats them together; the fold that
+    assembles the wave does pin `base`, refuses one of them, and every round
+    the run would have verified becomes unassemblable. The relation the waves
+    are built from has to be the relation the fold enforces.
+
+    Neither is it caught upstream: `stacked` drops a head whose whole diff
+    another contains, and these two diverged after the tip they share, so each
+    holds commits the other does not and both stay in the plan.
+    """
     found = {}
     for i, (a, ref_a, _, files_a) in enumerate(prs):
         for b, ref_b, _, files_b in prs[i + 1:]:
             merged = subprocess.run(
-                ["git", "merge-tree", "--write-tree",
+                ["git", "merge-tree", "--write-tree", "--merge-base", base,
                  f"origin/{ref_a}", f"origin/{ref_b}"],
                 capture_output=True, text=True)
             if merged.returncode != 0:
@@ -580,10 +602,15 @@ def verify(base, refs):
              + (", ".join(f"#{n}" for n in joined) or "(none)")]
     if refused:
         held = set(refused)
+        # Not "conflict with an earlier round": that is the usual cause and the
+        # caller's `unverifiable` already says it, but round 1 has no earlier
+        # round, and a fold can refuse there too — pairwise clean is a weaker
+        # property than folds. Naming a cause this function cannot observe
+        # sends the operator to rebase onto a round that may not exist.
         lines = ["not assembled — "
                  + ", ".join(f"#{n}" for n in refused)
-                 + " conflict with an earlier round, which is why they are in "
-                   "this one; their rebased content does not exist yet",
+                 + " do not fold into the rest of this round; their resolved "
+                   "content does not exist yet",
                  "  what each one will owe once the round below lands:"]
         for number, paths in scope(
                 base, commit, [r for r in refs if r[0] in held]).items():
@@ -879,7 +906,7 @@ def main():
     if contained:
         prs = [pr for pr in prs if pr[0] not in contained]
     base = run("git", "rev-parse", "main").strip()
-    edges = conflicts(prs)
+    edges = conflicts(base, prs)
     relocated = relocations(base, prs, edges) if edges else {}
     unresolved = dangling(prs)
     order = waves([n for n, _, _, _ in prs], edges,
