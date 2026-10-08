@@ -1318,11 +1318,23 @@ class TheMergeBaseIsTheLanding(unittest.TestCase):
         Path("gate.py").write_text("A\nsecond\nC\n")
         self.git("commit", "-qam", "second")
         self.head("second")
+
+        # A third head off the same trunk that edits the same line `second`
+        # does. Shared lineage, and a disagreement its own base can see: the
+        # guard below has to keep this one.
+        self.git("checkout", "-q", "shared")
+        self.git("checkout", "-qb", "third")
+        Path("gate.py").write_text("A\nthird\nC\n")
+        self.git("commit", "-qam", "third")
+        self.head("third")
         self.git("checkout", "-q", "main")
 
     def pr(self):
         return [(1, "first", "pr 1", {"gate.py"}),
                 (2, "second", "pr 2", {"gate.py"})]
+
+    def trio(self):
+        return self.pr() + [(3, "third", "pr 3", {"gate.py"})]
 
     def test_git_calls_the_pair_clean_on_the_base_it_infers(self):
         # Why the flag has to be explicit: with no `--merge-base`, git merges
@@ -1354,6 +1366,58 @@ class TheMergeBaseIsTheLanding(unittest.TestCase):
 
         self.assertEqual(p.waves(numbers, p.conflicts("main", self.pr())),
                          [[1], [2]])
+
+    def refs(self):
+        return {n: ref for n, ref, _, _ in self.trio()}
+
+    def files(self):
+        return {n: paths for n, _, _, paths in self.trio()}
+
+    def test_equality_alone_calls_a_sibling_pair_a_rivalry(self):
+        # Why the guard exists, stated as the state without it. This fixture
+        # was written for the ordering question and never asked the rivalry
+        # one — and a shared trunk answers both halves of that signature by
+        # itself: the same file set on each side, and an add/add against a
+        # `main` that has none of it.
+        edges = p.conflicts("main", self.pr())
+        self.assertEqual(p.competing(self.files(), edges),
+                         {frozenset((1, 2))})
+
+    def test_a_pair_that_merges_at_its_own_base_is_kin(self):
+        edges = p.conflicts("main", self.pr())
+        self.assertEqual(sorted(p.siblings("main", self.refs(), edges)),
+                         [frozenset((1, 2))])
+
+    def test_the_trunk_named_is_the_commit_they_branch_from(self):
+        edges = p.conflicts("main", self.pr())
+        tip = p.siblings("main", self.refs(), edges)[frozenset((1, 2))]
+        self.assertEqual(
+            p.run("git", "log", "-1", "--format=%s", tip).strip(),
+            "the work both sessions share")
+
+    def test_kin_is_not_offered_as_a_close_decision(self):
+        edges = p.conflicts("main", self.pr())
+        kin = p.siblings("main", self.refs(), edges)
+        self.assertEqual(p.competing(self.files(), edges, kin), set())
+
+    def test_a_disagreement_its_own_base_can_see_is_still_a_rivalry(self):
+        # The guard's narrowness: #2 and #3 share the same trunk, so they are
+        # kin by lineage — and they rewrote the same line, which their own
+        # base is enough to discover. Closing one of those is the real
+        # instruction, and dropping every shared-lineage pair would lose it.
+        edges = p.conflicts("main", self.trio())
+        self.assertIn(frozenset((2, 3)), edges)
+        kin = p.siblings("main", self.refs(), edges)
+        self.assertNotIn(frozenset((2, 3)), kin)
+        self.assertIn(frozenset((2, 3)),
+                      p.competing(self.files(), edges, kin))
+
+    def test_the_ordering_edge_survives_the_guard(self):
+        # `conflicts` pins `main` because the fold does, and that stays true:
+        # kin only narrows the close instruction, never the waves.
+        edges = p.conflicts("main", self.pr())
+        self.assertIn(frozenset((1, 2)), edges)
+        self.assertEqual(p.waves([1, 2], edges), [[1], [2]])
 
 
 class ARewriteSharesNoCommit(unittest.TestCase):
@@ -1445,6 +1509,17 @@ class ARewriteSharesNoCommit(unittest.TestCase):
         # No conflict, no rivalry: two PRs can edit the same two files in
         # different places and merge clean.
         self.assertEqual(p.competing(self.files(), {}), set())
+
+    def test_two_heads_cut_from_main_have_no_trunk_to_share(self):
+        # The kin guard must not reach this shape: the pair's own merge base
+        # *is* `main`, so there is no tree where their disagreement disappears,
+        # and the rivalry it names is the real one.
+        refs = {n: ref for n, ref, _, _ in self.prs()}
+        edges = p.conflicts("main", self.prs())
+        kin = p.siblings("main", refs, edges)
+        self.assertEqual(kin, {})
+        self.assertEqual(p.competing(self.files(), edges, kin),
+                         {frozenset((1, 2))})
 
 
 class AnEditBothSidesAgreeOnIsNotAConflict(unittest.TestCase):

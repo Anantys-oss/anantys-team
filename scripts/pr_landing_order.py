@@ -373,7 +373,50 @@ def conflicts(base, prs):
     return found
 
 
-def competing(files, edges):
+def siblings(base, refs, edges):
+    """Edge pairs whose conflict is shared history, not contested content.
+
+    Returns {frozenset({a, b}): the commit the pair actually branches from}.
+
+    `conflicts` pins `--merge-base base` on purpose and has to: the fold that
+    assembles a wave pins it too, so the relation the waves are built from must
+    be the one the fold enforces. For two heads that diverged well past `main`
+    that pinning reports an add/add over every path their shared trunk created —
+    a conflict their real merge does not have. As an ordering input the
+    over-count is safe: a wave boundary where none was needed costs a rebase
+    round nobody has to run.
+
+    It is not safe for `competing`, which reads that same edge plus equal file
+    sets as "successive drafts of one change" and emits *close the other*. A
+    shared trunk guarantees equal file sets — each side carries every path the
+    trunk touched, whatever it went on to do — so the rivalry signature fires on
+    sibling heads for the very reason their conflict is false, and closing either
+    one deletes the commits it alone holds. The two readings disagree about
+    something answerable, so ask it: does the pair merge at its own base?
+
+    Over this queue's 25 edges exactly one pair has a merge base past `main`
+    (#6 and #50, thirteen commits of shared trunk), it merges clean there, and
+    it is the only pair `competing` names.
+    """
+    at = run("git", "rev-parse", base).strip()
+    out = {}
+    for pair in edges:
+        a, b = sorted(pair)
+        heads = [f"origin/{refs[a]}", f"origin/{refs[b]}"]
+        found = subprocess.run(["git", "merge-base", *heads],
+                               capture_output=True, text=True)
+        tip = found.stdout.strip()
+        # No merge base at all (unrelated histories) is not a shared trunk.
+        if found.returncode != 0 or not tip or tip == at:
+            continue
+        if subprocess.run(["git", "merge-tree", "--write-tree",
+                           "--merge-base", tip, *heads],
+                          capture_output=True).returncode == 0:
+            out[pair] = tip
+    return out
+
+
+def competing(files, edges, kin=()):
     """Conflicting pairs that change *exactly* the same files — rival authorings.
 
     `stacked` catches the case where one head's history is inside another's.
@@ -395,16 +438,25 @@ def competing(files, edges):
     Nesting is not enough — a PR that edits two of another's twelve paths is
     routinely an unrelated change that happens to collide. Equality says the
     two diffs were cut around the same unit of work, and a conflict says they
-    disagree about its content. Over this queue's 406 pairs the test fires only
-    on heads that are literally successive drafts of one checker.
+    disagree about its content.
 
-    No ordering is emitted. Both directions cost the same — nothing — because
-    only one of the two is meant to land, and which one is the operator's call:
-    the newer head carries the later audits, the older carries the review
-    history. Naming the pair is the report's job; picking is not.
+    Narrow is not sufficient. Equality was claimed to fire "only on heads that
+    are literally successive drafts of one checker", and over this queue it
+    fires on one pair that is not: two sessions that branched from a common tip
+    and extended it in different directions. A shared trunk produces both halves
+    of the signature by itself — the same file set on each side, and an add/add
+    against `main` over every one of those files — so the test cannot tell a
+    re-authoring from a sibling, and the instruction it emits is destructive in
+    the wrong direction. `kin` is `siblings`, the pairs that merge at their own
+    base; they are an ordering question and never a close.
+
+    No ordering is emitted for what survives. Both directions cost the same —
+    nothing — because only one of the two is meant to land, and which one is the
+    operator's call: the newer head carries the later audits, the older carries
+    the review history. Naming the pair is the report's job; picking is not.
     """
     return {pair for pair in edges
-            if files[min(pair)] == files[max(pair)]}
+            if files[min(pair)] == files[max(pair)] and pair not in kin}
 
 
 def anchors(base, ref, path, minimum=30):
@@ -1095,7 +1147,8 @@ def main():
         prs = [pr for pr in prs if pr[0] not in contained]
     base = run("git", "rev-parse", "main").strip()
     edges = conflicts(base, prs)
-    rival = competing(files, edges)
+    kin = siblings(base, refs, edges)
+    rival = competing(files, edges, kin)
     relocated = relocations(base, prs, edges) if edges else {}
     unresolved = dangling(prs)
     order = waves([n for n, *_ in prs], edges,
@@ -1146,6 +1199,20 @@ def main():
                    f"which a rebase would not.\n"
                  if alone else "A rebase re-applies a draft over its own "
                                "successor.\n"))
+    for pair, tip in sorted(kin.items(), key=lambda kv: sorted(kv[0])):
+        a, b = sorted(pair)
+        print(f"#{a} and #{b} branch from {run('git', 'rev-parse', '--short', tip).strip()} "
+              f"— {run('git', 'log', '-1', '--format=%s', tip).strip()} — and "
+              f"merge clean there. The conflict below is measured against "
+              f"`main`, which does not have that trunk yet, so it counts the "
+              f"files the trunk created on both sides at once. Nothing is in "
+              f"contention: each holds commits the other does not "
+              f"(#{a}: {len(run('git', 'rev-list', f'{tip}..origin/{refs[a]}').split())}, "
+              f"#{b}: {len(run('git', 'rev-list', f'{tip}..origin/{refs[b]}').split())}), "
+              f"and once either lands the trunk is on `main` and the other "
+              f"applies over it. Land them in either order; close neither. The "
+              f"wave boundary between them below is this report being "
+              f"conservative, not a rebase you owe.\n")
     for i, wave in enumerate(order, 1):
         print(f"Wave {i} — land in any order, no rebase between them:")
         for n in wave:
