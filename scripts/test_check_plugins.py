@@ -4,6 +4,7 @@
 import contextlib
 import io
 import json
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
@@ -579,6 +580,51 @@ class ANamedCompanionMustBeThere(Harness):
         warning, = self.check("`reference/big.md` `reference/gone.md`\n")
         self.assertIn("loads 17 lines", warning)
         self.assertEqual(len(self.companions("`reference/big.md` `reference/gone.md`\n")), 1)
+
+
+class DelistingATreeIsNotRemovingIt(DeletingTheContractIsNotAnAbsentContract):
+    """Deleting the contract drops every clause. Deleting the entry drops every check.
+
+    The same shape one level up: ``check_contract_clauses`` is reached only when the
+    file is on disk, and *everything* is reached only when the catalog names the tree.
+    So the cheapest way to unbind a plugin was never to edit a role — it was to drop
+    four lines of JSON. These go through ``main`` because the loop is in ``main``.
+    """
+
+    def delist(self) -> None:
+        (cp.ROOT / ".claude-plugin/marketplace.json").write_text(json.dumps({"plugins": []}))
+
+    def test_an_unlisted_tree_is_an_error(self) -> None:
+        self.held(None)
+        self.delist()
+        self.assertEqual(self.run_main(), 1)
+        error, = cp.errors
+        self.assertIn("plugins/p/.claude-plugin/plugin.json", error)
+        self.assertIn("no marketplace.json entry", error)
+
+    def test_delisting_does_not_silence_the_tree_it_hides(self) -> None:
+        # The point of the check: a role that would fail still fails after the edit.
+        self.held(None)
+        skill = cp.ROOT / "plugins/p/skills/s"
+        skill.mkdir(parents=True)
+        (skill / "SKILL.md").write_text("---\nname: wrong\n---\n")
+        self.assertEqual(self.run_main(), 1)
+        listed = list(cp.errors)
+        cp.errors.clear()
+        cp.warnings.clear()
+        self.delist()
+        self.assertEqual(self.run_main(), 1)
+        self.assertTrue(any("!= `s`" in e for e in listed))
+        self.assertFalse(any("!= `s`" in e for e in cp.errors))  # the edit still hides it
+        unlisted, = cp.errors  # but the hiding is itself the one error left
+        self.assertIn("governed by nothing", unlisted)
+
+    def test_removing_the_entry_and_the_tree_together_is_silent(self) -> None:
+        self.held(None)
+        shutil.rmtree(cp.ROOT / "plugins/p")
+        self.delist()
+        self.assertEqual(self.run_main(), 0)
+        self.assertEqual(cp.errors, [])
 
 
 if __name__ == "__main__":

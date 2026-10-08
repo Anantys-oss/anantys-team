@@ -399,10 +399,35 @@ def require(path: Path, fm: dict[str, str], keys: tuple[str, ...], expected_name
         errors.append(f"{rel(path)}: frontmatter name `{fm['name']}` != `{expected_name}`")
 
 
+def check_unlisted(marketplace: dict) -> None:
+    """Error on a plugin tree the catalog does not point at.
+
+    Every check here hangs off ``for entry in marketplace["plugins"]`` — the catalog
+    is the only thing that discovers a tree to check, so it is also the only thing
+    that can hide one. Delete an entry and the role sizes, the frontmatter, the
+    contract links, the description counts and the README mentions all go quiet for
+    that tree in a single JSON edit, while its files stay in the repo and stay
+    installable by path. Deleting the last entry takes every invariant in this file
+    with it and still exits 0.
+
+    Deleting an entry *and* its tree is a legitimate removal and stays silent: there
+    is nothing left to govern. Deleting only the entry is the case this names.
+    """
+    listed = {(ROOT / entry["source"]).resolve() for entry in marketplace["plugins"]}
+    for manifest_path in sorted(ROOT.glob("**/.claude-plugin/plugin.json")):
+        if manifest_path.parent.parent not in listed:
+            errors.append(
+                f"{rel(manifest_path)}: no marketplace.json entry points at this tree. "
+                f"Every check here iterates the catalog, so an unlisted plugin is "
+                f"governed by nothing while staying installable — list it, or delete it."
+            )
+
+
 def main() -> int:
     global BASE
     BASE = merge_base()
     marketplace = json.loads((ROOT / ".claude-plugin/marketplace.json").read_text())
+    check_unlisted(marketplace)
 
     for entry in marketplace["plugins"]:
         plugin_dir = (ROOT / entry["source"]).resolve()
