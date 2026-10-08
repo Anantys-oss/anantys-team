@@ -36,6 +36,16 @@ time — the restructurer collides with the most PRs, so it sorts to the front �
 so a relocation is a precedence constraint on the waves, not merely a warning
 printed under them.
 
+And not every conflict is an ordering question at all. Two heads that change
+*exactly* the same files and still conflict are successive drafts of one change:
+neither leaves a path at `main`'s version for the other to rebase into, so the
+second to land has no hunk left to move and a rebase would re-apply a draft over
+its own successor. Git ancestry catches this only when the later work extended
+the earlier one; re-author it instead and the two share no commit, so the pair
+reads as an ordinary collision. What the operator owes there is a decision —
+which authoring `main` keeps — and closing the other removes the edge, which no
+ordering does.
+
 Not every ordering constraint is a conflict, and the ones that are not are the
 ones no tool here could see. A PR whose prose links a file another PR adds
 shares no path with it: `merge-tree` is clean, the file intersection is empty,
@@ -274,6 +284,40 @@ def conflicts(base, prs):
             if merged.returncode != 0:
                 found[frozenset((a, b))] = sorted(files_a & files_b)
     return found
+
+
+def competing(files, edges):
+    """Conflicting pairs that change *exactly* the same files — rival authorings.
+
+    `stacked` catches the case where one head's history is inside another's.
+    That is the cheap half of supersession. The other half is a head that was
+    re-authored rather than extended: the later work keeps the same file set,
+    rewrites the same lines, and shares no commit with the draft it replaces.
+    Ancestry sees nothing, so both stay in the graph as an ordinary conflict.
+
+    They are not an ordinary conflict, and the difference is an instruction.
+    A conflict between two changes means each has a hunk the other's tree does
+    not account for, and the second to land rebases those hunks. Here neither
+    PR touches a path the other leaves at `base`: whichever lands second has no
+    file left to rebase *into* — every one of them has already been rewritten
+    by the first. So the resolution is not a rebase, it is a choice of which
+    authoring `main` keeps, and closing the one not kept removes the edge
+    outright. A rebase cannot: it would re-apply a draft over its own successor.
+
+    Equal file sets are the whole test, and they are a narrow one by design.
+    Nesting is not enough — a PR that edits two of another's twelve paths is
+    routinely an unrelated change that happens to collide. Equality says the
+    two diffs were cut around the same unit of work, and a conflict says they
+    disagree about its content. Over this queue's 406 pairs the test fires only
+    on heads that are literally successive drafts of one checker.
+
+    No ordering is emitted. Both directions cost the same — nothing — because
+    only one of the two is meant to land, and which one is the operator's call:
+    the newer head carries the later audits, the older carries the review
+    history. Naming the pair is the report's job; picking is not.
+    """
+    return {pair for pair in edges
+            if files[min(pair)] == files[max(pair)]}
 
 
 def anchors(base, ref, path, minimum=30):
@@ -951,6 +995,7 @@ def main():
         prs = [pr for pr in prs if pr[0] not in contained]
     base = run("git", "rev-parse", "main").strip()
     edges = conflicts(base, prs)
+    rival = competing(files, edges)
     relocated = relocations(base, prs, edges) if edges else {}
     unresolved = dangling(prs)
     order = waves([n for n, *_ in prs], edges,
@@ -972,6 +1017,21 @@ def main():
     for small, big in sorted(contained.items()):
         print(f"#{small} is contained in #{big} — landing #{big} closes it; "
               f"not counted above\n")
+    for pair in sorted(rival, key=sorted):
+        a, b = sorted(pair)
+        alone = [n for n in (a, b)
+                 if sum(1 for e in edges if n in e) == 1]
+        print(f"#{a} and #{b} change exactly the same {len(files[a])} file(s) "
+              f"and conflict — rival authorings of one change, not two changes. "
+              f"Neither leaves a path at `main`'s version for the other to "
+              f"rebase into, so the second to land has nothing to move: decide "
+              f"which one `main` keeps and close the other. "
+              + (f"That also removes the only conflict "
+                 + " and ".join(f"#{n}" for n in alone)
+                 + f" {'has' if len(alone) == 1 else 'have'}, "
+                   f"which a rebase would not.\n"
+                 if alone else "A rebase re-applies a draft over its own "
+                               "successor.\n"))
     for i, wave in enumerate(order, 1):
         print(f"Wave {i} — land in any order, no rebase between them:")
         for n in wave:

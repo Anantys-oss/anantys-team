@@ -1356,5 +1356,96 @@ class TheMergeBaseIsTheLanding(unittest.TestCase):
                          [[1], [2]])
 
 
+class ARewriteSharesNoCommit(unittest.TestCase):
+    """A head re-authored from `main` rather than extended from its draft.
+
+    `stacked` reads git history, so it catches supersession only in the shape
+    that kept it: the later head built on the earlier one. The queue also
+    produces the other shape — a session re-cuts the branch from `main` and
+    rewrites the same checker from scratch. Same file set, no shared commit,
+    and the two disagree line by line, which is indistinguishable from an
+    ordinary collision by every measure this report had.
+    """
+
+    def git(self, *args):
+        subprocess.run(("git",) + args, check=True, capture_output=True)
+
+    def head(self, name):
+        oid = subprocess.run(["git", "rev-parse", "HEAD"], check=True,
+                             capture_output=True, text=True).stdout.strip()
+        self.git("update-ref", f"refs/remotes/origin/{name}", oid)
+
+    def setUp(self):
+        self.dir = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.dir)
+        self.addCleanup(os.chdir, os.getcwd())
+        os.chdir(self.dir)
+        self.git("init", "-q", "-b", "main")
+        self.git("config", "user.email", "t@example.com")
+        self.git("config", "user.name", "t")
+        Path("README.md").write_text("# Base\n")
+        self.git("add", "README.md")
+        self.git("commit", "-qm", "base")
+        self.head("main")
+
+        # The draft: a gate plus the doc that describes it.
+        self.git("checkout", "-qb", "draft")
+        Path("gate.py").write_text("first attempt\n")
+        Path("doc.md").write_text("describes the first attempt\n")
+        self.git("add", "gate.py", "doc.md")
+        self.git("commit", "-qm", "the draft")
+        self.head("draft")
+
+        # The rewrite: cut from `main`, not from `draft`, touching the same
+        # two paths with different content.
+        self.git("checkout", "-q", "main")
+        self.git("checkout", "-qb", "rewrite")
+        Path("gate.py").write_text("second attempt, audited twice since\n")
+        Path("doc.md").write_text("describes the second attempt\n")
+        self.git("add", "gate.py", "doc.md")
+        self.git("commit", "-qm", "the rewrite")
+        self.head("rewrite")
+
+        # An unrelated PR that edits one of those two paths and nothing else:
+        # its file set is a strict subset, and it collides for real.
+        self.git("checkout", "-q", "main")
+        self.git("checkout", "-qb", "unrelated")
+        Path("gate.py").write_text("an unrelated change\n")
+        self.git("add", "gate.py")
+        self.git("commit", "-qm", "unrelated")
+        self.head("unrelated")
+        self.git("checkout", "-q", "main")
+
+    def prs(self):
+        return [(1, "draft", "pr 1", {"gate.py", "doc.md"}),
+                (2, "rewrite", "pr 2", {"gate.py", "doc.md"}),
+                (3, "unrelated", "pr 3", {"gate.py"})]
+
+    def files(self):
+        return {n: paths for n, _, _, paths in self.prs()}
+
+    def test_ancestry_does_not_see_the_rewrite(self):
+        # Why a second test is needed at all: the cheap check is blind here.
+        self.assertEqual(p.stacked(self.prs()), {})
+
+    def test_the_rewrite_and_its_draft_are_named_as_rivals(self):
+        edges = p.conflicts("main", self.prs())
+        self.assertIn(frozenset((1, 2)), edges)
+        self.assertEqual(p.competing(self.files(), edges),
+                         {frozenset((1, 2))})
+
+    def test_a_subset_is_not_a_rival(self):
+        # The guard that keeps the test narrow: #3 conflicts with both and its
+        # paths are nested inside theirs, but it is a different change.
+        edges = p.conflicts("main", self.prs())
+        self.assertIn(frozenset((1, 3)), edges)
+        self.assertNotIn(frozenset((1, 3)), p.competing(self.files(), edges))
+
+    def test_equal_file_sets_alone_are_not_enough(self):
+        # No conflict, no rivalry: two PRs can edit the same two files in
+        # different places and merge clean.
+        self.assertEqual(p.competing(self.files(), {}), set())
+
+
 if __name__ == "__main__":
     unittest.main()
