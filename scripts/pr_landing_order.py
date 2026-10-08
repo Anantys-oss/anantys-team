@@ -100,6 +100,16 @@ from a real answer — `merge-tree` returns the same status for an unknown ref a
 for a conflict — so the whole report is as good as that one collection step and
 no better. `unreportable` is where it refuses.
 
+One claim here is not about the queue at all, and it is the one every per-PR
+verdict rests on: that CI asks each PR the questions this report declines to
+re-ask. A `pull_request` run is evaluated at the merge of the head into its
+base, so the gates a PR is judged by are the gates **`main`** has — not the ones
+the queue holds. In a queue where every gate arrives on its own branch, `main`
+can hold none, and then the deferral points at a run that never happened: no
+red, no pending, nothing on the PR to notice. `unasked` measures it instead of
+asserting it, because the remedy is the thing this report exists to recommend —
+land the round, and the sentence becomes true.
+
 Usage: python3 scripts/pr_landing_order.py [--limit N] [--verify] [--contracts]
 Exit 0 on any queue it could read — this is an operator report, not a gate. Exit
 1 only when it could not read one, which is not a verdict about the queue.
@@ -149,7 +159,7 @@ def unreportable(prs, limit):
                 f"full, so the queue is probably longer than this and every wave, "
                 f"rebase count and verified round below would describe a subset. "
                 f"Re-run with --limit {limit * 2}.")
-    unknown = [f"#{n} ({ref})" for n, ref, _, _ in prs
+    unknown = [f"#{n} ({ref})" for n, ref, *_ in prs
                if subprocess.run(["git", "rev-parse", "--verify", f"origin/{ref}"],
                                  capture_output=True).returncode]
     if unknown:
@@ -160,18 +170,25 @@ def unreportable(prs, limit):
 
 
 def open_prs(limit):
-    """[(number, headRefName, title, {files})] for the open queue, oldest first.
+    """[(number, headRefName, title, {files}, {checks})] — open queue, oldest first.
 
     Fetches first: the queue is read from the API and every tree below from
     `origin/<head>`, and nothing else makes those the same moment. A failed
     fetch raises rather than falling back to whatever this clone last saw —
     see `unreportable` for what a stale or missing ref does to the graph.
+
+    `checks` is what CI actually ran, by name, and it comes from the API rather
+    than from the workflow files because the question is not which workflows
+    exist — see `unasked`.
     """
     run("git", "fetch", "--quiet", "origin")
     raw = run("gh", "pr", "list", "--state", "open", "--limit", str(limit),
-              "--json", "number,headRefName,title,files")
+              "--json", "number,headRefName,title,files,statusCheckRollup")
     prs = [(p["number"], p["headRefName"], p["title"],
-            {f["path"] for f in p["files"]}) for p in json.loads(raw)]
+            {f["path"] for f in p["files"]},
+            {c.get("name") or c.get("context", "?")
+             for c in p["statusCheckRollup"] or ()})
+           for p in json.loads(raw)]
     prs = sorted(prs)
     if why := unreportable(prs, limit):
         sys.exit(why)
@@ -201,8 +218,8 @@ def stacked(prs):
             capture_output=True).returncode == 0
 
     out = {}
-    for a, ref_a, _, _ in prs:
-        for b, ref_b, _, _ in prs:
+    for a, ref_a, *_ in prs:
+        for b, ref_b, *_ in prs:
             if a == b or not ancestor(ref_a, ref_b):
                 continue
             if a < b and ancestor(ref_b, ref_a):
@@ -248,8 +265,8 @@ def conflicts(base, prs):
     holds commits the other does not and both stay in the plan.
     """
     found = {}
-    for i, (a, ref_a, _, files_a) in enumerate(prs):
-        for b, ref_b, _, files_b in prs[i + 1:]:
+    for i, (a, ref_a, _, files_a, *_) in enumerate(prs):
+        for b, ref_b, _, files_b, *_ in prs[i + 1:]:
             merged = subprocess.run(
                 ["git", "merge-tree", "--write-tree", "--merge-base", base,
                  f"origin/{ref_a}", f"origin/{ref_b}"],
@@ -334,7 +351,7 @@ def relocations(base, prs, edges):
     keys are therefore read as precedence pairs by `waves`, which is the whole
     reason to classify the edge rather than just report it.
     """
-    refs = {n: f"origin/{ref}" for n, ref, _, _ in prs}
+    refs = {n: f"origin/{ref}" for n, ref, *_ in prs}
     out = {}
     for pair, shared in edges.items():
         a, b = sorted(pair)
@@ -383,7 +400,7 @@ def dangling(prs):
     that would be a defect in a role is the intended state in a template.
     Requiring a provider separates the two without naming either.
     """
-    heads = {n: f"origin/{ref}" for n, ref, _, _ in prs}
+    heads = {n: f"origin/{ref}" for n, ref, *_ in prs}
 
     def blob(ref, path):
         found = subprocess.run(["git", "show", f"{ref}:{path}"],
@@ -391,7 +408,7 @@ def dangling(prs):
         return found.stdout if found.returncode == 0 else None
 
     out = {}
-    for number, _, _, paths in prs:
+    for number, _, _, paths, *_ in prs:
         for path in sorted(p for p in paths if p.endswith(".md")):
             text = blob(heads[number], path)
             if text is None:  # the PR deletes it — nothing left to resolve
@@ -399,7 +416,7 @@ def dangling(prs):
             for target in links(path, text):
                 if blob(heads[number], target) is not None:
                     continue
-                for other, _, _, _ in prs:
+                for other, *_ in prs:
                     if other != number and blob(heads[other], target) is not None:
                         out.setdefault((other, number), {}).setdefault(
                             path, []).append(target)
@@ -650,20 +667,46 @@ def unverifiable(round_number):
 def introduced(base, commit):
     """Gate names in `commit` that `base` does not have.
 
-    A gate already on `main` has judged every open branch — CI ran it on each
-    push. One arriving in this round has judged nothing but the branch that
+    A gate already on `main` has judged every open branch, because a
+    `pull_request` run is evaluated at the merge of the head into its base — so
+    `main`'s gate set is the one every PR answers to, whatever its own head
+    carries. `unasked` is where that holds or does not. One arriving in this
+    round has judged nothing but the branch that
     wrote it, and `--verify` does not close that gap: it asks each gate once,
     about the union. For a gate whose subject is a *tree* that is the right
     question. For one whose subject is a *diff* it is a question nobody will
     ever be asked — `check_version_bump.py` reads the union as a single change,
     so one member's version bump answers for the round's entire content.
     """
-    def gates(ref):
-        listed = run("git", "ls-tree", "-r", "--name-only", ref, "scripts/")
-        return {name for name in (Path(p).name for p in listed.splitlines())
-                if name.startswith("check_") and name.endswith(".py")}
+    return sorted(gates_in(commit) - gates_in(base))
 
-    return sorted(gates(commit) - gates(base))
+
+def gates_in(ref):
+    """Gate filenames in `ref`'s `scripts/` tree."""
+    listed = run("git", "ls-tree", "-r", "--name-only", ref, "scripts/")
+    return {name for name in (Path(p).name for p in listed.splitlines())
+            if name.startswith("check_") and name.endswith(".py")}
+
+
+def unasked(prs):
+    """Numbers whose CI ran nothing at all, in queue order.
+
+    `introduced` and `per_member` both stop at "CI asks each of them
+    separately", and the fold verdict is only honest because that sentence is
+    true. It is a claim about the *base branch*: a `pull_request` run is
+    evaluated at the merge of the head into its base, so a PR is judged by the
+    gates `main` has. When `main` has none — which is exactly the queue this
+    report is written for, every gate still on its own branch — the deferral
+    names a run that did not happen.
+
+    Zero is the only state worth naming. A red or pending check is a verdict
+    already on the PR, where the operator will see it; an absent one is the
+    question going unasked, and nothing distinguishes that from a pass. It is
+    read from the API rather than from the workflow files on each head because
+    those answer which workflows *exist*, and a workflow can exist and still
+    not run — wrong event, a path filter, a cancelled run.
+    """
+    return [n for n, _, _, _, checks in prs if not checks]
 
 
 def per_member(base, refs, gates):
@@ -729,8 +772,9 @@ def per_member(base, refs, gates):
         if label == fold:
             lines.append("      one verdict about one tree, and it is not any "
                          "of theirs: a gate cannot judge the PR that brings it. "
-                         "CI asks each of them separately, against a `main` "
-                         "that holds the others.")
+                         "Each is asked separately only once the others are on "
+                         "`main` — a `pull_request` run reads the base's gates, "
+                         "and this round is what puts them there.")
     return lines
 
 
@@ -899,9 +943,9 @@ def main():
     if not prs:
         print("no open PRs")
         return 0
-    titles = {n: t for n, _, t, _ in prs}
-    refs = {n: ref for n, ref, _, _ in prs}
-    files = {n: paths for n, _, _, paths in prs}
+    titles = {n: t for n, _, t, _, _ in prs}
+    refs = {n: ref for n, ref, *_ in prs}
+    files = {n: paths for n, _, _, paths, _ in prs}
     contained = stacked(prs)
     if contained:
         prs = [pr for pr in prs if pr[0] not in contained]
@@ -909,11 +953,22 @@ def main():
     edges = conflicts(base, prs)
     relocated = relocations(base, prs, edges) if edges else {}
     unresolved = dangling(prs)
-    order = waves([n for n, _, _, _ in prs], edges,
+    order = waves([n for n, *_ in prs], edges,
                   list(relocated) + list(unresolved))
 
     print(f"{len(prs)} open PRs, {len(edges)} conflicting pairs, "
           f"{len(order)} waves ({max(len(order) - 1, 0)} rebase rounds)\n")
+    if blind := unasked(prs):
+        print(f"CI ran no check at all on {len(blind)} of {len(prs)}: "
+              + ", ".join(f"#{n}" for n in blind)
+              + ". A `pull_request` run is evaluated at the merge of the head "
+                "into its base, so a PR is judged by the gates `main` has — "
+                "and `main` holds "
+              + (", ".join(sorted(gates_in(base))) or "none")
+              + ". Every per-PR verdict below is therefore deferred to a run "
+                "that did not happen, which looks exactly like a pass. Landing "
+                "the round that carries the gates is what asks the question; "
+                "nothing on these PRs needs fixing first.\n")
     for small, big in sorted(contained.items()):
         print(f"#{small} is contained in #{big} — landing #{big} closes it; "
               f"not counted above\n")
@@ -965,7 +1020,7 @@ def main():
             if failing:
                 landed = {n for n, _ in cumulative}
                 for line in clearing(base, cumulative,
-                                     [n for n, _, _, _ in prs if n not in landed],
+                                     [n for n, *_ in prs if n not in landed],
                                      failing, edges, refs):
                     print(line)
             if refused:

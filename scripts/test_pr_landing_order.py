@@ -1183,6 +1183,90 @@ class TheQueueIsAnInput(unittest.TestCase):
         self.assertIn("--limit", p.unreportable(self.pr("here", "nope"), 2))
 
 
+class TheDeferralIsMeasured(unittest.TestCase):
+    """Every per-PR verdict is handed to CI; this is whether CI took it.
+
+    `introduced` and `per_member` both stop at "CI asks each of them
+    separately". That is a claim about the base branch — a `pull_request` run is
+    evaluated at the merge of the head into its base — and in a queue where
+    every gate is still on its own branch the base can hold none, so the
+    deferral lands on a run that never happened.
+    """
+
+    def pr(self, *checks):
+        return [(n, f"ref{n}", f"pr {n}", set(), set(names))
+                for n, names in enumerate(checks, 1)]
+
+    def test_a_pr_with_no_check_is_named(self):
+        self.assertEqual(p.unasked(self.pr([])), [1])
+
+    def test_a_checked_pr_is_not_named(self):
+        self.assertEqual(p.unasked(self.pr(["gates"])), [])
+
+    def test_only_the_unchecked_ones_are_named(self):
+        self.assertEqual(p.unasked(self.pr([], ["gates"], [])), [1, 3])
+
+    def test_queue_order_is_kept_so_the_report_is_stable(self):
+        queue = self.pr([], [], [])
+        self.assertEqual(p.unasked(queue), [1, 2, 3])
+        self.assertEqual(p.unasked(list(reversed(queue))), [3, 2, 1])
+
+    def test_an_empty_queue_names_nobody(self):
+        self.assertEqual(p.unasked([]), [])
+
+    def test_a_fully_checked_queue_is_falsy_not_empty_string(self):
+        # `main` prints the paragraph on truth, so the clean case has to be a
+        # value the walrus reads as nothing to say.
+        self.assertFalse(p.unasked(self.pr(["gates"], ["gates"])))
+
+
+class AGateSetIsNotADifference(unittest.TestCase):
+    """`introduced` answers what a round *adds*; the report also needs what
+    the base *has*.
+
+    They coincide at zero, which is the whole point: when `main` carries no
+    gate, every gate in the union is introduced and `introduced(base, base)` is
+    empty — the same empty set for two opposite facts. Asking the difference
+    for the base's own set silently prints "none" for every queue.
+    """
+
+    def git(self, *args):
+        subprocess.run(("git",) + args, check=True, capture_output=True)
+
+    def setUp(self):
+        self.dir = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.dir)
+        self.addCleanup(os.chdir, os.getcwd())
+        os.chdir(self.dir)
+        self.git("init", "-q", "-b", "main")
+        self.git("config", "user.email", "t@example.com")
+        self.git("config", "user.name", "t")
+        Path("doc.md").write_text("# Doc\n")
+        self.git("add", "doc.md")
+        self.git("commit", "-qm", "base")
+        self.base = subprocess.run(["git", "rev-parse", "HEAD"], check=True,
+                                   capture_output=True, text=True).stdout.strip()
+        Path("scripts").mkdir()
+        Path("scripts/check_one.py").write_text("x = 1\n")
+        Path("scripts/test_check_one.py").write_text("x = 1\n")
+        Path("scripts/report.py").write_text("x = 1\n")
+        self.git("add", "scripts")
+        self.git("commit", "-qm", "gates")
+        self.head = subprocess.run(["git", "rev-parse", "HEAD"], check=True,
+                                   capture_output=True, text=True).stdout.strip()
+
+    def test_a_tree_with_no_gates_has_an_empty_set(self):
+        self.assertEqual(p.gates_in(self.base), set())
+
+    def test_it_names_the_gates_and_nothing_else_under_scripts(self):
+        self.assertEqual(p.gates_in(self.head), {"check_one.py"})
+
+    def test_the_difference_cannot_answer_for_the_base(self):
+        self.assertEqual(p.introduced(self.base, self.base), [])
+        self.assertEqual(p.introduced(self.base, self.head), ["check_one.py"])
+        self.assertEqual(p.gates_in(self.head), {"check_one.py"})
+
+
 class TheMergeBaseIsTheLanding(unittest.TestCase):
     """Two heads that share a lineage past `main`, each editing it further.
 
