@@ -193,8 +193,16 @@ class VersionBumpCase(unittest.TestCase):
         self.assertEqual(result.returncode, 0)
         self.assertNotIn("warning:", result.stderr)
 
-    def test_untagged_debt_is_not_reported_in_merge_base_mode(self) -> None:
-        """Without a tag the published version always moves — there is no debt to name."""
+    def test_merge_base_mode_reports_that_the_release_baseline_is_inert(self) -> None:
+        """With no tag at all the queue is on N distinct values by default — say so.
+
+        This is the untagged repo's permanent state, not a transient one, and it
+        is the state the release baseline was introduced to replace: the floor
+        moves on every merge, so 0.3.0 below is a value the fallback forces on
+        the sibling behind the branch that landed 0.2.0, and the one behind that
+        owes 0.4.0. A warning, on the same terms as the stale-tag note: failing
+        would block every queued branch over a debt that belongs to the release.
+        """
         self.sh("git", "tag", "-d", "v0.1.0")
         self.sh("git", "checkout", "-q", "main")
         self.write(f"{PLUGIN}/skills/demo/SKILL.md", "---\nname: demo\n---\n\nlanded\n")
@@ -207,7 +215,66 @@ class VersionBumpCase(unittest.TestCase):
         self.commit("the next distinct value the fallback forces")
         result = self.check()
         self.assertEqual(result.returncode, 0)
+        self.assertIn("warning:", result.stderr)
+        self.assertIn("no release tag exists", result.stderr)
+        self.assertIn("Tag what is already shipped", result.stderr)
+
+    def test_a_change_outside_every_plugin_gets_no_release_talk(self) -> None:
+        """The note is scoped to a plugin this run measured, like the stale-tag one."""
+        self.sh("git", "tag", "-d", "v0.1.0")
+        self.branch()
+        self.write("README.md", "unrelated\n")
+        self.commit("touch nothing shippable")
+        result = self.check()
+        self.assertEqual(result.returncode, 0)
         self.assertNotIn("warning:", result.stderr)
+
+    def test_a_brand_new_plugin_gets_no_release_talk(self) -> None:
+        """It owes no bump, so there is no floor it was measured against."""
+        self.sh("git", "tag", "-d", "v0.1.0")
+        self.branch()
+        self.write_marketplace(["./" + PLUGIN, "./plugins/fresh"])
+        self.write("plugins/fresh/.claude-plugin/plugin.json", json.dumps({"version": "0.1.0"}))
+        self.write("plugins/fresh/skills/fresh/SKILL.md", "---\nname: fresh\n---\n\nbody\n")
+        self.commit("add a second plugin")
+        result = self.check()
+        self.assertEqual(result.returncode, 0)
+        self.assertNotIn("warning:", result.stderr)
+
+    def test_the_sibling_the_fallback_forces_a_distinct_value_on(self) -> None:
+        """The cost the warning names, measured: naming the landed version fails.
+
+        Same repo, same two branches as above, except the sibling names 0.2.0 —
+        the value its own PR was authored with and the one a release-tagged
+        baseline would accept. Untagged, the merge that landed 0.2.0 moved the
+        floor onto it, so the sibling is now rejected for shipping a version it
+        never had reason to change.
+        """
+        self.sh("git", "tag", "-d", "v0.1.0")
+        self.sh("git", "checkout", "-q", "main")
+        self.write(f"{PLUGIN}/skills/demo/SKILL.md", "---\nname: demo\n---\n\nlanded\n")
+        self.write_plugin("0.2.0")
+        self.commit("land 0.2.0")
+
+        self.branch()
+        self.write(f"{PLUGIN}/skills/demo/reference/more.md", "more\n")
+        self.write_plugin("0.2.0")
+        self.commit("the sibling, naming the version it was authored with")
+        result = self.check()
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("version is still 0.2.0", result.stderr)
+        # ...and the remedy it offers is not the tag-mode one, which is false here.
+        self.assertIn("Siblings cannot share it", result.stderr)
+        self.assertNotIn("may name the same one", result.stderr)
+
+    def test_the_error_offers_sibling_sharing_only_against_a_tag(self) -> None:
+        """Against a release tag siblings genuinely may share a version — say so there."""
+        self.branch()
+        self.write(f"{PLUGIN}/skills/demo/SKILL.md", "---\nname: demo\n---\n\nrewritten\n")
+        self.commit("edit skill, no bump")
+        result = self.check()
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("may name the same one", result.stderr)
 
     def test_no_release_tag_falls_back_to_the_merge_base(self) -> None:
         """A repo that has never published still gets the original gate, not a free pass."""

@@ -37,13 +37,24 @@ It is an improvement with a precondition, though, and the precondition is not
 this script's to enforce: releases have to actually happen. The floor is the tag,
 not `main`, so a version that a queue of PRs names, lands, and nobody tags leaves
 the floor exactly where it was — and every later content change may keep naming
-that same version and pass. The merge-base fallback is at least monotonic: the
-published version always moves. This is not; it can freeze while the tree under
-it is rewritten, which is the failure the check exists to prevent, reached
-through the remedy instead of the defect. So the check also *reports* when the
-base branch has moved past the newest tag. That is a warning, never an error —
-failing the PR would put the queue back on N distinct values, and the debt
-belongs to the release, not to whoever happens to push next.
+that same version and pass. The merge-base fallback never freezes — its floor
+moves on every merge — whereas this one can freeze while the tree under it is
+rewritten, which is the failure the check exists to prevent, reached through the
+remedy instead of the defect. So the check also *reports* when the base branch
+has moved past the newest tag. That is a warning, never an error — failing the
+PR would put the queue back on N distinct values, and the debt belongs to the
+release, not to whoever happens to push next.
+
+The same report is owed in the opposite state, and for the same reason. A repo
+with *no* release tag never enters the mode described above: the fallback is the
+only behaviour it ever has, so the whole release baseline is inert and the queue
+is on N distinct values by default. A moving floor is not a published version —
+nothing has been published at all — and it is the floor's movement that does the
+damage: land one wave and every branch behind it owes a value above whatever
+landed, re-typed in both manifests after each merge, once per wave. That is
+strictly worse than the stale-floor case, and it was the quieter of the two. So
+an absent tag is reported on the same terms: a warning naming the one action —
+tag what is already shipped — that lets siblings share a version again.
 
 The two manifests are excluded from the content set so that a lone bump cannot
 justify itself. That reason is about one key — `version` — and excluding the
@@ -128,14 +139,14 @@ def main(argv: list[str]) -> int:
         print("no changes against base — nothing to check")
         return 0
 
+    errors: list[str] = []
+    unreleased: list[str] = []
+
     tag = released_tag()
     shipped_ref = tag
     if shipped_ref is None:
         shipped_ref = base
         print("no release tag — measuring the version against the merge-base")
-
-    errors: list[str] = []
-    unreleased: list[str] = []
     marketplace = json.loads((ROOT / MARKETPLACE).read_text())
     base_catalog = json_at(base, MARKETPLACE)
 
@@ -162,6 +173,18 @@ def main(argv: list[str]) -> int:
         except (subprocess.CalledProcessError, KeyError):
             continue  # no version to measure against: a brand-new plugin owes no bump
 
+        if tag is None:
+            # Same terms as the stale-tag note below: reported only for a plugin
+            # this run actually measured, so a scripts-only PR gets no release talk.
+            unreleased.append(
+                f"{entry['name']}: no release tag exists, so the floor is the merge-base and "
+                "the release baseline this check is built on is inert. That floor moves on "
+                "every merge, so each branch behind the one that lands owes a version above "
+                f"it — one distinct value per wave, re-typed in {manifest} and "
+                f"{MARKETPLACE} after every merge. Tag what is already shipped and siblings "
+                "may name the same next version again."
+            )
+
         if tag is not None:
             try:
                 on_base = json.loads(git("show", f"{base}:{manifest}"))["version"]
@@ -180,10 +203,17 @@ def main(argv: list[str]) -> int:
             print(f"{entry['name']}: {shipped} → {after} ({len(touched)} file(s) changed)")
             continue
 
+        # The sibling-sharing advice holds against a tag and not against the
+        # merge-base, where the floor moves on every merge — see the note above.
+        sharing = (
+            "Sibling branches may name the same one."
+            if tag is not None
+            else "Siblings cannot share it until a release is tagged."
+        )
         errors.append(
             f"{entry['name']}: version is still {after}, the version already at {shipped_ref}, "
             f"but {len(touched)} content file(s) changed — name the next version in {manifest} "
-            f"and in .claude-plugin/marketplace.json. Sibling branches may name the same one.\n"
+            f"and in .claude-plugin/marketplace.json. {sharing}\n"
             + "\n".join(f"    {f}" for f in touched)
         )
 
