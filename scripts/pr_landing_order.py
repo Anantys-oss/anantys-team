@@ -110,6 +110,13 @@ from a real answer — `merge-tree` returns the same status for an unknown ref a
 for a conflict — so the whole report is as good as that one collection step and
 no better. `unreportable` is where it refuses.
 
+That collection step reads the API's *open list*, so the queue it builds is not
+the set of changes waiting on `main` — it is the subset of them someone opened a
+PR for. A branch pushed to `origin` and never opened is in the same state as
+every PR here and in none of the output: no wave, no round, no pair. It is also
+the only position no ordering helps, because it does not land at all.
+`unopened` names those branches and the commits that exist nowhere else.
+
 One claim here is not about the queue at all, and it is the one every per-PR
 verdict rests on: that CI asks each PR the questions this report declines to
 re-ask. A `pull_request` run is evaluated at the merge of the head into its
@@ -203,6 +210,68 @@ def open_prs(limit):
     if why := unreportable(prs, limit):
         sys.exit(why)
     return prs
+
+
+def ruled_on(branch):
+    """True when `branch` has ever had a PR — open, merged or closed."""
+    return bool(json.loads(run("gh", "pr", "list", "--head", branch,
+                               "--state", "all", "--json", "number")))
+
+
+def unopened(prs, ruled=ruled_on):
+    """[(branch, [subjects])] — `origin` branches no open PR will land.
+
+    `unreportable` guards the queue against a PR with no ref. This is the
+    mirror: a ref with no PR. A branch pushed to `origin` and never opened is a
+    change in exactly the state every line below is about — cut from `main`, not
+    landed, editing the files the queue edits — and it appears in no wave, no
+    round, no fold and no conflicting pair, because the queue is read from the
+    API's open list and that list is the one place it is absent. Nothing errors.
+    The report is simply about a smaller queue than the repository holds, and
+    `N-1 rebase rounds for the whole queue` is a claim about the whole of a
+    subset.
+
+    It is also the one position here that no ordering and no rebase improves. A
+    PR in a later wave lands late; a branch with no PR does not land, and its
+    cost grows with the queue rather than with its own content: every head
+    opened after it edits the files it was cut to change, so the work it carries
+    is re-found and re-authored rather than merged, and the authoring that
+    reaches `main` is whichever one someone remembered to open.
+
+    The test is reachability, not age. A branch whose every commit is reachable
+    from `main` or from an open head has already been landed or superseded, and
+    is stale rather than pending; what survives it is a diff that exists nowhere
+    else in the repository. Reachability is also why this runs before the API is
+    asked anything: it is local, it cuts the field to a handful, and each
+    survivor can then be checked exactly — `--head <branch> --state all`, which
+    has no page to truncate. A branch whose PR was *closed* is excluded by that
+    check and not reported, because a closed PR is a ruling. Listing a declined
+    change as forgotten work is how a section like this earns the habit of being
+    scrolled past.
+
+    Reachability's one blind spot is the same one `stacked` has, from the same
+    cause: a re-authoring shares no commit with its original. Lift a forgotten
+    branch's fix onto an open head and the branch keeps being reported, because
+    the commit that carries it is a different one. `patch-id` is the obvious
+    answer and does not work — the lift that prompts this is a cherry-pick with
+    a conflict, so the hunk lands with different context and hashes to something
+    else. The row that survives is therefore not a false positive to suppress
+    but the last thing holding a ref nobody will merge: the operator deletes it,
+    and until they do, a branch whose content has landed is reported in the one
+    way that costs an extra line rather than a lost fix.
+    """
+    landed = ["main", *(f"origin/{ref}" for _, ref, *_ in prs)]
+    out = []
+    for ref in run("git", "for-each-ref", "--format=%(refname:short)",
+                   "refs/remotes/origin").split():
+        if ref in ("origin", "origin/main") or ref in landed:
+            continue
+        carried = run("git", "log", "--no-merges", "--format=%s",
+                      ref, "--not", *landed).splitlines()
+        branch = ref.split("/", 1)[1]
+        if carried and not ruled(branch):
+            out.append((branch, carried))
+    return out
 
 
 def stacked(prs):
@@ -1034,6 +1103,20 @@ def main():
 
     print(f"{len(prs)} open PRs, {len(edges)} conflicting pairs, "
           f"{len(order)} waves ({max(len(order) - 1, 0)} rebase rounds)\n")
+    if pending := unopened(prs):
+        carried = sum(len(subjects) for _, subjects in pending)
+        print(f"{len(pending)} branch(es) on `origin` carry {carried} commit(s) "
+              f"that no open PR lands, and no wave, round or conflicting pair "
+              f"below counts them — the queue is the API's open list, and these "
+              f"are the one thing missing from it:")
+        for branch, subjects in pending:
+            print(f"  {branch}")
+            for subject in subjects:
+                print(f"    {subject}")
+        print("A PR in a later wave lands late; a branch without one does not "
+              "land. Every head opened after it edits the files it was cut to "
+              "change, so what it carries gets re-found and re-authored instead "
+              "of merged. Opening a PR is what puts it in the graph below.\n")
     if blind := unasked(prs):
         print(f"CI ran no check at all on {len(blind)} of {len(prs)}: "
               + ", ".join(f"#{n}" for n in blind)

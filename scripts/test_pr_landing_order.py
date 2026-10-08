@@ -1605,5 +1605,87 @@ class TheTrimIsNotTheRegression(unittest.TestCase):
         self.assertIn("trades", out)
 
 
+class ARefWithNoPR(unittest.TestCase):
+    """The mirror of `unreportable`'s first case, and the silent one.
+
+    A PR with no ref is loud: `merge-tree` fails and the graph is visibly
+    invented. A ref with no PR produces no output anywhere — the queue the
+    report describes is well-formed, every wave is correct about it, and the
+    branch is simply not a member of the set that was collected.
+
+    One base, four branches off it: an open PR's head, a branch fully contained
+    in that head, a branch with a closed PR, and one nobody opened.
+    """
+
+    def git(self, *args):
+        subprocess.run(("git",) + args, check=True, capture_output=True)
+
+    def branch(self, name, subject, files):
+        self.git("checkout", "-q", "-b", name, "main")
+        for path, text in files.items():
+            Path(path).write_text(text)
+        self.git("add", "-A")
+        self.git("commit", "-qm", subject)
+        self.git("update-ref", f"refs/remotes/origin/{name}", name)
+        self.git("checkout", "-q", "main")
+        self.git("branch", "-qD", name)
+
+    def setUp(self):
+        self.dir = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.dir)
+        self.addCleanup(os.chdir, os.getcwd())
+        os.chdir(self.dir)
+        self.git("init", "-q", "-b", "main")
+        self.git("config", "user.email", "t@example.com")
+        self.git("config", "user.name", "t")
+        Path("doc.md").write_text("# Doc\n")
+        self.git("add", "doc.md")
+        self.git("commit", "-qm", "base")
+        self.git("update-ref", "refs/remotes/origin/main", "main")
+        self.branch("open-head", "the one with a PR", {"a.md": "a\n"})
+        self.branch("closed", "declined on purpose", {"b.md": "b\n"})
+        self.branch("forgotten", "fix: the one nobody opened", {"c.md": "c\n"})
+        # Contained: every commit of `open-head` plus nothing of its own.
+        self.git("update-ref", "refs/remotes/origin/stale",
+                 "refs/remotes/origin/open-head")
+        self.prs = [(1, "open-head", "pr 1", set(), set())]
+        self.ruled = {"open-head", "closed"}.__contains__
+
+    def report(self):
+        return p.unopened(self.prs, self.ruled)
+
+    def test_the_branch_nobody_opened_is_named_with_its_subjects(self):
+        self.assertEqual(self.report(),
+                         [("forgotten", ["fix: the one nobody opened"])])
+
+    def test_nothing_else_in_the_report_sees_it(self):
+        # The premise: it shares no PR number, so it is in no wave and no pair.
+        edges = p.conflicts("main", self.prs)
+        self.assertEqual(edges, {})
+        self.assertEqual(p.waves([n for n, *_ in self.prs], edges), [[1]])
+
+    def test_an_open_heads_own_ref_is_not_unopened(self):
+        self.assertNotIn("open-head", dict(self.report()))
+
+    def test_a_ref_with_no_commit_of_its_own_is_stale_not_pending(self):
+        # `stale` points at the open head: landing #1 lands all of it.
+        self.assertNotIn("stale", dict(self.report()))
+
+    def test_a_closed_pr_is_a_ruling_and_is_not_reported(self):
+        self.assertNotIn("closed", dict(self.report()))
+
+    def test_the_api_is_only_asked_about_what_reachability_kept(self):
+        # Four refs, two of them carrying a diff that exists nowhere else. The
+        # local test is what makes the exact `--head` query affordable.
+        asked = []
+        p.unopened(self.prs, lambda branch: asked.append(branch) or False)
+        self.assertEqual(asked, ["closed", "forgotten"])
+
+    def test_a_branch_merged_into_main_is_not_reported(self):
+        self.git("merge", "-q", "--no-ff", "-m", "land",
+                 "refs/remotes/origin/forgotten")
+        self.assertEqual(self.report(), [])
+
+
 if __name__ == "__main__":
     unittest.main()
