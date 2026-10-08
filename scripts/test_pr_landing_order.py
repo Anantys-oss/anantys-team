@@ -1447,5 +1447,70 @@ class ARewriteSharesNoCommit(unittest.TestCase):
         self.assertEqual(p.competing(self.files(), {}), set())
 
 
+class AnEditBothSidesAgreeOnIsNotAConflict(unittest.TestCase):
+    """Every PR in this queue bumps the same version manifest to the same
+    string, so the manifest is in nearly every pair's changed-file
+    intersection and in none of their conflicts: git takes an identical edit
+    from both sides without asking. The report's job is to name the file a
+    human has to open.
+    """
+
+    def git(self, *args):
+        subprocess.run(("git",) + args, check=True, capture_output=True)
+
+    def head(self, name):
+        oid = subprocess.run(["git", "rev-parse", "HEAD"], check=True,
+                             capture_output=True, text=True).stdout.strip()
+        self.git("update-ref", f"refs/remotes/origin/{name}", oid)
+
+    def setUp(self):
+        self.dir = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.dir)
+        self.addCleanup(os.chdir, os.getcwd())
+        os.chdir(self.dir)
+        self.git("init", "-q", "-b", "main")
+        self.git("config", "user.email", "t@example.com")
+        self.git("config", "user.name", "t")
+        Path("manifest.json").write_text('{"version": "0.6.0"}\n')
+        Path("role.md").write_text("intro\n\nrules\n\nend\n")
+        self.git("add", "manifest.json", "role.md")
+        self.git("commit", "-qm", "base")
+
+        for name, rules in (("first", "first's rule\n"), ("second", "second's rule\n")):
+            self.git("checkout", "-q", "main")
+            self.git("checkout", "-qb", name)
+            Path("manifest.json").write_text('{"version": "0.6.1"}\n')
+            Path("role.md").write_text(f"intro\n\n{rules}\nend\n")
+            self.git("commit", "-qam", name)
+            self.head(name)
+        self.git("checkout", "-q", "main")
+
+    def prs(self):
+        paths = {"manifest.json", "role.md"}
+        return [(1, "first", "pr 1", paths), (2, "second", "pr 2", paths)]
+
+    def test_only_the_file_the_merge_fails_in_is_named(self):
+        self.assertEqual(p.conflicts("main", self.prs()),
+                         {frozenset((1, 2)): ["role.md"]})
+
+    def test_the_agreed_edit_is_in_the_intersection_the_old_answer_used(self):
+        # The control: the manifest is genuinely in both diffs, which is why
+        # intersecting them printed it, and genuinely merges clean.
+        a, b = self.prs()
+        self.assertIn("manifest.json", a[3] & b[3])
+        merged = subprocess.run(
+            ["git", "merge-tree", "--write-tree", "--merge-base", "main",
+             "origin/first", "origin/second", "--", "manifest.json"],
+            capture_output=True, text=True)
+        self.assertNotIn("manifest.json", merged.stdout.split("\n\n")[0])
+
+    def test_relocations_only_searches_the_files_that_conflict(self):
+        # Narrowing the value narrows this too: a path both sides agree on has
+        # no hunk to relocate, so it is not a destination search worth running.
+        edges = p.conflicts("main", self.prs())
+        self.assertEqual(sorted(edges[frozenset((1, 2))]), ["role.md"])
+        self.assertEqual(p.relocations("main", self.prs(), edges), {})
+
+
 if __name__ == "__main__":
     unittest.main()

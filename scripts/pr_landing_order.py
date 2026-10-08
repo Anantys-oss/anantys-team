@@ -23,9 +23,9 @@ A rebase is the cheap case, and not every boundary is one. When a PR in an
 earlier wave *restructures* a file that a later one edits — a split into
 `reference/*.md`, a rule hoisted into a shared contract — the later PR's hunks
 do not merely move, they lose their anchors: the lines they patch are no longer
-in that file. Git reports the conflict in the shared path anyway, and the file
-intersection reported below names that same path, so both point at the one file
-the change must not be applied to. The destination lives only on the
+in that file. Git reports the conflict in the restructured path anyway, and the
+report below names that same path, so both point at the one file the change must
+not be applied to. The destination lives only on the
 restructurer's side of the diff. Each conflicting pair is therefore classified,
 and a relocated one is named as what it is — and then *ordered around*, because
 it is the one edge whose two directions do not cost the same. Landing the
@@ -254,7 +254,23 @@ def rounds(order, refs):
 
 
 def conflicts(base, prs):
-    """{frozenset({a, b}): sorted(shared files)} for pairs that do not merge.
+    """{frozenset({a, b}): [conflicted paths]} for pairs that do not merge.
+
+    The paths come from `merge-tree --name-only`, not from intersecting the two
+    diffs. A pair's changed-file sets overlap far more widely than the merge
+    fails: every PR here bumps the same two version manifests to the same
+    string, so those two paths sit in 24 of this queue's 25 intersections and
+    conflict in none of them — git takes an identical edit from both sides
+    without asking. Printing the intersection sends the resolver to 96 files to
+    resolve 29, and the noise is not evenly spread: one pair's intersection
+    lists four role files where a single one disagrees, with the real one third
+    in the list. The question this report exists to answer is which file a
+    human has to open, and only the merge knows that.
+
+    An intersection is still the fallback when the command fails with no paths
+    to name, which is a git error rather than a conflict. `unreportable` turns
+    the one reachable cause away first; this keeps the older, wider answer for
+    anything that gets past it rather than reporting a clean merge.
 
     Measured against `base`, explicitly, because the merge the operator is
     going to perform is onto `main` and no other tree. Left to itself
@@ -278,11 +294,13 @@ def conflicts(base, prs):
     for i, (a, ref_a, _, files_a, *_) in enumerate(prs):
         for b, ref_b, _, files_b, *_ in prs[i + 1:]:
             merged = subprocess.run(
-                ["git", "merge-tree", "--write-tree", "--merge-base", base,
-                 f"origin/{ref_a}", f"origin/{ref_b}"],
+                ["git", "merge-tree", "--write-tree", "--name-only",
+                 "--merge-base", base, f"origin/{ref_a}", f"origin/{ref_b}"],
                 capture_output=True, text=True)
             if merged.returncode != 0:
-                found[frozenset((a, b))] = sorted(files_a & files_b)
+                # <tree oid>\n<conflicted path>*\n\n<informational messages>
+                named = merged.stdout.split("\n\n")[0].splitlines()[1:]
+                found[frozenset((a, b))] = named or sorted(files_a & files_b)
     return found
 
 
@@ -383,10 +401,10 @@ def relocations(base, prs, edges):
     resolution *goes*. When one PR of a pair restructures a file — splitting
     prose into new ones, as a progressive-disclosure refactor does — the other's
     hunks lose their anchors: the lines they patch are no longer in the shared
-    file at all. Git still reports the conflict there, and the intersection this
-    report prints names that same file, so both send the resolver to the one
-    place the change must not be applied. The destination only ever appears on
-    the restructurer's side of the diff, never in the intersection.
+    file at all. Git still reports the conflict there, and the path this report
+    prints is that same file, so both send the resolver to the one place the
+    change must not be applied. The destination only ever appears on the
+    restructurer's side of the diff, never among the conflicted paths.
 
     The distinction is the operator's cost, not a detail: a same-file conflict
     is a rebase either way round, and a relocated one is a hand re-authoring in
@@ -1038,10 +1056,10 @@ def main():
             print(f"  #{n:<4} {titles[n]}")
         print()
     if edges:
-        print("Conflicting pairs and the files they share:")
+        print("Conflicting pairs and the files the merge actually fails in:")
         for pair, shared in sorted(edges.items(), key=lambda kv: sorted(kv[0])):
             a, b = sorted(pair)
-            print(f"  #{a} <-> #{b}: {', '.join(shared) or '(no shared path)'}")
+            print(f"  #{a} <-> #{b}: {', '.join(shared) or '(no path named)'}")
             for loser, winner in ((a, b), (b, a)):
                 for path, destinations in sorted(
                         relocated.get((loser, winner), {}).items()):
