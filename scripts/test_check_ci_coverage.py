@@ -171,6 +171,33 @@ def test_pull_request_target_is_not_matched_as_pull_request(tmp_path):
     assert main([str(tmp_path)]) == 1
 
 
+def test_a_neighbouring_event_in_the_flow_form_is_not_pull_request(tmp_path):
+    """The same rejection as above, written as a flow sequence instead of a key.
+
+    `pull_request_target` and `pull_request_review` contain `pull_request` as a
+    substring. The nested branch rejects them because it matches a key; the flow
+    branch used containment, so the verdict on one wiring depended on which YAML
+    style spelled it.
+    """
+    for n, on in enumerate(("on: [push, pull_request_target]\n",
+                            "on: pull_request_review\n",
+                            "on: [pull_request_review_comment]\n")):
+        root = tmp_path / str(n)
+        root.mkdir()
+        tree(root, ["check_a.py"], [("a.yml", on + JOBS + RUN_A)])
+        assert main([str(root)]) == 1, on
+
+
+def test_pull_request_review_only_never_runs_while_the_branch_is_pushed(tmp_path):
+    """`on: pull_request_review` fires when a human submits a review — never on
+    open or synchronize. A gate wired only there has not run when the merge
+    button becomes available, which is the one thing this checker measures."""
+    tree(tmp_path, ["check_a.py"], [("a.yml", "on: pull_request_review\n" + JOBS + RUN_A)])
+    errors, _ = scan_and_check(tmp_path)
+    assert len(errors) == 1, errors
+    assert "does not trigger on pull_request" in errors[0], errors[0]
+
+
 def test_no_workflows_at_all_orphans_every_checker(tmp_path):
     tree(tmp_path, ["check_a.py", "check_b.py"])
     errors, _ = scan_and_check(tmp_path)
