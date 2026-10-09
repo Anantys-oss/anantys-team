@@ -279,10 +279,6 @@ deployed to staging but not the local stack, or the reverse):
   per-environment. A ruling applies only to its own environment, or to all of them when scoped
   `all`.
 
-Testing a shipped feature on `staging` is often easier than reproducing its data locally —
-but the `shared` rules above are not optional, because the blast radius of a reset or a stray write
-there is real data, not a fixture.
-
 ## `run` — execute the campaign
 
 Preconditions: `.anantys/qa.md` exists, `qa-plan.md` exists — and, if `qa-plan.md` carries an
@@ -398,9 +394,13 @@ operator's go before any write.
 
 A full re-run after a fix pass is expensive and mostly re-confirms green. Instead:
 
-1. Take from `qa-runs.md` every assertion whose latest result **on the selected environment** is
-   FAIL, BLOCKED, or `PASS (unstable)` — a result recorded on another environment neither adds nor
-   removes a case.
+1. Take from `qa-plan.md` — its status suffix is the authoritative record and the only place a
+   `note` ruling lands — every assertion whose status **on the selected environment** is FAIL,
+   BLOCKED, or `PASS (unstable)`, **never one struck through as REMOVED**; `qa-runs.md` supplies
+   that result's evidence, never the selection. The run log knows nothing of the strike-through and
+   keeps the dropped assertion's last FAIL forever, so a subset chosen there re-walks behaviour the
+   product deliberately dropped and files a DEFECT that is outside the table's N. A result recorded
+   on another environment neither adds nor removes a case.
 2. Add the **regression-risk set** around each fix — the assertions the fix could plausibly have
    broken, especially the ones an *over-fix* would break. A guard added to stop a wrong behaviour
    very often also suppresses the right one; assert the right one explicitly.
@@ -507,7 +507,8 @@ Two rules make these annotations durable:
   run; "the wizard *is* the AI surface here, a second one is an attention conflict" does not.
 
 An assertion the product deliberately dropped is struck through and marked REMOVED — keep the line,
-so its absence is never re-reported as a defect.
+so its absence is never re-reported as a defect — it lives in `qa-plan.md` only, which is why
+`retest` selects from the plan and not from the run log.
 
 After any ruling, refresh **every** progress table in `qa-plan.md` — a REMOVED assertion leaves N
 for all environments (see "Progress table").
@@ -603,8 +604,6 @@ assertion genuinely passed. The line is what stops a green table from being the 
   the entire point of `report`.
 - **Assertion ids are permanent.** Never renumber. Runs, notes and reports reference them for the
   life of the feature.
-- **Append runs, never overwrite them.** The history is what stops a fixed defect from being
-  re-diagnosed six weeks later.
 - **BLOCKED is a real result.** Report it as loudly as a FAIL — an unreachable case is untested,
   and a green blocker list that quietly contains one is worse than a red one.
 - Report what you actually observed. Never a PASS you inferred.
