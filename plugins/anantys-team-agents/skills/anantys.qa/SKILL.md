@@ -319,8 +319,9 @@ deployed to staging but not the local stack, or the reverse):
 - Every `qa-runs.md` run header names its environment (`templates/qa-plan.md`).
 - The per-assertion status in `qa-plan.md` is recorded **per environment** (`local: FAIL ·
   staging: PASS`) — the suffix is the authoritative record, required on every assertion that has
-  run anywhere; the checkbox is checked only when every declared environment is PASS. A run
-  updates only the selected environment's status, never another's.
+  run anywhere; the checkbox is checked only when every declared environment **it was permitted to
+  run on** is PASS (see "a refusal is not a gap" below). A run updates only the selected
+  environment's status, never another's.
 - `retest`, `status` and `report` read only the results recorded for the selected environment and
   say which environment they describe. `status` and `report` also name every other environment
   that has results, so a defect recorded elsewhere is never silently out of view.
@@ -344,6 +345,27 @@ each defect naming the environments it was observed on, and one entry per produc
 than one per environment that saw it. *What a fix must not break* is then computed against the
 assertions passing **anywhere** — a fix validated only against `staging`'s passing set can regress
 an assertion that passes only on the local stack, and no per-environment rule above can see that.
+
+**And a refusal is not a gap.** `BLOCKED` carries two things. A case the run *could not reach* — a
+CAPTCHA, an emailed code, a torn-down preview — is untested, and reporting it as loudly as a FAIL is
+right. A case this skill **refused to walk** is not: the production guard above `BLOCKED`s every
+money, consent and notification assertion by construction, and those are exactly §3's Money and
+Legal blockers. A production campaign that behaved perfectly therefore reports its whole blocker
+list `BLOCKED`, every run, forever — and the `Production:`-is-missing rule above widens that to any
+under-declared `shared` block. One status, two meanings, and the surfaces answering "can this ship?"
+read the louder one. So record the reason and let the other environments answer it:
+
+- Write a refused result as `BLOCKED — unsafe on production` (or the refusing rule's own reason).
+  Its own environment can never resolve it; only another one can.
+- It is a **coverage gap only when no environment has a PASS for it** — the cross-environment read
+  `status` and `report` already do. Blocked on production, green on staging, is *verified
+  elsewhere*; blocked on production and green nowhere is a real gap, and the loudest kind.
+- It is **not retestable** (`retest` step 1): that is the one place the subset rule orders a walk
+  another rule forbids.
+
+`note` is the wrong repair — an adjudication records what the *operator* ruled about the product,
+and this is the skill declining to act; re-typing it per assertion per campaign would dress a safety
+guard as operator-approved drift.
 
 Testing a shipped feature on `staging` is often easier than reproducing its data locally —
 but the `shared` rules above are not optional, because the blast radius of a reset or a stray write
@@ -483,6 +505,9 @@ A full re-run after a fix pass is expensive and mostly re-confirms green. Instea
 
 1. Take from `qa-runs.md` every assertion whose latest result **on the selected environment** is
    FAIL or BLOCKED — a result recorded on another environment neither adds nor removes a case.
+   **Except a refused one** (`BLOCKED — unsafe on production` and any other rule-refusal, see
+   Environments): it is not a case a second pass can settle, and walking it is what the refusing
+   rule forbids. Say it is excluded and why, with the environment that answers it if one does.
 2. Add the **regression-risk set** around each fix — the assertions the fix could plausibly have
    broken, especially the ones an *over-fix* would break. A guard added to stop a wrong behaviour
    very often also suppresses the right one; assert the right one explicitly.
@@ -543,7 +568,11 @@ session** that has the spec context but not yours. For each open defect:
 
 Close with the release verdict: the blocker list, its status, and — explicitly — the assertions
 that were never observed. **Passing every blocker is not the same as having tested everything**;
-say which gaps a green list is hiding.
+say which gaps a green list is hiding. Split the never-observed into the two kinds (see
+Environments): **unreached** here and green on no environment — the real gap — and **refused**
+here, naming the environment whose PASS answers it, or stating that none does. A verdict that
+reports a refusal as a gap is unshippable by construction; one that reports an unanswered refusal
+as a non-gap ships a money path nobody tested.
 
 "Open defect" here means open on **any** environment, not only the selected one (see Environments):
 the selected environment orders the brief and is named at the top, it does not filter it. *What a fix
@@ -557,8 +586,8 @@ Tell the operator the file is ready to paste into a dev session. Do not open iss
 For the selected environment (`--env <name>`, else the most recent run's — say which), read
 `qa-plan.md` + `qa-runs.md` and report, without running anything: the progress table
 (PASS / DEFECT / BLOCKED / Not run), the blocker list with each blocker's status, the open
-defects, and the never-observed gaps. One short table, then the single sentence that answers
-"can this ship?".
+defects, and the never-observed gaps — split unreached from refused, as `report` does. One short
+table, then the single sentence that answers "can this ship?".
 
 ---
 
@@ -611,5 +640,7 @@ whole number on its own; show a non-zero value below 1% as `<1%` (never `0%`) an
 - **Append runs, never overwrite them.** The history is what stops a fixed defect from being
   re-diagnosed six weeks later.
 - **BLOCKED is a real result.** Report it as loudly as a FAIL — an unreachable case is untested,
-  and a green blocker list that quietly contains one is worse than a red one.
+  and a green blocker list that quietly contains one is worse than a red one. A `BLOCKED` this
+  skill **refused** to walk is answered by another environment's PASS, not by a louder report
+  (see Environments).
 - Report what you actually observed. Never a PASS you inferred.
