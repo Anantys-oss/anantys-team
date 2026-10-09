@@ -204,9 +204,16 @@ Then transform into scenarios (identical for every source):
   can only confirm what the model already did.
 - **Prioritise the money/legal/data paths.** Anything touching payment, consent, or overwriting
   existing user data goes in the blocker list.
-- **Mark what a browser agent cannot do** — CAPTCHA, emailed codes, real payment credentials,
-  true mobile viewports. These are `BLOCKED` by construction and need a named human step. Say so
-  in the plan rather than letting a run discover it.
+- **Mark what a browser agent cannot do — read it from the contract, never re-derive it.** Each
+  environment's `### Agent limits` block in `.anantys/qa.md` is the operator's own list (a signup
+  CAPTCHA, an emailed code, a viewport below the browser's clamp, a real payment credential). These
+  are `BLOCKED` by construction and need a named human step. `plan` takes no `--env`, so route
+  **every** declared environment's limits into §4 (Known gaps) — each item **naming the
+  environment(s) it applies to**, a limit being per environment like every other field of that
+  block — and mark the assertions they cover `BLOCKED`, exactly as an adjudication would. Re-deriving
+  them from a generic list leaves a declared limit for a run to discover mid-campaign; recording one
+  without its environment BLOCKs a case elsewhere that could have been walked. Add what the contract
+  missed, and say which items were yours.
 
 Write `qa-plan.md` following `templates/qa-plan.md`. Every assertion gets a stable id
 (`A1`, `B5`, …) — ids are referenced by runs, notes and reports forever, so **never renumber
@@ -282,8 +289,8 @@ Select one with `--env <name>` on any action that reads or writes results — `r
   **is a run on the default environment.**
 
 Always state which environment was selected, and how. Every surface URL, preflight check,
-build-identity check, reset step, credential and drift note then comes from **that** environment's
-block in `.anantys/qa.md`.
+build-identity check, reset step, credential, **agent limit** and drift note then comes from
+**that** environment's block in `.anantys/qa.md`.
 
 **A `.anantys/qa.md` with no `## Environment:` blocks** (written by an earlier `init`: flat
 `## Surfaces` / `## Preflight` / `## Reset` / `## Credentials` sections) **is a single `local`
