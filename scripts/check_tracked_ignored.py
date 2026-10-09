@@ -16,9 +16,10 @@ index against the exclude rules. Only the assembled tree holds both halves.
 Both halves answer a question about *git's* state, so both must be asked in git's
 units. A marker is a directory when it says so (a trailing `/`), not when its first
 character happens to be a dot; and the exclude rules `--exclude-standard` consults
-are not one root `.gitignore`. Where this still cannot see: a global
-`core.excludesFile` is read by the measurement and not by the warning, so on a
-machine that has one the warning may claim less than was measured — never more.
+are not one root `.gitignore`. And the inventory of those rules is a *model* of what
+git consults, so it may only choose the warning — never gate the measurement. Where
+this still cannot see: a rule file git reads and the inventory does not (a global
+`core.excludesFile`) leaves the warning claiming less was measured, never more.
 
 Exit 0 = clean (warnings allowed), 1 = at least one error.
 """
@@ -37,7 +38,12 @@ GENERATED = ("__pycache__/", ".pyc", ".pyo", ".DS_Store", ".egg-info/")
 
 def git(*args: str) -> list[str]:
     out = subprocess.run(
-        ("git", "-C", str(ROOT), *args), capture_output=True, text=True, check=True
+        # `core.quotePath` defaults on, and a quoted path ends in `"` — which is how a
+        # tracked `.pyc` under a non-ASCII directory slips every suffix marker below.
+        ("git", "-C", str(ROOT), "-c", "core.quotePath=false", *args),
+        capture_output=True,
+        text=True,
+        check=True,
     )
     return [line for line in out.stdout.splitlines() if line]
 
@@ -59,17 +65,20 @@ def probe(marker: str) -> str:
 def exclude_sources() -> list[str]:
     """What `--exclude-standard` consults and this repo can carry, in git's own units.
 
-    A nested `sub/.gitignore` and a rule in `.git/info/exclude` are each enough for
-    the measurement to answer; neither is a root `.gitignore`.
+    A nested `sub/.gitignore` and a rule in `info/exclude` are each enough for the
+    measurement to answer; neither is a root `.gitignore`. Where `info/exclude` lives
+    is git's to say — in a linked worktree (which is how `pr_landing_order.py --verify`
+    runs every gate) `ROOT/.git` is a file, so composing the path by hand finds nothing.
     """
     seen = (*git("ls-files"), *git("ls-files", "--others", "--exclude-standard"))
     sources = sorted({p for p in seen if Path(p).name == ".gitignore"})
-    info = ROOT / ".git" / "info" / "exclude"
+    label = git("rev-parse", "--git-path", "info/exclude")[0]
+    info = ROOT / label
     if info.is_file() and any(
         line.strip() and not line.lstrip().startswith("#")
         for line in info.read_text(encoding="utf-8").splitlines()
     ):
-        sources.append(".git/info/exclude")
+        sources.append(label)
     return sources
 
 
@@ -85,17 +94,22 @@ def main() -> int:
     for path in sorted(flagged):
         errors.append(f"{path}: generated output is tracked — `git rm -r --cached` it")
 
-    # The general rule needs an exclude source to measure against. An absent one is not
-    # an error — the `.gitignore` is a file some *other* change lands, and reddening every
-    # branch until it arrives forces an order on changes that have none. It is not silence
-    # either: a check that prints nothing reports health it never measured.
-    if exclude_sources():
-        for path in sorted(set(git("ls-files", "-i", "-c", "--exclude-standard")) - flagged):
-            errors.append(
-                f"{path}: tracked, and ignored — `.gitignore` hides it from `git status` "
-                f"instead of removing it; `git rm --cached` it, or stop ignoring it"
-            )
-    else:
+    # The general rule, asked of git unconditionally. Gating it on `exclude_sources()`
+    # made a hand-rolled inventory of git's rule files able to *drop* a path git had
+    # already named: on any tree without a root `.gitignore`, `ls-files -i -c` returned
+    # the file and this printed "no exclude source … goes unmeasured" and exited 0.
+    ignored = sorted(set(git("ls-files", "-i", "-c", "--exclude-standard")) - flagged)
+    for path in ignored:
+        errors.append(
+            f"{path}: tracked, and ignored — `.gitignore` hides it from `git status` "
+            f"instead of removing it; `git rm --cached` it, or stop ignoring it"
+        )
+
+    # An absent exclude source is not an error — the `.gitignore` is a file some *other*
+    # change lands, and reddening every branch until it arrives forces an order on changes
+    # that have none. It is not silence either: a check that prints nothing reports health
+    # it never measured. A finding of its own settles the question, so only ask when empty.
+    if not ignored and not exclude_sources():
         warnings.append(
             "no exclude source, so only generated output is checked — a tracked file "
             "ignored by some other rule goes unmeasured until one lands"

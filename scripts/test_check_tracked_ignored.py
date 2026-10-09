@@ -145,6 +145,47 @@ class TrackedIgnored(Harness):
         self.assertEqual(out.count("scripts/__pycache__/check.cpython-314.pyc"), 1)
         self.assertIn("1 error(s), 0 warning(s)", out)
 
+    def test_a_rule_the_inventory_cannot_see_still_errors(self) -> None:
+        """The inventory models git's rule files; a wrong model may not drop a finding.
+
+        `info/exclude` is reached here through the path git reports, so to make the
+        inventory blind without faking it, put the rule where only `--exclude-standard`
+        looks: a linked worktree, whose `.git` is a file and whose `info/exclude` is the
+        *main* repo's. That is the tree `pr_landing_order.py --verify` runs the gates in.
+        """
+        self.track("keys.pem")
+        self.git("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "seed")
+        info = self.root / ".git" / "info" / "exclude"
+        info.parent.mkdir(parents=True, exist_ok=True)
+        info.write_text("keys.pem\n", encoding="utf-8")
+        linked = self.root / "wt"
+        self.git("worktree", "add", "-q", "--detach", str(linked), "HEAD")
+        self.addCleanup(self.git, "worktree", "remove", "--force", str(linked))
+        cti.ROOT = linked.resolve()
+        self.assertTrue((linked / ".git").is_file())
+        rc, out = self.run_check()
+        self.assertEqual(rc, 1)
+        self.assertIn("keys.pem", out)
+        self.assertIn("tracked, and ignored", out)
+
+    def test_a_generated_path_git_would_quote_is_reported(self) -> None:
+        """`core.quotePath` wraps a non-ASCII path in `"`, so no suffix marker matches."""
+        self.track("scrîpts/check.pyc")
+        rc, out = self.run_check()
+        self.assertEqual(rc, 1)
+        self.assertIn("generated output is tracked", out)
+        self.assertIn("scrîpts/check.pyc", out)
+
+    def test_the_warning_is_withheld_once_the_rule_has_a_finding(self) -> None:
+        """"Unmeasured" is a false claim next to a path the measurement just named."""
+        self.track("keys.pem")
+        info = self.root / ".git" / "info" / "exclude"
+        info.parent.mkdir(parents=True, exist_ok=True)
+        info.write_text("# only a comment\nkeys.pem\n", encoding="utf-8")
+        rc, out = self.run_check()
+        self.assertEqual(rc, 1)
+        self.assertNotIn("warning:", out)
+
     def test_an_untracked_ignored_file_is_fine(self) -> None:
         """The cell that is *supposed* to be empty of signal — scratch output."""
         self.track(".gitignore", "__pycache__/\n")
