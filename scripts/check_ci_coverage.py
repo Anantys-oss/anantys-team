@@ -41,6 +41,23 @@ while the branch is still a branch":
 
 Both shapes are the failure this checker exists to catch, dressed as coverage.
 
+All of which assumes the trigger being read is `pull_request` at all, and that
+assumption was tested two different ways in the same function. A nested `on:`
+block is matched by *key*, so `pull_request_target:` is correctly a different
+event. A flow-form `on:` — `on: pull_request`, `on: [push, pull_request]` — was
+matched by *containment*, and three real events spell the name as a prefix:
+`pull_request_target`, `pull_request_review`, `pull_request_review_comment`. So
+one wiring got two opposite verdicts depending only on which YAML style spelled
+it, and the loose style was the one that certified. `pull_request_review` is the
+sharp case: it fires when a human submits a review and never on open or
+synchronize, so a gate wired only there has not run at the moment the merge
+button becomes available. Whole tokens, both branches.
+
+A flow *mapping* — `on: {pull_request: {types: [closed]}}` — is still read as
+unfiltered, because the filters live inside a shape this branch does not walk.
+Stated, not covered, like `paths:` and composite actions: nobody writes it, and
+the direction to be wrong in is the one that is also loud.
+
 And one more, in the direction the argument above points away from. Discovery is
 used twice as the counter-example — it collects a checker's tests whether or not
 any workflow runs the checker, so `NAMED` deliberately does not match it. But
@@ -279,8 +296,12 @@ def blocking(text):
         if not (on := ON.match(line)):
             continue
         if inline := on.group(1).split("#", 1)[0].strip():
-            # `on: pull_request` or `on: [push, pull_request]` — no filters possible.
-            return None if "pull_request" in inline else "does not trigger on pull_request"
+            # `on: pull_request` or `on: [push, pull_request]` — no filters
+            # possible. Read as whole tokens, not as a substring: three real
+            # events spell `pull_request` as a prefix, and the nested branch
+            # below already rejects all three because it matches a key.
+            listed = set(re.findall(r"[\w-]+", inline))
+            return None if "pull_request" in listed else "does not trigger on pull_request"
         body = nested(lines, i)
         keys = [n for n, ln in enumerate(body) if re.match(r"^\s*pull_request:", ln)]
         if not keys:
