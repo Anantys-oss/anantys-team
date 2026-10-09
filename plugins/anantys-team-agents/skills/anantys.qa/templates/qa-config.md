@@ -11,18 +11,89 @@ with no local stack. Each is one **kind**:
 - **`local`** — the developer's own stack. **Resettable**. Has a Reset block.
 - **`shared`** — a deployed env (staging / preview / prod). **Never reset**; test data is created
   additively; driven through the operator's already-signed-in browser. Has **no** Reset block — an
-  explicit "Reset: NONE" instead. Says whether it is production (`Production: yes | no`); on
-  production, scenarios that charge a card, record consent or notify a real person are BLOCKED.
+  explicit "Reset: NONE" instead. **Must** say whether it is production (`Production: yes | no`) —
+  a `shared` block missing the line is treated as production; on production, scenarios that charge
+  a card, record consent or notify a real person are BLOCKED.
 
 Every environment says **what drives the browser** in its `Driven by:` line — the operator's
-connected browser, or a named local command. A `shared` env is always the operator's browser.
+connected browser, or a named local command. A `shared` env is always the operator's browser. A
+declared env missing the line is not assumed to be: ask, then record the answer here.
 
 A file with **no** `## Environment:` blocks (the flat layout an earlier `init` wrote) is read as a
-single `local` environment named `local`, marked default — it keeps working unchanged. Re-run
-`init` to add a `shared` one: it first rewrites the flat sections as the `local` block below.
+single environment named `local`, marked default — every surface, preflight check, credential and
+drift note keeps working unchanged. Its **kind is undeclared**, so its Reset block is not run: the
+flat layout predates the `local`/`shared` distinction, so nothing in it was written under a rule
+that asked which kind it targets, and it carries neither a Target nor a probe. Re-run `init` to
+declare the kind (and to add a `shared` env): it first rewrites the flat sections as the `local`
+block below.
 
 > **No secrets.** Record the *command* that retrieves a credential, never the credential.
 > This file is committed.
+
+> **No ambient targets.** Every destructive command — anything in a Reset block — must name the
+> host / database / namespace it acts on **literally, in this file**. A command that resolves its
+> target from the surrounding environment (`$DATABASE_URL`, a dotenv, the current `kubectl`
+> context, an AWS profile, `docker compose` in whatever directory the shell is in) is not a
+> `local` command: it is a command that runs wherever the shell happens to point. Selecting
+> `--env local` chooses which *block* to read; it does nothing to the command inside it. If the
+> project's only reset path is ambient (`make db-reset`), record a **target probe** beside it and
+> the rule is: probe, compare to the declared target, abort on mismatch. Never reset on a probe
+> that fails or returns something unexpected.
+
+> **An absent declaration is never a permission.** Every rule above gates an action on a field of
+> this file. A field that is *missing* — an older `init` wrote the file, a hand edit dropped a line,
+> the operator answered "skip" — must resolve to the **narrower** branch, and a field whose absence
+> would widen what an action may do is **asked, never inferred**: one question, then written into
+> the file so the next run does not ask again.
+>
+> The two fields that already fail this way are the two about *being able to verify* — no
+> build-identity probe means ask and stop, no payment instrument means every checkout case is
+> `BLOCKED`. The fields about *permission to act* are the ones to watch, because their permissive
+> branch is the one that looks like backward compatibility:
+>
+> | missing field | narrower branch — the one to take |
+> |---|---|
+> | `kind:` (a flat file, or a block whose kind you cannot establish) | readable, runnable, **not resettable** — no Reset block runs until `init` has declared the kind |
+> | `Driven by:` on a declared env | ask which drives it; do not fall back to the operator's connected browser, the widest capability here. A `shared` env needs no line — its kind *derives* the browser, which is a declaration, not an absence |
+> | `Production:` on a `shared` env | **treat it as production** until the operator says otherwise. The cost of being wrong that way is a handful of money / consent / notification assertions reported `BLOCKED`; the cost of being wrong the other way is a real charge, a real consent record, a real email to a real person |
+> | Reset `Target:` / probe | no reset — the file predates the rule; ask for the target rather than running the command that has none |
+
+> **And a present declaration is not an observation.** The rule above catches the field nobody
+> wrote. Its complement is the field somebody wrote *once*: `kind:` and `Production:` are answers
+> the operator typed at `init`, and from then on every guard that matters — no reset on `shared`,
+> money / consent / notification assertions `BLOCKED` on production — reads them as though they
+> were measurements of the host. They are not. They are a label on a URL, and the URL is the part
+> that moves: staging decommissioned and its hostname pointed at the prod app, a `local` block
+> whose dev-box URL was repointed (a `local` surface is *expected* not to be `localhost`), a
+> `shared` block copied to declare a second env with only the name edited.
+>
+> One observation already reaches the host on every run and is thrown away: the **build-identity
+> probe**. `run` reads a commit out of its response and discards everything else about *who
+> answered*. So each environment records what it answers as, and every run compares:
+>
+> - `Answers as:` in the Build identity block — an identity in the probe's own response, captured
+>   at `init`: the resolved host of the probe URL, an `env`/`environment` field in a `/version`
+>   payload, a deployed-env banner. Not the commit: prod and staging serve the same commit between
+>   deploys, so a matching commit is no evidence of which host produced it.
+> - **Two environments in one file may not share an `Answers as:` value.** That collision *is* the
+>   copy-paste case, and it is the one this catches for free.
+> - On mismatch, or when the response carries no identity at all, the environment's `kind:` and
+>   `Production:` are **unconfirmed** — which is the table above, reached from a falsified field
+>   instead of a missing one: not resettable, treated as production. Say so in the run header, so
+>   the record shows what the campaign could and could not confirm.
+> - **Never rewrite `Answers as:` to match what you just saw.** A mismatch is the finding; updating
+>   the file launders it. Report it and let the operator re-run `init` — repointed DNS and a typo
+>   are indistinguishable from here, and only one of them is safe to accept.
+
+> **And an observation is a measurement at a time.** Both rules above resolve at step 1 and are
+> then treated as settled — right for `kind:` and `Production:`, which change between campaigns.
+> Ask of every precondition instead: *who can falsify this while the walk is still running, and can
+> the agent put it back?* Here exactly one answers "the identity provider" and "no" — the
+> `shared` env's signed-in session, which the agent is forbidden to re-establish. So it gets a
+> `Signed in when:` line and a **per-scenario** re-check, not a preflight row; its loss is
+> `BLOCKED — session ended` for the remainder, never a defect. A precondition that lapses silently
+> is worse than one that was never there: the missing one stops the campaign, the lapsed one lets
+> it keep reporting.
 
 ---
 
@@ -61,13 +132,31 @@ forwarder, an unseeded reference table. Nothing errors; the product just waits o
 <command or URL that returns the branch/commit actually running — a /version or /healthz
 endpoint, a deployed-SHA banner, `docker inspect <container>`, a `git -C <deploy path> rev-parse`>
 ```
+Answers as: `<what in that response identifies the host — the resolved hostname, an `env` field,
+a banner string — and the value seen at init, e.g. `hostname: dev.box.lan`>`
+
 Leave this blank only if the project genuinely has no way to tell. `run` needs it to enforce a
 plan's `**Under test:**` line; with no probe it must ask the operator and stop, never infer from
-the local checkout — a local branch says nothing about what a remote stack runs.
+the local checkout — a local branch says nothing about what a remote stack runs. `Answers as:` is
+what makes this block's `kind: local` an observation rather than a label: a non-`localhost` dev
+surface is normal here, so the name proves nothing about which host is behind it, and it is the
+reset below that pays for getting that wrong.
 
 ### Reset — how to get a fresh test subject
+
+Target: `<the host / database / namespace this block is allowed to touch — e.g. localhost:5432/app_dev>`
+
 ```bash
-<command to delete / recreate the test account or fixture>
+<probe that prints the target the reset command will actually resolve — e.g.
+`psql "$DATABASE_URL" -tAc 'select current_setting(''listen_addresses'')||inet_server_port()'`,
+`kubectl config current-context`, `docker compose config --format json | jq -r '.name'`>
+```
+Run the probe first, every time. If its output is not the declared Target, **stop** — do not reset,
+and tell the operator their shell is pointed elsewhere. Same if the probe errors or prints nothing.
+
+```bash
+<command to delete / recreate the test account or fixture — prefer the form that names the target
+explicitly (`psql -h localhost -d app_dev …`) over the form that reads it from the environment>
 ```
 Client-side state to clear between runs: storage keys `<keys>`, cookies `<names>`, session
 `<how to genuinely sign out — note if the obvious way leaves a cookie alive>`.
@@ -111,15 +200,32 @@ Production: no
 | S2 | Signed in | the operator's browser is signed in; the agent reuses that session and never signs in |
 | S3 | The feature has real DATA | the behaviour under test exists on a real record — a shared env has no fixtures, so a campaign against one with no such data can only report BLOCKED |
 
+Signed in when: `<the cheapest visible proof the session is still live — an account menu or avatar
+is present, `/me` returns 200, the header shows the operator's name — not "the page loaded">`
+
+S2 is a preflight check, so it answers once, before the walk. The session it checks is the only
+precondition here the agent can neither create nor restore, and it expires on the provider's clock,
+not the campaign's. `run` therefore re-checks this line **per scenario** (step 3), and a loss ends
+the walk with the remainder `BLOCKED — session ended`. Without it the run keeps walking and files
+the login wall as a defect in every scenario after the one where the session died.
+
 ### Build identity — how this environment reports the code it is serving
 ```bash
 <the deployed-SHA endpoint or banner of THIS env — e.g. `curl -s https://api.staging.<domain>/version`>
 ```
+Answers as: `<the identity in that response, and the value seen at init — e.g. `"env": "staging"`>`
+
 Per environment, never shared with `local`: staging lags `main` between deploys, and a plan's
-`**Under test:**` line is only enforceable against what *this* env actually serves.
+`**Under test:**` line is only enforceable against what *this* env actually serves. And the commit
+alone cannot tell staging from production — right after a deploy they are the same commit — so it is
+`Answers as:` that carries the `Production: no` above from a typed answer to a checked one.
 
 ### Reset — NONE
 Shared, persistent environment — **never reset it** and never run a destructive command against it.
+This block being empty is not the protection: the protection is that no `local` Reset command can
+resolve to this environment's host. Check that when `init` writes both blocks — if the `local`
+reset would hit `<this host>` under any dotenv or context the operator might have loaded, fix the
+`local` block, not this sentence.
 Create test data **additively** (a new record; a new PR → a real run). Drive it through the
 operator's already-signed-in browser session.
 
