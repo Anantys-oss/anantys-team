@@ -97,7 +97,129 @@ Identical for every source:
 
 Write `qa-plan.md` following `templates/qa-plan.md`. Every assertion gets a stable id
 (`A1`, `B5`, …) — ids are referenced by runs, notes and reports forever, so **never renumber
-them**. On a regeneration, keep existing ids and their adjudication annotations; append new ones.
+them**.
+
+### Regenerating over an existing plan
+
+`plan` rewrites a file that `run`, `retest` and `note` have been writing to. **Everything in
+`qa-plan.md` that `plan` did not author is preserved** — there is no shorter version of this list,
+and a field missing from it is a field a regeneration silently destroys:
+
+| Field | Written by | On regeneration |
+|---|---|---|
+| Assertion ids | `plan` | never renumbered, never dropped |
+| Per-environment result suffixes | `run` / `retest` | carried over verbatim |
+| `⚠️ Adjudicated` annotations | `note` | carried over verbatim |
+| `~~…~~ REMOVED` strike-throughs | `note`, `plan` | carried over verbatim |
+| Progress tables | `run` / `retest` / `note` | kept, recomputed (N can change) |
+| Coverage-table `UNCOVERED` rows | `plan` | rebuilt from the source |
+
+Two of those are load-bearing in a way that is easy to miss. A dropped result suffix is not a
+cosmetic loss: the suffix **is** the authoritative result, so `status` would answer "can this ship?"
+off a blank plan and the operator would re-walk a campaign that had already passed. And a dropped
+`REMOVED` strike-through resurrects a behaviour the product deliberately dropped — the very next
+run files it as a defect, and as a blocker if it sits in §3.
+
+**A kept annotation is bound to the text it was written about, not to the id.** An adjudication
+narrows one specific assertion; an id survives a rewrite of that assertion's wording, which is
+usually *why* you regenerated. So for every id whose assertion text changed:
+
+- Carry the annotation over, prefixed `⚠️ STALE — re-adjudicate:`. It suppresses nothing until
+  `note` re-rules it. Narrow, never delete: the ruling and its reason stay readable so the operator
+  re-rules from the original argument instead of from scratch.
+- Reset that assertion's result suffixes to `not run`, **for that assertion only**. A result is an
+  observation of the old wording.
+
+Silently transferring a suppression onto new behaviour is the one regeneration failure nothing
+downstream can detect — the annotation and the assertion both stay well-formed.
+
+### The requirement is the third axis, and only two of the three are recorded
+
+A result is a claim about a triple: this **requirement**, verified on this **code**, in this
+**environment**. The plan records the code (`**Under test:**`, which `run` re-checks against the
+stack's build identity) and every suffix records its environment. Nothing records the requirements.
+So the rule above can only reach the unrecorded axis by proxy — and it proxies through the
+assertion's *wording*, which the authoring rules deliberately make change-resistant. "Write
+assertions against the requirement, not the implementation" is an instruction to abstract away the
+detail that a requirement change usually moves. FR-042 tightening from "within 24 hours" to "within
+1 hour" leaves `A7 the confirmation email arrives (FR-042)` word-for-word correct: text unchanged,
+so the ruling stays live and `local: PASS` carries over — a pass observed against the superseded
+rule. The better the assertion is written, the quieter the staleness.
+
+So record the revision the requirements came from, as a header line beside `**Under test:**`:
+
+```markdown
+**Derived from:** `specs/206-subscribe-funnel/` @ a1b2c3d
+```
+
+- **spec-kit dir** — the last commit touching the source files (`git log -1 --format=%h -- <dir>`).
+  If the source is untracked or has uncommitted changes, write `@ uncommitted`: the next
+  regeneration then treats every requirement as changed, because an unrecorded revision is not the
+  same thing as an unchanged one.
+- **`--brief` / `--from linear:` / `--from pr:`** — the copy at `.anantys/qa/<slug>/brief.md` **is**
+  the snapshot. Diff the newly assembled brief against the existing copy **before** overwriting it;
+  after the write there is nothing left to compare, and this is the only moment the comparison is
+  possible.
+
+With the revision recorded, a regeneration compares requirements instead of wording. Per assertion,
+by the state of the requirement it cites:
+
+| Cited requirement | On regeneration |
+|---|---|
+| unchanged | annotation and result suffixes carried over verbatim |
+| text changed | ruling → `STALE`, suffixes → `not run` — as for a reworded assertion |
+| absent from the source | struck through `REMOVED (<date>, source: <rev>)`, excluded from `N` — **only if the absence is answerable**, below |
+
+`REMOVED (source: …)` is the existing mechanism with the witness the ruling rules already demand:
+the revision that dropped the requirement *is* where the product decision was made. It is not an
+operator ruling and must never be reported as one. The alternative — leaving the orphan live, since
+ids are never dropped — keeps a PASS for a requirement that no longer exists, counted in a
+denominator it is no longer part of.
+
+That mismatch is the general case, and it is what the coverage ratio hides: `<R>` is rebuilt from
+today's source while the suffixes it counts were observed against earlier ones. A regeneration that
+changes `**Derived from:**` says so in the preservation diff, and names the requirements that moved
+— every result carried across that line is an observation against a superseded revision.
+
+### An absent requirement is not a product decision `plan` can make
+
+Two rows of that table fail safe: a `STALE` ruling suppresses nothing, and `not run` costs one
+re-walk. The third does not. `REMOVED` is the widest ruling the skill has — `env: all`, permanent,
+excluded from `N`, and it instructs every later run not to report the behaviour's absence as a
+defect. So absence is the one signal that has to be **earned**, and it is also the one a partial
+read manufactures:
+
+| what happened | what `plan` sees |
+|---|---|
+| the requirement was dropped from the product | cited id gone from the source ✅ |
+| `plan --from linear:SKU-12` re-run on a plan built from `SKU-12,SKU-13` | **same** |
+| the tracker fetch degraded and returned fewer issues | **same** |
+| the regeneration resolved a different spec dir than the recorded one | **same** |
+
+Only the first row is a product decision. This skill already carries the rule for exactly this
+shape — **an absent declaration is never a permission**, and missing resolves to the *narrower*
+branch (see the `.anantys/qa.md` gates). A `plan`-written `REMOVED` resolves it to the widest one.
+
+So `plan` may strike `REMOVED` only when the absence is **answerable** — when this regeneration
+read the same source the recorded one did. That is what `**Derived from:**` has to record: the
+source *set*, not only its revision.
+
+```markdown
+**Derived from:** `.anantys/qa/sku-231/brief.md` @ 9f8e7d6 — from `linear:SKU-12,SKU-13`
+```
+
+When the set differs from the recorded one, or the recorded revision is `uncommitted` (there is
+nothing to diff against), **no requirement is absent** — the ones outside this read were never
+asked for. Each such assertion keeps its id and its annotations, its suffixes reset to `not run`,
+and it is routed into §4 with the reason `cited requirement not in this read (<recorded set> →
+<this set>)`: `BLOCKED`, counted in `N`, reported as loudly as a FAIL. That is the route a brief's
+known gap already takes, and it leaves the product decision where it belongs — an operator `note`,
+which can still strike `REMOVED` from that state.
+
+One reading rule makes the answerable case reviewable: in the preservation diff, name removed and
+added requirement ids **together**. A renumbering — `FR-030` out, `FR-041` in, same behaviour —
+satisfies every precondition above and is a removal only to `plan`. Paired, it reads as one line
+the operator can veto; split across two lists, it reads as coverage that shrank on purpose.
 
 If the source carries an **under-test precondition** — a `--from pr:` head branch, or a brief's
 `_Under test:_` line — copy it into the plan header as `**Under test:** <branch> @ <head commit> —
@@ -106,10 +228,17 @@ once the PR merges, `run` can only recognise the shipped code by commit ancestry
 `qa-plan.md`, never the brief, so a precondition that lives only in the brief is never enforced: a
 PR-derived campaign would run green against a stack serving `main`.
 
-`plan` writes the **default** environment's progress table (all Not run), and keeps any existing
-ones — recomputed, since a regeneration can change N.
+`plan` writes the **default** environment's progress table — all Not run on a first write,
+recomputed from the preserved result suffixes on a regeneration — and keeps every other
+environment's table, likewise recomputed, since a regeneration can change N. A regeneration that
+zeroes a table has dropped the suffixes it should have carried over.
 
-Show the operator the scenario list and the blocker list before writing.
+Show the operator the scenario list and the blocker list before writing. On a regeneration, show
+the preservation diff too — the `**Derived from:**` source set and revision before and after,
+assertions added, assertions whose text or whose cited requirement changed (and so whose annotations
+go stale), requirements gone from the source *paired with the ones added*, and results carried over.
+A regeneration is a destructive write to recorded observations; the operator sees what it costs
+before it happens.
 
 ## `--from pr:` — assembling the brief from pull requests
 

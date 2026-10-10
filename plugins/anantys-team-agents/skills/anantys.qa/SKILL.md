@@ -110,7 +110,16 @@ The kinds, the `shared` and production guards, and the legacy-file fallback are 
 ## Progress table
 
 Every action but `init` ends its reply with this table, and `qa-plan.md` keeps the same tables
-under its header — one per environment that has results.
+under its header. Which tables, and who writes them:
+
+- `plan` writes the **default** environment's table — all Not run on a first write, recomputed from
+  the preserved result suffixes on a regeneration — and keeps every other environment's table,
+  likewise recomputed, since a regeneration can change N. A regeneration that zeroes a table has
+  dropped the suffixes it should have carried over (see "Regenerating over an existing plan").
+- `run` / `retest` add or refresh the **selected** environment's table.
+- `note` refreshes **every** table: a REMOVED assertion changes N for all of them. `note --env all`
+  prints them all; `note --env <name>` prints that environment's.
+- `status` / `report` print the selected environment's table; they write nothing to the plan.
 
 Percentages are of the plan's **total assertions** — REMOVED ones excluded — each with its count;
 they are computed from `qa-plan.md`, never estimated.

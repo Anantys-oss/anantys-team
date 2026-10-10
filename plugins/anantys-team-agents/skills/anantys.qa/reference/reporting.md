@@ -17,9 +17,17 @@ the reason, in the form future runs will read:
 
 ```markdown
 - [ ] A4 Checkout is priced for the selected plan and period (FR-012).
-      ⚠️ *Adjudicated 2026-08-03 (operator, env: `local`): the grid/checkout price gap is a sandbox
-      key drift, not a product defect. Only a mismatch in **plan or period** is a real A4 failure.*
+      ⚠️ *Adjudicated 2026-08-03 (operator, run 3, env: `local`): the grid/checkout price gap is a
+      sandbox key drift, not a product defect. Only a mismatch in **plan or period** is a real A4
+      failure.*
 ```
+
+The `run <n>` is the ruling's witness, not decoration. `note` is the only sanctioned writer of these
+annotations, but nothing in the file proves that a given one came from it — so cite the run whose
+FAIL or BLOCKED the operator was ruling on, and let `qa-runs.md` carry the proof. Rule off a run
+that never recorded that result, or with no run at all, and say `run <n>, unconfirmed` in the
+annotation rather than picking a plausible number: a future run reads it either way, and the
+difference between *checked* and *assumed* is the whole value of the line.
 
 An annotation with **no** `env:` (written before environments existed) is scoped to the default
 environment only — except a **REMOVED** strike-through, which is a product decision and reads as
@@ -33,8 +41,25 @@ Two rules make these annotations durable:
 - **Record the reason, not just the ruling.** "Not a defect" without a why gets re-litigated next
   run; "the wizard *is* the AI surface here, a second one is an attention conflict" does not.
 
+`note` on an assertion carrying a `STALE` ruling replaces it with a fresh one citing the new run —
+that is the only way a stale ruling starts suppressing again. Show the operator the stale ruling's
+original reason when asking, so the re-rule is a decision about the reworded assertion rather than
+a re-derivation from nothing.
+
 An assertion the product deliberately dropped is struck through and marked REMOVED — keep the line,
-so its absence is never re-reported as a defect.
+so its absence is never re-reported as a defect. REMOVED is the widest ruling the skill has —
+`env: all`, permanent, and about the product rather than about a run, so no run log can witness it.
+Give it the witness it can have: cite **where the decision was made** (the spec section, issue or PR
+that dropped the behaviour). A REMOVED line citing nothing retires an assertion on every environment
+for the life of the feature on the strength of its own say-so.
+
+`note` is not its only writer: `plan` marks REMOVED too, when a regeneration finds the assertion's
+cited requirement gone from the source (see `reference/sources.md`, "The requirement is the third
+axis"). Those cite `source: <rev>` rather than an operator, and the distinction is reported, never
+flattened — one is a product ruling, the other is a source diff, and only the first one a person
+made. And a source diff is a witness only when the two sources are comparable: `plan` strikes
+nothing on a read whose source set differs from the recorded one. An unanswerable absence is
+`BLOCKED` in §4, never a strike.
 
 After any ruling, refresh **every** progress table in `qa-plan.md` — a REMOVED assertion leaves N
 for all environments. `note --env all` prints them all; `note --env <name>` prints that
