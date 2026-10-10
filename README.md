@@ -1,6 +1,6 @@
 # anantys-team
 
-A small, vendor-neutral marketplace that turns Claude Code into a **specialized mini-team**.
+A small, project-agnostic marketplace that turns Claude Code into a **specialized mini-team**.
 
 The `anantys-team-agents` plugin gives Claude a set of **roles** — each one a way to put
 *Claude + a real browser* to work, not just for writing code, but for piloting your tools
@@ -24,10 +24,52 @@ Every role is **project-agnostic**: no hardcoded domains, paths, or design token
 for what they need (a dev URL, a property, target queries) or infer it from the project.
 More roles can be added over time without changing how you install the team.
 
+## How the roles hand off
+
+A team is defined by its handoffs, not by its headcount. The two agents exist because of a
+single rule: **a context cannot independently check its own work.** The reasoning that wrote
+a fix will write a test that confirms that fix; the reasoning that wrote a feature will
+review it as complete. So the skills delegate exactly the steps where self-assessment is
+worthless:
+
+```
+/anantys.debug   defect spec  ──▶  anantys.spec-tester   regression test, fresh context
+/anantys.review  spec/ticket  ──▷  anantys.spec-tester   are the PR's tests change-detectors?
+                                                         (recommended as Audit, you authorize)
+/anantys.review  the diff     ──▶  anantys.code-auditor  what did it omit?
+```
+
+A solid arrow is a dispatch the skill performs; `──▷` is one it recommends and you authorize.
+`review` is read-only by declaration — it may not hand its clean working tree to an agent that
+writes files, so the test run it needs is a verdict, not a side effect.
+
+What crosses the boundary is always the **spec, never the diff**. Hand `spec-tester` the
+expected behavior and it can write a test that fails; hand it the implementation and it can
+only write one that passes. Same for the auditor: it gets the change as a suspect, not the
+reasoning that justified it.
+
 ## Requirements
 
 - [Claude Code](https://claude.com/claude-code)
-- A connected browser for the browser tools (e.g. the **Claude-in-Chrome** extension).
+- **Claude-in-Chrome**, for the four browser-driven roles (`design`, `ops`, `debug`, `qa`).
+
+  The team is agnostic about *your project* — no hardcoded domains, paths, or design
+  tokens — but not about the browser backend. Each browser role names the
+  `mcp__claude-in-chrome__*` tools in its `allowed-tools`, and that list is a hard
+  allowlist: a different browser MCP (Playwright, chrome-devtools, …) is unreachable
+  from the skill even while connected. To swap backends, edit the role's
+  `allowed-tools` to its equivalent tools — tab context, navigate, click/type, read
+  page, console. The roles' prose is written against capabilities, not against one
+  vendor, so nothing else needs to change.
+
+  That list is a **tool** allowlist, not a **destination** allowlist — it says which
+  verbs a role holds, never where it may point them. The browser it drives is *yours*,
+  signed into everything you use, so each browser role additionally declares its own
+  navigation scope up front: the approved domain list you sign off on (`ops`), the dev
+  URL (`design`), the repro's URL (`debug`), the selected environment's Surfaces
+  (`qa`). `ops` — the one role aimed at live SaaS dashboards under your real account —
+  is read-only there as well as on the codebase: it may change what a page *shows* it,
+  never what the service *stores*.
 
 ## Install
 
@@ -60,6 +102,7 @@ Then invoke a skill directly:
 ```
 anantys-team/
 ├── .claude-plugin/marketplace.json     # the catalog (what `marketplace add` reads)
+├── scripts/check_plugins.py            # validates the catalog against the tree (CI)
 └── plugins/
     └── anantys-team-agents/
         ├── .claude-plugin/plugin.json  # the installable unit (name + version)
@@ -69,7 +112,8 @@ anantys-team/
         │   ├── anantys.debug/SKILL.md
         │   ├── anantys.review/SKILL.md
         │   └── anantys.qa/
-        │       ├── SKILL.md
+        │       ├── SKILL.md             # router: mission, actions, invariants
+        │       ├── reference/           # per-action procedure, read on demand
         │       └── templates/           # qa-config.md, qa-plan.md, feature-brief.md
         └── agents/                     # dispatched as isolated subagents
             ├── anantys.code-auditor.md
@@ -79,6 +123,13 @@ anantys-team/
 - **marketplace** = the catalog (the repo you add).
 - **plugin** = the installable, versioned unit a user enables in one shot.
 - **skills** = the actual capabilities Claude invokes.
+
+## Conventions
+
+Cross-cutting rules — the ones that bind every role rather than one skill — live in
+[`docs/`](./docs/), one file per rule. A new convention is a new file there, never
+another section here: README has a single append point, and every PR that used it
+collided with every other PR that used it.
 
 ## License
 
