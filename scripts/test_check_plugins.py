@@ -30,6 +30,10 @@ class Harness(unittest.TestCase):
     def write(self, name: str, n: int) -> None:
         (cp.ROOT / name).write_text(lines(n), encoding="utf-8")
 
+    def companion(self, folder: str, name: str, n: int) -> None:
+        (cp.ROOT / folder).mkdir(exist_ok=True)
+        (cp.ROOT / folder / name).write_text(lines(n), encoding="utf-8")
+
     def check(self, text: str) -> list[str]:
         """What `check_load` reported, whichever list it went to.
 
@@ -115,10 +119,6 @@ class TheRemedyIsCountedToo(Harness):
 
 class ATemplateIsReadLikeATopic(Harness):
     """templates/ is the other directory an action reads, so it is priced the same."""
-
-    def companion(self, folder: str, name: str, n: int) -> None:
-        (cp.ROOT / folder).mkdir(exist_ok=True)
-        (cp.ROOT / folder / name).write_text(lines(n), encoding="utf-8")
 
     def test_a_named_template_counts_toward_the_load(self) -> None:
         # The hole: a template the action is told to follow was read and never charged.
@@ -268,6 +268,50 @@ class TheCrossingIsTheError(Harness):
         self.baseline(**{"SKILL.md": lines(26)})
         self.check(lines(20))
         self.assertEqual([], cp.errors)
+
+
+class TheFloorIsTheConstraint(Harness):
+    """A remedy that relocates prose cannot work once the destinations are the load.
+
+    ``check_load`` prices the total against the baseline and offers one remedy:
+    move detail into ``reference/``. But the companions it moves detail *into* are
+    counted too, so past some size the remedy is arithmetically unreachable —
+    emptying ``SKILL.md`` entirely still leaves the role over. On the assembled
+    queue `anantys.qa` is exactly there: its companions alone load 698 against a
+    200 ceiling, up from 135 at the base. That is a regression wholly inside the
+    diff, which is the test the crossing arm uses to earn its error, and it landed
+    as a warning advising a split into the directory that caused it.
+    """
+
+    def test_a_companion_set_over_the_ceiling_is_reported_as_unreachable(self) -> None:
+        self.companion("templates", "plan.md", 20)
+        report, = self.check("`templates/plan.md`\n")
+        self.assertIn("emptying this file leaves 20 lines (> 10) in companions alone", report)
+        self.assertNotIn("split detail a given action does not need", report)
+
+    def test_a_reachable_ceiling_keeps_the_split_remedy(self) -> None:
+        self.companion("templates", "plan.md", 8)
+        report, = self.check("`templates/plan.md`\n" + lines(9))
+        self.assertIn("split detail a given action does not need", report)
+        self.assertNotIn("companions alone", report)
+
+    def test_a_floor_this_change_pushes_over_is_an_error(self) -> None:
+        # The total was already over at the base, so the crossing arm files this as
+        # inherited debt. The floor is what regressed, and no later head trimming
+        # the role can fix it — there is nothing to wait on.
+        self.baseline(**{"SKILL.md": lines(20)})
+        self.companion("templates", "plan.md", 20)
+        self.check("`templates/plan.md`\n")
+        self.assertEqual([], cp.warnings)
+        error, = cp.errors
+        self.assertIn("0 -> 20", error)
+
+    def test_a_floor_the_baseline_already_broke_stays_a_warning(self) -> None:
+        self.baseline(**{"SKILL.md": "`templates/plan.md`\n", "templates/plan.md": lines(20)})
+        self.companion("templates", "plan.md", 20)
+        self.check("`templates/plan.md`\n")
+        self.assertEqual([], cp.errors)
+        self.assertEqual(1, len(cp.warnings))
 
 
 class TheContractBinds(Harness):
@@ -558,10 +602,6 @@ class ANamedCompanionMustBeThere(Harness):
     pricing a load, and the whole diagnosis for everything else: the role instructs
     an action to read a page that is not there, and no checker in the tree says so.
     """
-
-    def companion(self, folder: str, name: str, n: int) -> None:
-        (cp.ROOT / folder).mkdir(exist_ok=True)
-        (cp.ROOT / folder / name).write_text(lines(n), encoding="utf-8")
 
     def companions(self, text: str) -> list[str]:
         path = cp.ROOT / "SKILL.md"
