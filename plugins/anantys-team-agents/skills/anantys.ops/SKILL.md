@@ -133,7 +133,46 @@ Objective: <current> -> <target> daily visitors
 ## 8. Optimization Roadmap           (Quick wins / Medium-term / Long-term, checkboxes)
 ## 9. New Landing Page Ideas         (slug, target query, est. monthly searches, priority)
 ## 10. Technical SEO Checklist       (sitemap, robots, Core Web Vitals, mobile, canonical, hreflang, internal links)
+## 11. Standing Rulings Applied      (finding, ruling id, and any ruling that lapsed this audit)
 ```
+
+## Phase 5b: Reconcile with standing rulings
+
+Do this **before** writing §2, §6, §8, §10 and §11 above — a finding the operator has already ruled
+on must not reach the report as a fresh recommendation.
+
+Read **`<workspace>/rulings.md`** in full now (see `templates/ops-rulings.md`) — the third file this
+skill writes under the workspace, alongside the journal entry and `current.md`. Phase 0 has not
+loaded it: Phase 0 reads the last 3 journal entries, and a ruling older than three audits is exactly
+the one whose re-litigation costs the most. Summarising the file defeats it — read every entry.
+
+For each finding you are about to report, find the rulings whose **Scope** names its URL, its query,
+or `site`:
+
+- **Live ruling** — the current observation matches the entry's **Observed then**. Drop the finding
+  from the roadmap and list it in §11 with its ruling id. If the entry has a **Still covers**
+  condition and the current observation meets it, report *that* narrowed finding, not the original.
+- **Lapsed ruling** — the observation differs from **Observed then**. Report the finding, and say in
+  §11 which ruling lapsed and what changed. A ruling is a judgement on a value; the value moved, so
+  the judgement has lost its subject. Never carry a ruling past the observation it was made about.
+- **No ruling** — report it as normal.
+
+When the operator rules on a finding at any point in the run — "that's deliberate", "we're not doing
+that", "not until the redesign" — **append the entry to `rulings.md` before you write the report**.
+A ruling stated in conversation and never written down lasts exactly as long as the session, and the
+next audit spends a browser walk and a report section re-deriving it.
+
+Three rules keep these entries worth reading:
+
+- **Narrow the check, never drop it.** A ruling says which version of a finding is real. Record that
+  as **Still covers**, so the audit keeps catching the part the operator did not rule out.
+- **Record the reason, not just the ruling.** "Won't fix" without a why gets re-argued next audit.
+- **Never edit an entry in place.** Strike it and write a new one. What the operator decided last
+  quarter is the evidence that this quarter's decision is a change.
+
+A ruled-out finding is neither a Completed Action nor a Next Action in `current.md` — it belongs in
+neither. Carrying it as pending with a climbing age counter is the re-litigation this file exists to
+end.
 
 ## Phase 6: Update Status File
 
