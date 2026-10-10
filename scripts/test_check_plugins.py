@@ -337,6 +337,32 @@ class ContractClauses(Harness):
     def test_adding_a_clause_is_how_the_contract_grows(self) -> None:
         self.assertEqual(self.clauses("## C1 — a\n\n## C2 — b\n", before="## C1 — a\n"), [])
 
+    def test_keeping_the_label_and_deleting_the_body_is_a_drop(self) -> None:
+        # The label set is identical, so the drop check above sees nothing, and the
+        # roles that link the contract all load less — the one edit that unbinds every
+        # role at once while reading as five load warnings turning into one.
+        error, = self.clauses(
+            "## C1 — Observation\n\n## C2 — A stop is a result\n",
+            before="## C1 — Observation\n\nobserve it\n\n## C2 — A stop is a result\n\nsay so\n",
+        )
+        self.assertIn("C1, C2 kept the label and lost the body", error)
+
+    def test_a_clause_that_only_shrinks_warns_rather_than_erroring(self) -> None:
+        # Content does move out of this file; a gate whose remedy is "put the lines
+        # back" would forbid the split it asked for. Silence is the thing it may not be.
+        self.assertEqual(
+            self.clauses("## C1 — a\n\nkeep\n", before="## C1 — a\n\nkeep\nand this\n"), []
+        )
+        self.assertIn("C1 2 -> 1 lost body lines", cp.warnings[-1])
+
+    def test_a_clause_that_was_already_empty_is_not_a_drop(self) -> None:
+        self.assertEqual(self.clauses("## C1 — a\n", before="## C1 — a\n"), [])
+        self.assertEqual(cp.warnings, [])
+
+    def test_a_clause_that_grows_is_neither(self) -> None:
+        self.assertEqual(self.clauses("## C1 — a\n\nx\ny\n", before="## C1 — a\n\nx\n"), [])
+        self.assertEqual(cp.warnings, [])
+
     def test_a_contract_that_arrives_on_this_branch_is_not_a_drop(self) -> None:
         self.baseline()  # BASE set, nothing held there
         path = cp.ROOT / cp.CONTRACT
