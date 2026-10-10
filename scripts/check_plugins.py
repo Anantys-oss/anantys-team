@@ -274,6 +274,22 @@ def check_load(path: Path) -> None:
     is exactly the test ``check_companions`` used to earn its error. Growth above a
     ceiling the base already broke is not this branch's regression, so it stays a
     warning until the head that fixes the role lands; the gate then holds the result.
+
+    **The floor is priced separately, because the remedy can be unreachable.** The
+    remedy below moves detail into ``reference/``, and ``worst_action_part`` counts
+    that directory — so past some size the advice is arithmetic nonsense: emptying
+    the role file changes nothing. On the assembled queue `anantys.qa` is there, its
+    companions alone at 698 (99 contract + 292 `reference/sources.md` + 307
+    `templates/qa-plan.md`) against a 200 ceiling, up from 135 at the base. Its
+    224-line `SKILL.md` is not the constraint and trimming it to zero still fails,
+    yet the report advised a split into the directory that caused it — and filed it
+    as a warning, because the *total* was already over at the base.
+
+    That is the one case the crossing arm above gets backwards. "Inherited debt is a
+    warning" is justified by *the head that fixes the role will land*; no head
+    trimming a role can lower its floor, so there is nothing to wait on and the
+    regression is wholly inside this diff — the error's own test. A floor the base
+    already broke stays a warning on the same rule as before.
     """
     parts = measured_load(path, disk)
     total = sum(n for _, n in parts)
@@ -289,7 +305,31 @@ def check_load(path: Path) -> None:
         "and whose clauses — labels and bodies both — `check_contract_clauses` holds "
         "in place, so shrinking it is not a route under this ceiling either"
     )
-    before = sum(n for _, n in measured_load(path, lambda p: at(BASE, p))) if BASE else None
+    base_parts = measured_load(path, lambda p: at(BASE, p)) if BASE else None
+    before = sum(n for _, n in base_parts) if base_parts is not None else None
+
+    # The floor is everything but the role file: the companions the remedy above
+    # relocates *into*. Once it alone clears the ceiling the remedy is arithmetic
+    # nonsense — emptying the role changes nothing — and the load has to come down
+    # in the companions instead. A floor this diff pushed over is a regression no
+    # later head trimming the role can undo, so it is an error even when the total
+    # was already over; a floor the base already broke stays inherited debt.
+    floor = total - dict(parts)[path]
+    floor_before = sum(n for p, n in base_parts if p != path) if base_parts is not None else None
+    floor_crossed = floor_before is not None and floor_before <= ROLE_MAX_LINES < floor
+    unreachable = ""
+    if floor > ROLE_MAX_LINES:
+        delta = f", {floor_before} -> {floor}" if floor_crossed else ""
+        unreachable = (
+            f"emptying this file leaves {floor} lines (> {ROLE_MAX_LINES}) in companions "
+            f"alone{delta}; "
+        )
+        remedy = (
+            "relocating prose cannot reach this ceiling — the largest reference/ topic "
+            "and the largest templates/ file are already counted, so what has to come "
+            "down is the companions themselves, or the ceiling has to become a number "
+            "some role in this tree can meet"
+        )
 
     crossed = before is not None and before != total and before <= ROLE_MAX_LINES
     if before is None or before == total:
@@ -300,7 +340,9 @@ def check_load(path: Path) -> None:
         change = f"this change grows a load already over the ceiling, {before} -> {total} (+{total - before})"
     else:
         change = f"loads {total} lines (> {ROLE_MAX_LINES}), down from {before}"
-    (errors if crossed else warnings).append(f"{rel(path)}: {change} — {breakdown}; {remedy}")
+    (errors if crossed or floor_crossed else warnings).append(
+        f"{rel(path)}: {change} — {breakdown}; {unreachable}{remedy}"
+    )
 
 
 def check_contract(path: Path, contract: Path) -> None:
