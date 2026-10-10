@@ -47,7 +47,8 @@ original reason when asking, so the re-rule is a decision about the reworded ass
 a re-derivation from nothing.
 
 An assertion the product deliberately dropped is struck through and marked REMOVED — keep the line,
-so its absence is never re-reported as a defect. REMOVED is the widest ruling the skill has —
+so its absence is never re-reported as a defect — it lives in `qa-plan.md` only, which is why
+`retest` selects from the plan and not from the run log. REMOVED is the widest ruling the skill has —
 `env: all`, permanent, and about the product rather than about a run, so no run log can witness it.
 Give it the witness it can have: cite **where the decision was made** (the spec section, issue or PR
 that dropped the behaviour). A REMOVED line citing nothing retires an assertion on every environment
@@ -83,8 +84,10 @@ context but not yours. For each open defect:
   regress. This is the part a fresh dev agent cannot know, and the reason over-fixes ship.
 
 Close with the release verdict: the blocker list, its status, and — explicitly — the assertions
-that were never observed. **Passing every blocker is not the same as having tested everything**;
-say which gaps a green list is hiding. Split the never-observed into the two kinds (see
+that were never observed, plus the ones recorded `PASS (unstable)` on this environment and not yet
+adjudicated. Those two groups answer different questions and both belong here: one was never
+observed, the other was observed twice and disagreed. **Passing every blocker is not the same as
+having tested everything**; say which gaps a green list is hiding. Split the never-observed into the two kinds (see
 Environments): **unreached** here and green on no environment — the real gap — and **refused**
 here, naming the environment whose PASS answers it, or stating that none does. A verdict that
 reports a refusal as a gap is unshippable by construction; one that reports an unanswered refusal
@@ -102,7 +105,9 @@ Tell the operator the file is ready to paste into a dev session. Do not open iss
 For the selected environment (`--env <name>`, else the most recent run's — say which), read
 `qa-plan.md` + `qa-runs.md` and report, without running anything: the progress table
 (PASS / DEFECT / BLOCKED / Not run), the blocker list with each blocker's status, the open
-defects, and the never-observed gaps — split unreached from refused, as `report` does. One short
-table, then the single sentence that answers "can this ship?".
+defects, the never-observed gaps — split unreached from refused, as `report` does — and the
+un-adjudicated `PASS (unstable)` assertions. One short table, then the single sentence that answers
+"can this ship?" — which cannot be an unqualified yes while an unstable PASS is open: name it there,
+and say a retest or a `note` is what closes it.
 
 `status` and `report` print the selected environment's table; they write nothing to the plan.

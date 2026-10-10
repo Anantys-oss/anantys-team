@@ -156,6 +156,3 @@ read the louder one. So record the reason and let the other environments answer 
 and this is the skill declining to act; re-typing it per assertion per campaign would dress a safety
 guard as operator-approved drift.
 
-Testing a shipped feature on `staging` is often easier than reproducing its data locally —
-but the `shared` rules above are not optional, because the blast radius of a reset or a stray write
-there is real data, not a fixture.
