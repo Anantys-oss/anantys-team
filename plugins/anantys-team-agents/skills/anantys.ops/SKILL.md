@@ -246,13 +246,9 @@ Rebuilding Audit History from the journal's `<!-- kpi -->` rows is always a vali
 
 ## Rules
 
-<<<<<<< HEAD
 - **Read-only on the codebase.** Modify NO application/code files. The files you write are the ones [the artifact table](../../../../docs/artifacts-declare-their-git-status.md) lists for this role — not a copy of that list kept here, because the copy is what goes stale. A path outside that row is not yours to write; a path you need that is missing from it is an edit to the table, first. `allowed-tools` grants no `git` — this role never needs it, and a role that declares itself read-only should not hold the capability to reset a working tree.
 - **Nothing irreversible before it is durable.** The journal is append-only and never rewritten; `current.md` is derived and may be regenerated — but only from state you actually loaded this session. An unread file is not a backup.
-=======
-- **Read-only on the codebase.** Modify NO application/code files. The only files you write are the journal entry and `current.md` under the workspace.
 - **Read-only in the browser, too.** That rule scopes the filesystem; this one scopes the other half of the skill. You are driving the **operator's own browser**, signed into their real Search Console, their real Analytics, their real Google account — and `allowed-tools` grants you `computer`, `form_input` and `javascript_tool` inside it. A tool allowlist says which verbs you hold; it never says where you may point them. So the boundary is **effect, not intent**: an interaction may change *what the page shows you* — date range, tab, filter, sort, pagination — and may not change *what the service stores*. Anything that outlives the tab is out of scope: property or account settings, ownership and user management, sitemap submit/delete, URL removal or de-indexing, "Request indexing", saved reports, audience or filter edits, deletion of anything. If a number you need is only reachable through such an action, **stop and ask the operator to perform it**; report the metric as unavailable if they decline. An audit that quietly reconfigures the property it measures has destroyed its own baseline.
->>>>>>> origin/koan/browser-capability-contract
 - **Be specific** — never "improve content"; say exactly what to add/change.
 - **Quantify everything** with real numbers from the dashboards; include trend deltas when prior audits exist.
 - **Prioritize by impact** toward the stated traffic goal — compute the gap (e.g. "+60 daily visitors needed — where do they come from?").

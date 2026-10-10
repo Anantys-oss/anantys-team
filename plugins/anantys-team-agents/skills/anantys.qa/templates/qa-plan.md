@@ -26,7 +26,6 @@ against a stack serving `main`, reports green having verified nothing. Once the 
 deployed, a deployed commit that contains it satisfies the line; there is no need to edit it. Omit
 it for a feature that was already merged and deployed when the plan was written.
 
-<<<<<<< HEAD
 **Recorded under:** anantys-team-agents v<running plugin version>. The rules that scored the
 statuses below — what counts as PASS, when a green retest closes a defect, what an adjudication
 annotation authorises. The other header lines pin the code and the requirements; this one pins the
@@ -52,20 +51,19 @@ PASS `` — exactly as it already keys on the environment, and a run rewrites on
 pair it used. A run whose class this line does not name may not overwrite another class's verdict:
 add the key, or record `BLOCKED`. Unlike **Recorded under:**, this is not a staleness question —
 a member's FAIL written into an owner's slot does not date the record, it falsifies it.
-=======
+
 **Derived from:** `<source>` @ <rev | uncommitted> — from `<the refs that assembled it>`. The
 requirements' revision **and the source set they were read from** — the third axis of every result,
 and the only one the plan used not to record. `**Under test:**` pins the code and each suffix pins
 the environment; without this line a regeneration can only guess at a changed requirement from the
 assertion's wording, which is exactly the part a well-written assertion keeps stable. On a
 regeneration this line moves, the requirements are diffed, and each assertion is carried over,
-marked `STALE`, or REMOVED accordingly — see SKILL.md, "The requirement is the third axis".
+marked `STALE`, or REMOVED accordingly — see `reference/sources.md`, "The requirement is the third axis".
 
 The **set** is what makes a `REMOVED` strike answerable: a re-run over fewer refs, or a degraded
 tracker fetch, is indistinguishable from a product decision if only the revision is recorded. When
-the set differs from the one recorded here, nothing is struck — see SKILL.md, "An absent requirement
-is not a product decision `plan` can make".
->>>>>>> origin/koan/qa-coverage-denominator
+the set differs from the one recorded here, nothing is struck — see `reference/sources.md`, "An absent
+requirement is not a product decision `plan` can make".
 
 **How to use.** Preflight first — stop if it fails. Reset (a `local` env only — never a `shared`
 one). Then walk §2 in order. Each scenario states its **precondition**, its **steps**, and what to
@@ -122,13 +120,8 @@ untested by construction, and the blocker list is where untested money paths get
 
 - [ ] A1 <observable outcome> (FR-0xx). — `local`: PASS · `staging`: not run
 - [ ] A2 <observable outcome> (FR-0yy). — `local`: FAIL · `staging`: not run
-<<<<<<< HEAD
-      ⚠️ *Adjudicated <date> (operator, env: `<name>` | `all`, as: `<class>` | `all`): <ruling +
-      reason>. Only <narrowed condition> is a real A2 failure.*
-=======
-      ⚠️ *Adjudicated <date> (operator, run <n>, env: `<name>` | `all`): <ruling + reason>. Only
-      <narrowed condition> is a real A2 failure.*
->>>>>>> origin/koan/qa-coverage-denominator
+      ⚠️ *Adjudicated <date> (operator, run <n>, env: `<name>` | `all`, as: `<class>` | `all`):
+      <ruling + reason>. Only <narrowed condition> is a real A2 failure.*
 - [ ] ~~A3 <dropped behaviour>~~ — **REMOVED from the product** (<date>, operator, env:
       `all`, decided in <spec §/issue/PR>). Do not report its absence as a defect.
 - [ ] ~~A5 <behaviour whose requirement left the source>~~ — **REMOVED from the product** (<date>,
@@ -147,14 +140,14 @@ untested by construction, and the blocker list is where untested money paths get
 A `plan` regeneration carries every annotation and result over, but an annotation is bound to the
 **assertion text** it was written about, not to the id — the id outlives a rewording. So a reworded
 assertion keeps its ruling marked `STALE` and its results reset to `not run`: a suppression that
-migrates onto new behaviour is the one regeneration failure no later run can detect. See SKILL.md,
+migrates onto new behaviour is the one regeneration failure no later run can detect. See `reference/sources.md`,
 "Regenerating over an existing plan".
 
 An adjudication is the only thing that turns a FAIL into a PASS, and this file is committed —
 anyone can type one. `run <n>` points at the `qa-runs.md` section recording the FAIL that was ruled
 on; a REMOVED line points at where the product decision was made. A run that cannot find that
 witness still applies the ruling but reports it as **unverified**, and a ruling never removes a §3
-blocker from the verdict — see SKILL.md, "Judging rules".
+blocker from the verdict — see `reference/run.md`, "Judging rules".
 
 The per-environment suffix (`` `<env>`: PASS | FAIL | BLOCKED | not run ``, or ``
 `<env>`/`<class>`: `` where **Exercised as:** declares more than one) is the authoritative
@@ -239,7 +232,7 @@ section; it lives here because this is the part of it that must exist first.
 |----|----|----|
 | <record / account / order / upload> | <id, or the query that finds it> | <command, or "operator only"> |
 
-This is the same list `run` echoed to get the operator's go before writing anything (SKILL.md,
+This is the same list `run` echoed to get the operator's go before writing anything (`reference/run.md`,
 `run` step 1). The consent is spent in one prompt; the data is not. On a `local` env "the reset
 covers it" is a complete answer. On a **`shared`** env the environment is never reset, so this
 table is the only record that the campaign's footprint exists at all — every run's rows persist,
