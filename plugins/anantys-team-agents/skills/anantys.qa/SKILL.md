@@ -58,7 +58,7 @@ scenario needs and the environment does not declare is a `.anantys/qa.md` gap �
 
 ## Actions
 
-Invoked as `/anantys.qa <action> [args]`. If no action is given, infer it: no `.anantys/qa.md` → `init`; no `qa-plan.md` → `plan`; otherwise → `status`.
+Invoked as `/anantys.qa <action> [args]`. If no action is given, infer it: no `.anantys/qa.md` → `init`; no `qa-plan.md` → `plan`; otherwise → `status`. Both absences are read from the repo root and must be **proven** first — see "Not found is not the same state as does not exist" below; a plan you failed to locate is not a plan that does not exist, and inferring `plan` there discards the campaign's adjudication memory.
 
 **Read the reference file for your action before doing anything else** — it carries the procedure
 and the guards, and they are not summarised here.
@@ -76,6 +76,52 @@ and the guards, and they are not summarised here.
 `testplan` — the action's former name — is still accepted as an alias of `plan`.
 
 **Every action ends its reply with the progress table** (see "Progress table"), `init` excepted.
+
+The campaign artifacts (`qa-plan.md`, `qa-runs.md`, `qa-report.md`) are **committed**, like
+`.anantys/qa.md`. The adjudication memory in `qa-plan.md` is the campaign's highest-value artifact
+and an untracked one is one `git clean` from gone — and tracking is what makes the rule below
+decidable.
+
+**Not found is not the same state as does not exist.** Discovery can come up empty for reasons that
+have nothing to do with the campaign: a relative path resolved against a subdirectory instead of the
+repo root, a detached HEAD or a renamed branch that matches no directory name, a mistyped `<slug>`,
+a fresh worktree. Every one of those looks identical to a first campaign — and the action a first
+campaign wants is `plan`, the one action that rewrites `qa-plan.md` whole. So **prove the absence
+before acting on it**:
+
+1. **Anchor, then look.** `.anantys/` and every campaign path resolve from the repo root
+   (`git rev-parse --show-toplevel`), never the current working directory. If that fails — not a git
+   repo — say so and ask the operator for the root; do not search from the cwd.
+2. **Ask git, not just the filesystem.** `git ls-files '*/qa-plan.md' 'qa-plan.md'` from the root.
+   If git tracks a plan that discovery did not surface, the campaign **exists and was not found**:
+   name the path you found and the one you expected, and stop. Only a repo tracking no plan is a
+   first campaign. When the named `<slug>` has no directory, that is this case too — a typo, not a
+   new campaign; never create the directory to resolve it.
+
+This holds for every action, not just the inferred one: `run`, `retest`, `note`, `report` and
+`status` all report not-found rather than proceeding against an empty or freshly written plan.
+
+**A found campaign is not yet your campaign.** Slug normalization is many-to-one — `feat/checkout`
+and `feat-checkout` are one directory, so are `SKU-231` and a brief titled `SKU 231` — so a
+`.anantys/qa/<slug>/` that exists is not evidence that it is this feature's. It is the mirror of the
+rule above and it is worse, because the absence proof *passes*: git tracks a plan, so step 2 reads
+green while `plan` is about to regenerate a stranger's `qa-plan.md` and score it against a
+closed-defect history that belongs to another feature. So the directory records its own identity:
+
+- **`brief.md` carries a `Slug derived from:` line** — the verbatim, un-normalized value the slug was
+  computed from: the branch, the SKU list, the PR URLs, or the brief's path. Only the lossy output of
+  that computation was ever kept; this keeps the input. (`Source:` states the *kind* of source, which
+  two hand-written briefs share.)
+- **`plan` reads the existing line before it copies the brief over it.** A recorded value that
+  disagrees with the one in hand is a different campaign: name both, and stop — ask for an explicit
+  `<slug>` rather than taking the directory that happens to be on disk. A `brief.md` with **no** such
+  line predates this rule — say so and ask; never infer the value from the directory name, which is
+  the thing the rule exists to distrust.
+- **Every later action matches on that record, not on the normalized branch name.** A name match with
+  a contradicting `Slug derived from:` resolves to nothing found, handled by the rule above.
+
+A spec-kit campaign is exempt: its directory *is* the source, so there is nothing to derive and
+nothing to collide.
 
 ---
 

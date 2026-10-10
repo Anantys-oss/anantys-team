@@ -22,6 +22,10 @@ or let `--from linear:SKU-…` / `--from pr:<url>` assemble one for you to confi
 # <Feature> — QA feature brief
 
 _Source: <hand-written | linear:SKU-… | pr:owner/repo#42>. Assembled <YYYY-MM-DD>._
+_Slug derived from: `<the verbatim, un-normalized value — the branch, the SKU list, the PR URLs, or
+this brief's path>`. This is the campaign's identity; the directory name is only a lookup key, and
+normalization is many-to-one. `plan` reads this line before overwriting the brief and stops on a
+mismatch._
 
 _Under test: <the branch and head commit the campaign must run against, and the environment serving it>._
 A brief assembled from an unmerged PR is worthless if the stack is serving `main` — state the
