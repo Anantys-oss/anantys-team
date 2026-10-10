@@ -18,7 +18,7 @@ jobs:
       # Runs here because a `.gitignore` arriving on another branch is what makes this
       # class silent, and `validate` is the job every pull_request already triggers.
       - run: python3 scripts/check_tracked_ignored.py
-      # The gates above decide what fails; these are the only thing that says they
-      # decide it correctly. Severity in particular is testable and invisible in a
-      # green run, so an untested gate reports whatever it happens to do.
-      - run: python3 -m unittest discover -s scripts -p 'test_*.py'
+      # The suite that says these gates decide correctly runs once, in `gates`. It
+      # discovers every scripts/test_*.py, so a copy here asserts nothing a failing
+      # `gates` would not already have said — and a second copy can only disagree
+      # with the first by running a different tree, which is not a thing to test.
