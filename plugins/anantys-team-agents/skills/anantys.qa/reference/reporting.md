@@ -72,7 +72,11 @@ the report. Write `qa-report.md` addressed to a **dev agent in a fresh session**
 context but not yours. For each open defect:
 
 - **Assertion id and what the spec requires** (with its requirement id).
-- **What you observed** — exact copy, URL, console/network error.
+- **What you observed** — exact copy, URL, console/network error. *Exact* means faithful, not verbatim:
+  redact every credential, session id, auth header, cookie and real person's data out of the quote as
+  you write it, leaving the shape (`Bearer <redacted>`, `user <redacted 4812>`). On a `shared` env you
+  are quoting the operator's live session and, on production, real customers' records — and this file
+  is written to be pasted into a *different* session, which is a second hop the operator never reviews.
 - **Minimal repro** — the shortest path from a clean state.
 - **Blast radius** — money / legal / data / journey / cosmetic. Lead with the money and legal ones.
 - **What a fix must not break** — the assertions currently passing that the obvious fix would
