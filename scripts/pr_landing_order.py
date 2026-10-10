@@ -914,6 +914,132 @@ def unasked(prs):
     return [n for n, _, _, _, checks in prs if not checks]
 
 
+def carried(base, refs, gates):
+    """Split `refs` into (the ones bringing a gate, the ones a gate can judge).
+
+    A gate cannot judge the PR that brings it: the gate is only present once
+    that PR lands, so its subject tree contains itself. Membership is decided by
+    whether the ref adds or edits a file named in `gates` — not by whether it
+    touches `scripts/` or `.github/workflows/`, which hold plenty no gate reads
+    (a report generator, a docs job, a gate's own tests). Folding by path swept
+    those in and printed the fold's colour against each of their numbers.
+    """
+    carriers, judged = [], []
+    for number, ref in refs:
+        changed = run("git", "diff", "--name-only", base,
+                      f"origin/{ref}").splitlines()
+        bucket = carriers if any(
+            Path(f).name in gates for f in changed) else judged
+        bucket.append((number, ref))
+    return carriers, judged
+
+
+def deferred(base, prs):
+    """The verdict the unasked run would print, measured rather than promised.
+
+    `unasked` establishes that a queue whose every gate is still on its own
+    branch defers each per-PR verdict to a run that did not happen. That is
+    where the report used to stop, on the assurance that *nothing on these PRs
+    needs fixing first*. Nothing measured it. The assurance is a claim about
+    every head in the queue, made from the one fact that none of them has a
+    check — which is the absence of the evidence, not evidence of absence, and
+    it reads as a pass.
+
+    It is also wrong about this queue, and the gates that prove it are already
+    in it. Each lives on the branch that wrote it, so each has only ever run
+    against its own author, and a checker pointed only at the work it was
+    written from can only confirm that work. Pointing every gate at every head
+    is one `run_checkers` call per head once the trees exist.
+
+    The tree each head is judged in is the queue's CI folded onto `base` plus
+    that one head — what `refs/pull/N/merge` becomes the moment the gates are on
+    `main`, and the verdict CI will actually print. Not narrowed to the gates a
+    round introduces: this answers a question about a tree, and a subset re-run
+    can only move the answer toward green.
+
+    A carrier the fold refuses is not a reason to print nothing, and it is not
+    free either. Which gates the landing ends up holding depends on which
+    carriers survived, so the refusal has to be priced — and by what the gate
+    *does*, never by whether a file of that name is present. Two carriers that
+    conflict are usually rival authorings of one gate, and the whole point of
+    one of this queue's rivalries is that it changes a finding's severity: the
+    older `check_plugins.py` prints the load ceiling as a warning and exits 0,
+    the newer makes it an error. Fold them in the order that keeps the older and
+    every head over the ceiling is green; keep the newer and four are red. A
+    report that checked `gates_in(landing)` for the filename called that "every
+    gate is still present" and printed the lenient verdict as the verdict.
+
+    So each refusal gets its own landing, folded with the refused carrier first
+    so the conflict resolves the other way, and every head is judged under all
+    of them. A head whose colour is the same either way is reported once. A head
+    whose colour depends on the resolution is reported as that: the operator is
+    already being asked to decide which authoring `main` keeps, and this is what
+    the decision costs in red PRs — which is the only form of the question that
+    can be answered with evidence rather than taste.
+    """
+    refs = [(n, ref) for n, ref, *_ in prs]
+    gates = sorted({g for _, ref in refs for g in gates_in(f"origin/{ref}")}
+                   - gates_in(base))
+    if not gates:
+        return []
+    carriers, judged = carried(base, refs, gates)
+    landing, folded, refused = union_tree(base, carriers)
+    landings = [(f"#{', #'.join(str(n) for n in folded)}", landing)]
+    for number in refused:
+        alt, kept, _ = union_tree(base, [(n, r) for n, r in carriers
+                                         if n == number]
+                                  + [(n, r) for n, r in carriers
+                                     if n != number])
+        landings.append((f"#{', #'.join(str(n) for n in kept)}", alt))
+
+    lines = [f"  gates the queue carries: {', '.join(gates)}"]
+    if missing := sorted(set(gates) - set().union(
+            *(gates_in(c) for _, c in landings))):
+        lines.append(f"  no carrier that assembles brings {', '.join(missing)} "
+                     f"— no verdict below was asked by those")
+    if len(landings) > 1:
+        lines.append(f"  {', '.join(f'#{n}' for n in refused)} conflict with the "
+                     f"fold, so the landing has more than one resolution and a "
+                     f"gate of the same name can judge differently in each; "
+                     f"each head below is asked under all "
+                     f"{len(landings)}: " + " | ".join(l for l, _ in landings))
+
+    for number, ref in judged:
+        verdicts = {}
+        for label, start in landings:
+            commit, _, denied = union_tree(base, [(number, ref)], start=start)
+            if denied:
+                verdicts[label] = (None, [])
+                continue
+            results = run_checkers(commit)
+            verdicts[label] = (
+                sorted(name for name, (code, _) in results.items() if code),
+                results)
+        if all(red == [] for red, _ in verdicts.values()):
+            continue
+        if len({tuple(red or ()) for red, _ in verdicts.values()}) == 1:
+            red, results = next(iter(verdicts.values()))
+            if red is None:
+                lines.append(f"  #{number:<5} conflicts with the queue's CI "
+                             f"— not judgeable until it rebases")
+                continue
+            lines.append(f"  #{number:<5} RED  {', '.join(red)}")
+            lines += [f"      {ln}" for name in red for ln in results[name][1]]
+            continue
+        lines.append(f"  #{number:<5} its colour depends on which resolution "
+                     f"`main` keeps:")
+        for label, (red, results) in verdicts.items():
+            if red is None:
+                lines.append(f"      under {label}: not judgeable")
+            elif red:
+                lines.append(f"      under {label}: RED  {', '.join(red)}")
+                lines += [f"        {ln}" for name in red
+                          for ln in results[name][1]]
+            else:
+                lines.append(f"      under {label}: green")
+    return lines
+
+
 def per_member(base, refs, gates):
     """Each member of the round judged by the round's new gates, one at a time.
 
@@ -941,14 +1067,7 @@ def per_member(base, refs, gates):
     a gate whose remedy is one shared location: the second member to land finds
     the first has already spent it.
     """
-    carriers, judged = [], []
-    for number, ref in refs:
-        changed = run("git", "diff", "--name-only", base,
-                      f"origin/{ref}").splitlines()
-        bucket = carriers if any(
-            Path(f).name in gates for f in changed) else judged
-        bucket.append((number, ref))
-
+    carriers, judged = carried(base, refs, gates)
     landing, folded, refused = union_tree(base, carriers)
     if refused:
         return ["  the round's tooling does not assemble — "
@@ -1202,8 +1321,18 @@ def main():
               + (", ".join(sorted(gates_in(base))) or "none")
               + ". Every per-PR verdict below is therefore deferred to a run "
                 "that did not happen, which looks exactly like a pass. Landing "
-                "the round that carries the gates is what asks the question; "
-                "nothing on these PRs needs fixing first.\n")
+                "the round that carries the gates is what asks the question.\n")
+        if args.verify:
+            print("What that run would print, asked here instead — every gate "
+                  "the queue carries, against every head it can judge:")
+            for line in deferred(base, prs):
+                print(line)
+            print()
+        else:
+            print("Which of them a gate would redden is not knowable from the "
+                  "absence of a check, and this report will not guess it: "
+                  "`--verify` folds the queue's CI onto `main` and asks each "
+                  "head the question CI has not.\n")
     for small, big in sorted(contained.items()):
         print(f"#{small} is contained in #{big} — landing #{big} closes it; "
               f"not counted above\n")

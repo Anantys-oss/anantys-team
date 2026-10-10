@@ -2,6 +2,7 @@
 """Fixture tests for pr_landing_order — run: python3 -m unittest discover scripts"""
 
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -1244,6 +1245,125 @@ class TheDeferralIsMeasured(unittest.TestCase):
         # `main` prints the paragraph on truth, so the clean case has to be a
         # value the walrus reads as nothing to say.
         self.assertFalse(p.unasked(self.pr(["gates"], ["gates"])))
+
+
+class ARivalGateIsNotTheSameGate(unittest.TestCase):
+    """`deferred` answers what the unasked run would print. A real repo.
+
+    Two carriers bring `check_load.py` and conflict — rival authorings of one
+    gate, which is the shape this queue actually has. They disagree about
+    severity and nothing else: the older prints the ceiling and exits 0, the
+    newer exits 1. So whichever one the fold happens to keep decides the colour
+    of every head over the ceiling, and a report that confirmed the *filename*
+    was present printed the lenient answer as the answer.
+    """
+
+    LENIENT = ("import pathlib, sys\n"
+               "n = len(pathlib.Path('role.md').read_text().splitlines())\n"
+               "print(f'load {n}')\n"
+               "sys.exit(0)\n")
+    STRICT = ("import pathlib, sys\n"
+              "n = len(pathlib.Path('role.md').read_text().splitlines())\n"
+              "sys.exit('error: load %d over the ceiling' % n if n > 4 else 0)\n")
+
+    def git(self, *args):
+        return subprocess.run(("git",) + args, check=True,
+                              capture_output=True, text=True).stdout
+
+    def branch(self, name, files):
+        self.git("checkout", "-q", "main")
+        self.git("checkout", "-qb", name)
+        for path, text in files.items():
+            Path(path).parent.mkdir(parents=True, exist_ok=True)
+            Path(path).write_text(text)
+        self.git("add", "-A")
+        self.git("commit", "-qm", name)
+        self.git("update-ref", f"refs/remotes/origin/{name}", name)
+        self.git("checkout", "-q", "main")
+
+    def setUp(self):
+        self.dir = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.dir)
+        self.addCleanup(os.chdir, os.getcwd())
+        os.chdir(self.dir)
+        self.git("init", "-q", "-b", "main")
+        self.git("config", "user.email", "t@example.com")
+        self.git("config", "user.name", "t")
+        Path("role.md").write_text("# Role\n\ntop\n")
+        # CI's suite is `unittest discover -s scripts`, and a `scripts/` tree
+        # with nothing to discover exits non-zero — so a fixture without a test
+        # reports every head red on the suite and hides the gate's own verdict.
+        Path("scripts").mkdir()
+        Path("scripts/test_smoke.py").write_text(
+            "import unittest\n"
+            "class T(unittest.TestCase):\n"
+            "    def test_ok(self):\n"
+            "        pass\n")
+        self.git("add", "-A")
+        self.git("commit", "-qm", "base")
+        self.git("update-ref", "refs/remotes/origin/main", "main")
+        self.base = self.git("rev-parse", "main").strip()
+        # Rivals: same path, conflicting content, differing only in severity.
+        self.branch("lenient", {"scripts/check_load.py": self.LENIENT})
+        self.branch("strict", {"scripts/check_load.py": self.STRICT})
+        # One head pushes the load over the strict ceiling, one does not.
+        self.branch("heavy", {"role.md": "# Role\n\ntop\na\nb\nc\nd\n"})
+        self.branch("light", {"role.md": "# Role\n\ntop\na\n"})
+
+    def queue(self, *names):
+        return [(n, name, f"pr {n}", set(), set())
+                for n, name in enumerate(names, 1)]
+
+    def report(self, *names):
+        return "\n".join(p.deferred(self.base, self.queue(*names)))
+
+    def test_a_queue_with_no_gate_has_no_deferred_verdict(self):
+        self.assertEqual(p.deferred(self.base, self.queue("heavy", "light")),
+                         [])
+
+    def test_the_gate_judges_a_head_that_has_no_check_of_its_own(self):
+        out = self.report("strict", "heavy")
+        self.assertIn("RED", out)
+        self.assertIn("check_load.py", out)
+        self.assertIn("over the ceiling", out)
+
+    def test_a_head_under_the_ceiling_is_not_reported(self):
+        self.assertNotIn("#2", self.report("strict", "light"))
+
+    def test_a_gate_never_judges_the_head_that_brings_it(self):
+        # `strict` is the carrier: it is folded into the base, not judged.
+        self.assertNotIn("#1", self.report("strict", "heavy"))
+
+    def test_rival_carriers_are_both_resolved_not_silently_one(self):
+        out = self.report("lenient", "strict", "heavy")
+        self.assertIn("more than one resolution", out)
+        self.assertIn("depends on which resolution", out)
+
+    def test_each_resolution_gets_its_own_verdict(self):
+        out = self.report("lenient", "strict", "heavy")
+        self.assertIn("green", out)
+        self.assertIn("RED  check_load.py", out)
+
+    def test_a_refused_carrier_is_named_once_in_its_own_resolution(self):
+        # The rival is folded first to flip the conflict; it must not also
+        # appear again from the untrimmed carrier list behind it.
+        out = self.report("lenient", "strict", "heavy")
+        labels = [ln for ln in out.splitlines() if "under #" in ln]
+        self.assertTrue(labels)
+        for label in labels:
+            named = re.findall(r"#(\d+)", label)
+            self.assertEqual(len(named), len(set(named)), label)
+
+    def test_the_lenient_gate_alone_reddens_nobody(self):
+        # Not a false negative — with only the lenient authoring in the queue,
+        # green is the honest answer. It is the bug's symptom all the same: the
+        # report used to reach this same output whenever the fold happened to
+        # keep the lenient rival, which is why the rivalry has to be resolved
+        # both ways rather than confirmed by filename.
+        out = self.report("lenient", "heavy")
+        self.assertIn("check_load.py", out)
+        self.assertNotIn("RED", out)
+        self.assertNotIn("resolution", out)
 
 
 class AGateSetIsNotADifference(unittest.TestCase):
