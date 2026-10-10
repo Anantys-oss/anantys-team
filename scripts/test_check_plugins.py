@@ -1,0 +1,631 @@
+#!/usr/bin/env python3
+"""The ceiling is on the load, not on the file — these are the cases that differ."""
+
+import contextlib
+import io
+import json
+import shutil
+import tempfile
+import unittest
+from pathlib import Path
+
+import check_plugins as cp
+
+
+def lines(n: int) -> str:
+    return "\n".join(["x"] * n) + "\n"
+
+
+class Harness(unittest.TestCase):
+    def setUp(self) -> None:
+        cp.errors.clear()
+        cp.warnings.clear()
+        self.tmp = tempfile.TemporaryDirectory()
+        cp.ROOT = Path(self.tmp.name).resolve()  # check_load resolves its links
+        self.addCleanup(self.tmp.cleanup)
+        cp.ROLE_MAX_LINES = 10
+        cp.BASE = None
+        self.addCleanup(setattr, cp, "at", cp.at)
+
+    def write(self, name: str, n: int) -> None:
+        (cp.ROOT / name).write_text(lines(n), encoding="utf-8")
+
+    def check(self, text: str) -> list[str]:
+        """What `check_load` reported, whichever list it went to.
+
+        The measurement and the severity are separate questions: every test below
+        about *what* is counted reads this, and the two that care *which list* read
+        `cp.errors` / `cp.warnings` directly.
+        """
+        path = cp.ROOT / "SKILL.md"
+        path.write_text(text, encoding="utf-8")
+        cp.check_load(path)
+        return cp.errors + cp.warnings
+
+    def baseline(self, **texts: str) -> None:
+        """Pretend `texts` (file name -> content) is what the baseline commit held."""
+        cp.BASE = "base"
+        held = {cp.ROOT / name: text for name, text in texts.items()}
+        cp.at = lambda commit, path: held.get(path)
+
+
+class CheckLoad(Harness):
+    def test_role_alone_under_the_ceiling_is_silent(self) -> None:
+        self.assertEqual(self.check("one\ntwo\n"), [])
+
+    def test_a_preamble_link_counts_toward_the_load(self) -> None:
+        self.write("CONTRACT.md", 20)
+        warning, = self.check("Read the [contract](CONTRACT.md) before acting.\n")
+        self.assertIn("loads 21 lines", warning)
+        self.assertIn("1 SKILL.md + 20 CONTRACT.md", warning)
+
+    def test_a_link_below_the_first_heading_does_not(self) -> None:
+        self.write("CONTRACT.md", 20)
+        self.assertEqual(self.check("preamble\n\n## Step\n\n[c](CONTRACT.md)\n"), [])
+
+    def test_a_link_to_a_file_that_is_not_there_is_ignored(self) -> None:
+        self.assertEqual(self.check("[gone](MISSING.md)\n"), [])
+
+
+class TheRemedyIsCountedToo(Harness):
+    """reference/ is where the remedy puts the load, so it is part of the load."""
+
+    def reference(self, name: str, n: int) -> None:
+        (cp.ROOT / "reference").mkdir(exist_ok=True)
+        (cp.ROOT / "reference" / name).write_text(lines(n), encoding="utf-8")
+
+    def test_a_named_topic_file_counts_toward_the_load(self) -> None:
+        self.reference("run.md", 20)
+        warning, = self.check("| run | `reference/run.md` |\n")
+        self.assertIn("loads 21 lines", warning)
+        self.assertIn("20 reference/run.md", warning)
+
+    def test_only_the_largest_topic_file_counts(self) -> None:
+        # One action reads one topic, so the bound is the worst action, not the sum.
+        self.reference("small.md", 4)
+        self.reference("big.md", 20)
+        warning, = self.check("`reference/small.md` `reference/big.md`\n")
+        self.assertIn("loads 21 lines", warning)
+        self.assertIn("20 reference/big.md", warning)
+        self.assertNotIn("small.md", warning)
+
+    def test_a_topic_file_no_action_names_is_not_counted(self) -> None:
+        self.reference("unused.md", 20)
+        self.assertEqual(self.check("preamble only\n"), [])
+
+    def test_a_named_topic_file_that_is_not_there_is_ignored(self) -> None:
+        self.assertEqual(self.check("`reference/gone.md`\n"), [])
+
+    def test_splitting_into_one_big_topic_file_is_not_a_pass(self) -> None:
+        # The defect this closes: relocating prose into a file every action still
+        # reads took a role from over-ceiling to clean without lowering the load.
+        self.baseline(**{"SKILL.md": lines(20)})
+        self.reference("all.md", 16)
+        warning, = self.check("`reference/all.md`\n" + lines(2))
+        self.assertIn("loads 19 lines (> 10), down from 20", warning)
+
+    def test_the_baseline_counts_its_own_topic_file(self) -> None:
+        self.baseline(**{
+            "SKILL.md": "`reference/run.md`\n" + lines(5),
+            "reference/run.md": lines(20),
+        })
+        warning, = self.check(lines(14))
+        self.assertIn("down from 26", warning)
+
+
+class ATemplateIsReadLikeATopic(Harness):
+    """templates/ is the other directory an action reads, so it is priced the same."""
+
+    def companion(self, folder: str, name: str, n: int) -> None:
+        (cp.ROOT / folder).mkdir(exist_ok=True)
+        (cp.ROOT / folder / name).write_text(lines(n), encoding="utf-8")
+
+    def test_a_named_template_counts_toward_the_load(self) -> None:
+        # The hole: a template the action is told to follow was read and never charged.
+        self.companion("templates", "plan.md", 20)
+        warning, = self.check("Write it following `templates/plan.md`.\n")
+        self.assertIn("loads 21 lines", warning)
+        self.assertIn("20 templates/plan.md", warning)
+
+    def test_only_the_largest_template_counts(self) -> None:
+        self.companion("templates", "small.md", 4)
+        self.companion("templates", "big.md", 20)
+        warning, = self.check("`templates/small.md` `templates/big.md`\n")
+        self.assertIn("20 templates/big.md", warning)
+        self.assertNotIn("small.md", warning)
+
+    def test_a_topic_and_a_template_are_both_charged(self) -> None:
+        # One action can read both, so the two directories sum — they do not compete.
+        self.companion("reference", "run.md", 8)
+        self.companion("templates", "plan.md", 9)
+        warning, = self.check("`reference/run.md` `templates/plan.md`\n")
+        self.assertIn("loads 18 lines", warning)
+        self.assertIn("8 reference/run.md", warning)
+        self.assertIn("9 templates/plan.md", warning)
+
+    def test_moving_prose_into_a_template_is_not_a_pass(self) -> None:
+        # Same defect reference/ already closed, through the sibling directory.
+        self.baseline(**{"SKILL.md": lines(20)})
+        self.companion("templates", "plan.md", 16)
+        warning, = self.check("`templates/plan.md`\n" + lines(2))
+        self.assertIn("loads 19 lines (> 10), down from 20", warning)
+
+    def test_a_template_no_action_names_is_not_counted(self) -> None:
+        self.companion("templates", "unused.md", 20)
+        self.assertEqual(self.check("preamble only\n"), [])
+
+    def body(self, folder: str, name: str, text: str) -> None:
+        (cp.ROOT / folder).mkdir(exist_ok=True)
+        (cp.ROOT / folder / name).write_text(text, encoding="utf-8")
+
+    def test_a_template_named_only_in_a_topic_is_charged(self) -> None:
+        # The shape every split role has: the action that follows the template was
+        # moved into reference/, taking the mention with it. Charging only what the
+        # role file names switched the arm off at exactly the load it was built for.
+        self.body("reference", "sources.md", "`templates/plan.md`\n" + lines(4))
+        self.companion("templates", "plan.md", 8)
+        warning, = self.check("`reference/sources.md`\n")
+        self.assertIn("loads 14 lines", warning)
+        self.assertIn("5 reference/sources.md", warning)
+        self.assertIn("8 templates/plan.md", warning)
+
+    def test_the_largest_template_is_found_across_role_and_topics(self) -> None:
+        self.body("reference", "init.md", "`templates/config.md`\n")
+        self.companion("templates", "config.md", 20)
+        self.companion("templates", "brief.md", 4)
+        warning, = self.check("`reference/init.md` `templates/brief.md`\n")
+        self.assertIn("20 templates/config.md", warning)
+        self.assertNotIn("brief.md", warning)
+
+    def test_a_topic_named_only_in_a_topic_is_not_followed(self) -> None:
+        # Deliberate: topic discovery stays one level, as the two grant gates read it.
+        self.body("reference", "a.md", "`reference/b.md`\n")
+        self.companion("reference", "b.md", 20)
+        warning, = self.check("`reference/a.md`\n" + lines(9))
+        self.assertIn("loads 11 lines", warning)
+        self.assertNotIn("reference/b.md", warning)
+
+
+class AgainstTheBaseline(Harness):
+    """A ceiling report is only actionable if it says what *this* change did to it."""
+
+    def test_a_change_that_pushes_a_role_over_is_named_as_the_cause(self) -> None:
+        self.baseline(**{"SKILL.md": lines(8)})
+        warning, = self.check(lines(20))
+        self.assertIn("pushes the load over the ceiling, 8 -> 20", warning)
+
+    def test_a_role_this_change_adds_is_its_own_cause(self) -> None:
+        self.baseline()  # the role is not in the baseline tree at all
+        warning, = self.check(lines(20))
+        self.assertIn("pushes the load over the ceiling, 0 -> 20", warning)
+
+    def test_growing_an_already_over_role_reports_the_delta(self) -> None:
+        self.baseline(**{"SKILL.md": lines(20)})
+        warning, = self.check(lines(26))
+        self.assertIn("grows a load already over the ceiling, 20 -> 26 (+6)", warning)
+
+    def test_an_untouched_over_role_is_not_blamed_on_this_change(self) -> None:
+        self.baseline(**{"SKILL.md": lines(20)})
+        warning, = self.check(lines(20))
+        self.assertIn("loads 20 lines", warning)
+        self.assertNotIn("this change", warning)
+
+    def test_the_baseline_load_counts_its_own_links(self) -> None:
+        # Dropping a linked contract is a shrink, so the baseline must be priced
+        # by the same rule as the working tree — not by the role file alone.
+        self.baseline(**{"SKILL.md": "[c](CONTRACT.md)\n" + lines(5), "CONTRACT.md": lines(20)})
+        warning, = self.check(lines(14))
+        self.assertIn("down from 26", warning)
+
+    def test_without_a_baseline_the_absolute_warning_still_fires(self) -> None:
+        cp.BASE = None
+        warning, = self.check(lines(20))
+        self.assertIn("loads 20 lines (> 10)", warning)
+
+
+class TheCrossingIsTheError(Harness):
+    """A ceiling nothing fails is a number in a docstring.
+
+    The baseline above separates a crossing from a standing fact; these say the
+    separation reaches the exit code. Four open heads take a clean role over the
+    ceiling on their own and every run exits 0, so this is the arm with live input.
+    """
+
+    def test_pushing_a_clean_role_over_the_ceiling_is_an_error(self) -> None:
+        self.baseline(**{"SKILL.md": lines(8)})
+        self.check(lines(20))
+        self.assertEqual([], cp.warnings)
+        error, = cp.errors
+        self.assertIn("pushes the load over the ceiling, 8 -> 20", error)
+
+    def test_a_role_this_change_adds_over_the_ceiling_is_an_error(self) -> None:
+        # Nothing to wait on: the role and its companions arrive in this diff.
+        self.baseline()
+        self.check(lines(20))
+        self.assertEqual([], cp.warnings)
+        self.assertEqual(1, len(cp.errors))
+
+    def test_growing_a_role_the_baseline_already_broke_stays_a_warning(self) -> None:
+        # Not this branch's regression — it waits on the head that fixes the role.
+        self.baseline(**{"SKILL.md": lines(20)})
+        self.check(lines(26))
+        self.assertEqual([], cp.errors)
+        self.assertEqual(1, len(cp.warnings))
+
+    def test_an_untouched_over_role_stays_a_warning(self) -> None:
+        self.baseline(**{"SKILL.md": lines(20)})
+        self.check(lines(20))
+        self.assertEqual([], cp.errors)
+
+    def test_no_baseline_is_not_an_error(self) -> None:
+        # An absent baseline cannot tell a crossing from inherited debt, and
+        # guessing the stricter reading reddens every branch git cannot price.
+        cp.BASE = None
+        self.check(lines(20))
+        self.assertEqual([], cp.errors)
+
+    def test_a_shrink_that_is_still_over_stays_a_warning(self) -> None:
+        self.baseline(**{"SKILL.md": lines(26)})
+        self.check(lines(20))
+        self.assertEqual([], cp.errors)
+
+
+class TheContractBinds(Harness):
+    """The ceiling counts the contract, so unlinking it is the cheapest way to pass."""
+
+    def contract(self, text: str) -> list[str]:
+        self.write(cp.CONTRACT, 20)
+        path = cp.ROOT / "SKILL.md"
+        path.write_text(text, encoding="utf-8")
+        cp.check_contract(path, cp.ROOT / cp.CONTRACT)
+        return cp.errors
+
+    def test_a_preamble_link_to_the_contract_satisfies_it(self) -> None:
+        self.assertEqual(self.contract(f"[team contract]({cp.CONTRACT}) binds you.\n"), [])
+
+    def test_a_role_that_links_nothing_is_an_error(self) -> None:
+        error, = self.contract("You are a role.\n")
+        self.assertIn("does not link TEAM-CONTRACT.md", error)
+
+    def test_a_contract_link_below_the_first_heading_does_not_count(self) -> None:
+        # Nothing below `## ` is read before the role acts, so a link there binds
+        # it no earlier than not linking at all — and it would pass a substring test.
+        error, = self.contract(f"preamble\n\n## Step\n\n[c]({cp.CONTRACT})\n")
+        self.assertIn("does not link TEAM-CONTRACT.md", error)
+
+    def test_shrinking_under_the_ceiling_by_unlinking_is_not_a_pass(self) -> None:
+        # The whole point: 25 lines with the contract is over a ceiling of 10, and
+        # dropping the link takes it under. The load goes quiet; the binding does not.
+        self.write(cp.CONTRACT, 20)
+        self.assertEqual(self.check(lines(5)), [])
+        cp.check_contract(cp.ROOT / "SKILL.md", cp.ROOT / cp.CONTRACT)
+        self.assertEqual(len(cp.errors), 1)
+
+
+class ContractClauses(Harness):
+    """`check_contract` holds the link. These hold what the link points at."""
+
+    def clauses(self, now: str, *, before: str | None = None) -> list[str]:
+        path = cp.ROOT / cp.CONTRACT
+        path.write_text(now, encoding="utf-8")
+        if before is not None:
+            self.baseline(**{cp.CONTRACT: before})
+        cp.check_contract_clauses(path)
+        return cp.errors
+
+    def test_a_dropped_clause_is_an_error(self) -> None:
+        error, = self.clauses(
+            "# Team contract\n\n## C1 — Observation\n",
+            before="# Team contract\n\n## C1 — Observation\n\n## C2 — A stop is a result\n",
+        )
+        self.assertIn("C2 present at the baseline and gone here", error)
+
+    def test_relabelling_a_clause_is_a_drop(self) -> None:
+        # The role files cite the label (`say so and stop (C2)`), so the label is the
+        # identity. Renaming the heading is how the deletion would have arrived.
+        error, = self.clauses(
+            "## Zzz — nothing\n", before="## C2 — A stop is a result\n"
+        )
+        self.assertIn("C2", error)
+
+    def test_rewording_the_title_is_not_a_drop(self) -> None:
+        self.assertEqual(
+            self.clauses("## C2 — the run you did not finish\n", before="## C2 — A stop\n"),
+            [],
+        )
+
+    def test_adding_a_clause_is_how_the_contract_grows(self) -> None:
+        self.assertEqual(self.clauses("## C1 — a\n\n## C2 — b\n", before="## C1 — a\n"), [])
+
+    def test_a_contract_that_arrives_on_this_branch_is_not_a_drop(self) -> None:
+        self.baseline()  # BASE set, nothing held there
+        path = cp.ROOT / cp.CONTRACT
+        path.write_text("## C1 — a\n", encoding="utf-8")
+        cp.check_contract_clauses(path)
+        self.assertEqual(cp.errors, [])
+
+    def test_a_contract_new_at_the_baseline_says_so_rather_than_passing(self) -> None:
+        # This is the branch the whole queue takes until the contract lands on main.
+        # Silent here and the check ships inert, which is the gap it closes.
+        self.baseline()
+        path = cp.ROOT / cp.CONTRACT
+        path.write_text("## C1 — a\n", encoding="utf-8")
+        cp.check_contract_clauses(path)
+        self.assertIn("new at the baseline", cp.warnings[0])
+
+    def test_no_baseline_warns_rather_than_passing_silently(self) -> None:
+        cp.BASE = None
+        path = cp.ROOT / cp.CONTRACT
+        path.write_text("## C1 — a\n", encoding="utf-8")
+        cp.check_contract_clauses(path)
+        self.assertEqual(cp.errors, [])
+        self.assertIn("no baseline", cp.warnings[0])
+
+
+class DeletingTheContractIsNotAnAbsentContract(unittest.TestCase):
+    """A dropped clause is an error. Deleting the file drops every clause at once.
+
+    ``check_contract_clauses`` holds the clause set, and ``main`` only reaches it when
+    the file is on disk — absence took the "some other change lands it" branch and
+    printed a warning. So the cheapest way to unbind every role was not to relabel a
+    clause but to delete the file: zero errors, and five roles under the ceiling.
+
+    These go through ``main`` because the short circuit is in ``main``; the function
+    itself already errors when handed a tree with no contract in it.
+    """
+
+    def setUp(self) -> None:
+        cp.errors.clear()
+        cp.warnings.clear()
+        self.tmp = tempfile.TemporaryDirectory()
+        cp.ROOT = Path(self.tmp.name).resolve()
+        self.addCleanup(self.tmp.cleanup)
+        self.addCleanup(setattr, cp, "at", cp.at)
+        self.addCleanup(setattr, cp, "merge_base", cp.merge_base)
+        cp.merge_base = lambda: "base"  # the tmp tree is not a git repo
+
+        plugin = cp.ROOT / "plugins/p"
+        (plugin / ".claude-plugin").mkdir(parents=True)
+        (plugin / "skills").mkdir()
+        (plugin / "agents").mkdir()
+        entry = {"name": "p", "version": "1.0.0", "description": "a plugin"}
+        (plugin / ".claude-plugin/plugin.json").write_text(json.dumps(entry))
+        (cp.ROOT / ".claude-plugin").mkdir()
+        (cp.ROOT / ".claude-plugin/marketplace.json").write_text(
+            json.dumps({"plugins": [dict(entry, source="plugins/p")]})
+        )
+        (cp.ROOT / "README.md").write_text("")
+        self.contract = plugin / cp.CONTRACT
+
+    def held(self, text: str | None) -> None:
+        """What the baseline commit held at the contract's path."""
+        cp.at = lambda commit, path: text if path == self.contract else None
+
+    def run_main(self) -> int:
+        with contextlib.redirect_stdout(io.StringIO()):
+            return cp.main()
+
+    def test_a_contract_present_at_the_baseline_and_gone_here_is_an_error(self) -> None:
+        self.held("# Team contract\n\n## C1 — Observation\n")
+        self.assertEqual(self.run_main(), 1)
+        error, = cp.errors
+        self.assertIn(cp.CONTRACT, error)
+        self.assertIn("gone here", error)
+
+    def test_a_tree_that_never_held_a_contract_is_still_only_a_warning(self) -> None:
+        # Absence is legitimate until some other change lands the file; this is the
+        # branch every open head takes, and reddening it would force an order on them.
+        self.held(None)
+        self.assertEqual(self.run_main(), 0)
+        self.assertEqual(cp.errors, [])
+        self.assertTrue(cp.warnings)
+
+
+class ARoleIsDescribedNotJustNamed(unittest.TestCase):
+    """README's mention has to be prose, because prose is what a user reads.
+
+    The membership test ran over the whole file. The "Repository layout" block names
+    every role's path, so that listing alone answered for all of them: the role table
+    could be deleted with zero errors, and a new role joined the user-facing surface
+    on one line of ASCII tree. The install and usage snippets do the same.
+    """
+
+    def setUp(self) -> None:
+        cp.errors.clear()
+        cp.warnings.clear()
+        self.tmp = tempfile.TemporaryDirectory()
+        cp.ROOT = Path(self.tmp.name).resolve()
+        self.addCleanup(self.tmp.cleanup)
+        self.addCleanup(setattr, cp, "merge_base", cp.merge_base)
+        cp.merge_base = lambda: None  # the tmp tree is not a git repo
+
+        plugin = cp.ROOT / "plugins/p"
+        (plugin / ".claude-plugin").mkdir(parents=True)
+        (plugin / "agents").mkdir()
+        role = plugin / "skills/anantys.newrole"
+        role.mkdir(parents=True)
+        (role / "SKILL.md").write_text(
+            "---\nname: anantys.newrole\ndescription: d\n---\n", encoding="utf-8"
+        )
+        entry = {"name": "p", "version": "1.0.0", "description": "a plugin"}
+        (plugin / ".claude-plugin/plugin.json").write_text(json.dumps(entry))
+        (cp.ROOT / ".claude-plugin").mkdir()
+        (cp.ROOT / ".claude-plugin/marketplace.json").write_text(
+            json.dumps({"plugins": [dict(entry, source="plugins/p")]})
+        )
+
+    def readme(self, text: str) -> list[str]:
+        (cp.ROOT / "README.md").write_text(text, encoding="utf-8")
+        with contextlib.redirect_stdout(io.StringIO()):
+            cp.main()
+        return [e for e in cp.errors if "README" in e]
+
+    def test_a_prose_description_satisfies_it(self) -> None:
+        self.assertEqual(self.readme("`anantys.newrole` refines a page.\n"), [])
+
+    def test_a_path_in_a_layout_block_does_not(self) -> None:
+        errors = self.readme("```\nskills/anantys.newrole/SKILL.md\n```\n")
+        self.assertEqual(len(errors), 1)
+        self.assertIn("outside a code block", errors[0])
+
+    def test_a_usage_snippet_does_not(self) -> None:
+        self.assertEqual(len(self.readme("```bash\n/anantys.newrole go\n```\n")), 1)
+
+    def test_prose_between_two_blocks_survives_the_strip(self) -> None:
+        # A non-greedy fence match that spanned block-to-block would eat the middle.
+        self.assertEqual(self.readme("```\na\n```\nanantys.newrole\n```\nb\n```\n"), [])
+
+    def test_a_role_named_nowhere_is_still_an_error(self) -> None:
+        self.assertEqual(len(self.readme("# anantys-team\n")), 1)
+
+
+class TheInstallSnippetIsExecuted(unittest.TestCase):
+    """The one fenced block the strip above may not drop.
+
+    `/plugin install <plugin>@<marketplace>` is the only text in the repo a user
+    runs, and both its names are ones the drift check already reads. Stripping every
+    fence left it gated by nothing: renaming the catalog in both manifests, deleting
+    the Install section, and naming a plugin that exists nowhere were each 0 errors.
+    """
+
+    def setUp(self) -> None:
+        # Same one-role tree, borrowed rather than copied — but not by subclassing, or
+        # that class's READMEs would be re-run against a check they were not written for.
+        ARoleIsDescribedNotJustNamed.setUp(self)
+        catalog = cp.ROOT / ".claude-plugin/marketplace.json"
+        catalog.write_text(json.dumps(dict(json.loads(catalog.read_text()), name="m")))
+
+    def install(self, text: str) -> list[str]:
+        prose = "`anantys.newrole` refines a page.\n"  # satisfies the prose check
+        (cp.ROOT / "README.md").write_text(prose + text, encoding="utf-8")
+        with contextlib.redirect_stdout(io.StringIO()):
+            cp.main()
+        return [e for e in cp.errors if "install snippet" in e]
+
+    def test_the_command_in_a_fenced_block_satisfies_it(self) -> None:
+        self.assertEqual(self.install("```bash\n/plugin install p@m\n```\n"), [])
+
+    def test_no_install_command_at_all_is_an_error(self) -> None:
+        self.assertEqual(len(self.install("")), 1)
+
+    def test_a_renamed_marketplace_breaks_the_command(self) -> None:
+        # Both manifests agreeing is what the drift check tests; it is not this.
+        self.assertEqual(len(self.install("```\n/plugin install p@anantys-oss\n```\n")), 1)
+
+    def test_a_plugin_that_exists_nowhere_is_an_error(self) -> None:
+        self.assertEqual(len(self.install("```\n/plugin install nope@m\n```\n")), 1)
+
+    def test_a_longer_name_does_not_satisfy_a_shorter_one(self) -> None:
+        self.assertEqual(len(self.install("```\n/plugin install p@my-other-market\n```\n")), 1)
+
+    def test_a_catalog_with_no_name_is_a_warning_naming_what_went_unmeasured(self) -> None:
+        catalog = cp.ROOT / ".claude-plugin/marketplace.json"
+        catalog.write_text(json.dumps({"plugins": json.loads(catalog.read_text())["plugins"]}))
+        self.assertEqual(self.install(""), [])
+        self.assertTrue(any("unmeasured" in w for w in cp.warnings))
+
+
+class ANamedCompanionMustBeThere(Harness):
+    """A name that resolves to nothing is not the same state as no name at all.
+
+    Two tests above assert that an absent companion is *ignored* — correct for
+    pricing a load, and the whole diagnosis for everything else: the role instructs
+    an action to read a page that is not there, and no checker in the tree says so.
+    """
+
+    def companion(self, folder: str, name: str, n: int) -> None:
+        (cp.ROOT / folder).mkdir(exist_ok=True)
+        (cp.ROOT / folder / name).write_text(lines(n), encoding="utf-8")
+
+    def companions(self, text: str) -> list[str]:
+        path = cp.ROOT / "SKILL.md"
+        path.write_text(text, encoding="utf-8")
+        cp.check_companions(path)
+        return cp.errors
+
+    def test_a_role_whose_companions_all_exist_is_silent(self) -> None:
+        self.companion("reference", "run.md", 3)
+        self.companion("templates", "plan.md", 3)
+        self.assertEqual(self.companions("`reference/run.md` `templates/plan.md`\n"), [])
+
+    def test_a_preamble_link_to_a_file_that_is_not_there_is_an_error(self) -> None:
+        error, = self.companions("Read [the contract](CONTRACT.md) first.\n")
+        self.assertIn("names `CONTRACT.md`, which is not in the tree", error)
+
+    def test_a_named_topic_that_is_not_there_is_an_error(self) -> None:
+        error, = self.companions("The `run` action reads `reference/gone.md`.\n")
+        self.assertIn("names `reference/gone.md`", error)
+
+    def test_a_named_template_that_is_not_there_is_an_error(self) -> None:
+        error, = self.companions("Follow `templates/gone.md`.\n")
+        self.assertIn("names `templates/gone.md`", error)
+
+    def test_a_template_named_only_in_a_named_topic_is_checked(self) -> None:
+        # The surface `worst_action_part` reaches: a role's own split moves the
+        # template mention into the topic, so a dangling one hides there too.
+        self.companion("reference", "sources.md", 3)
+        (cp.ROOT / "reference/sources.md").write_text("Follow `templates/gone.md`.\n")
+        error, = self.companions("`reference/sources.md`\n")
+        self.assertIn("names `templates/gone.md`", error)
+
+    def test_a_markdown_link_below_the_first_heading_is_out_of_scope(self) -> None:
+        # Stated boundary, not an oversight: widening discovery past the preamble is
+        # a question the two grant gates answer the same way, and one must not widen
+        # alone. `measured_load` draws the line in the same place.
+        self.assertEqual(self.companions("pre\n\n## Step\n\n[x](GONE.md)\n"), [])
+
+    def test_a_dangling_citation_does_not_lower_the_reported_load(self) -> None:
+        # Both checks run: the absence is still uncharged, and now also reported.
+        self.companion("reference", "big.md", 16)
+        warning, = self.check("`reference/big.md` `reference/gone.md`\n")
+        self.assertIn("loads 17 lines", warning)
+        self.assertEqual(len(self.companions("`reference/big.md` `reference/gone.md`\n")), 1)
+
+
+class DelistingATreeIsNotRemovingIt(DeletingTheContractIsNotAnAbsentContract):
+    """Deleting the contract drops every clause. Deleting the entry drops every check.
+
+    The same shape one level up: ``check_contract_clauses`` is reached only when the
+    file is on disk, and *everything* is reached only when the catalog names the tree.
+    So the cheapest way to unbind a plugin was never to edit a role — it was to drop
+    four lines of JSON. These go through ``main`` because the loop is in ``main``.
+    """
+
+    def delist(self) -> None:
+        (cp.ROOT / ".claude-plugin/marketplace.json").write_text(json.dumps({"plugins": []}))
+
+    def test_an_unlisted_tree_is_an_error(self) -> None:
+        self.held(None)
+        self.delist()
+        self.assertEqual(self.run_main(), 1)
+        error, = cp.errors
+        self.assertIn("plugins/p/.claude-plugin/plugin.json", error)
+        self.assertIn("no marketplace.json entry", error)
+
+    def test_delisting_does_not_silence_the_tree_it_hides(self) -> None:
+        # The point of the check: a role that would fail still fails after the edit.
+        self.held(None)
+        skill = cp.ROOT / "plugins/p/skills/s"
+        skill.mkdir(parents=True)
+        (skill / "SKILL.md").write_text("---\nname: wrong\n---\n")
+        self.assertEqual(self.run_main(), 1)
+        listed = list(cp.errors)
+        cp.errors.clear()
+        cp.warnings.clear()
+        self.delist()
+        self.assertEqual(self.run_main(), 1)
+        self.assertTrue(any("!= `s`" in e for e in listed))
+        self.assertFalse(any("!= `s`" in e for e in cp.errors))  # the edit still hides it
+        unlisted, = cp.errors  # but the hiding is itself the one error left
+        self.assertIn("governed by nothing", unlisted)
+
+    def test_removing_the_entry_and_the_tree_together_is_silent(self) -> None:
+        self.held(None)
+        shutil.rmtree(cp.ROOT / "plugins/p")
+        self.delist()
+        self.assertEqual(self.run_main(), 0)
+        self.assertEqual(cp.errors, [])
+
+
+if __name__ == "__main__":
+    unittest.main()

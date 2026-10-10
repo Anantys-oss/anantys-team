@@ -1,0 +1,16 @@
+name: version
+
+on:
+  pull_request:
+
+jobs:
+  check-version-bump:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history for the merge-base, and tags for the released version
+      # The suite runs once, in `gates` — see the note in validate.yml. These tests
+      # build their own repos under a tempdir, so the full history fetched above is
+      # for the gate below, not for them.
+      - run: python3 scripts/check_version_bump.py

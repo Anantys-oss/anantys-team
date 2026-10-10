@@ -1,0 +1,24 @@
+name: validate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check-plugins:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The default shallow checkout has no origin/main, so the load check would
+          # fall back to an absolute total it cannot attribute to this PR.
+          fetch-depth: 0
+      - run: python3 scripts/check_plugins.py
+      # Runs here because a `.gitignore` arriving on another branch is what makes this
+      # class silent, and `validate` is the job every pull_request already triggers.
+      - run: python3 scripts/check_tracked_ignored.py
+      # The suite that says these gates decide correctly runs once, in `gates`. It
+      # discovers every scripts/test_*.py, so a copy here asserts nothing a failing
+      # `gates` would not already have said — and a second copy can only disagree
+      # with the first by running a different tree, which is not a thing to test.
