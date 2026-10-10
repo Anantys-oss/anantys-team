@@ -1,7 +1,7 @@
 ---
 name: anantys.ops
 description: Browser-driven web/SEO ops reviewer — pilot a real browser across live pages and SaaS dashboards (Search Console, Analytics, SERP) to collect data and produce an actionable, quantified optimization report with trend deltas. Use for recurring acquisition/SEO audits.
-allowed-tools: mcp__claude-in-chrome__tabs_context_mcp, mcp__claude-in-chrome__tabs_create_mcp, mcp__claude-in-chrome__navigate, mcp__claude-in-chrome__computer, mcp__claude-in-chrome__read_page, mcp__claude-in-chrome__find, mcp__claude-in-chrome__get_page_text, mcp__claude-in-chrome__javascript_tool, mcp__claude-in-chrome__form_input, mcp__claude-in-chrome__update_plan, Read, Write, Glob, Bash(mkdir:*), Bash(git rev-parse:*), Bash(git log:*), Bash(git ls-files:*), Bash(ls:*)
+allowed-tools: mcp__claude-in-chrome__tabs_context_mcp, mcp__claude-in-chrome__tabs_create_mcp, mcp__claude-in-chrome__navigate, mcp__claude-in-chrome__computer, mcp__claude-in-chrome__read_page, mcp__claude-in-chrome__find, mcp__claude-in-chrome__get_page_text, mcp__claude-in-chrome__javascript_tool, mcp__claude-in-chrome__form_input, mcp__claude-in-chrome__update_plan, Read, Write, Glob, Bash(mkdir:*), Bash(git rev-parse:*), Bash(git log:*), Bash(git ls-files:*), Bash(ls:*), Bash(date:*)
 ---
 
 The [team contract](../../TEAM-CONTRACT.md) binds you — read it before acting. That path —
@@ -80,6 +80,22 @@ Load prior context so every metric can be reported with a trend delta:
 
 Only with no tracked prior artifact is this a first audit: note it and skip comparisons. Whenever you later report a metric, **include the delta vs the previous audit** when available.
 
+## Phase 0a: Read today's date
+
+Resolve `today` **once, here**: run `date +%F`. Every date this skill
+writes or subtracts is that one value — `E` in Phase 1c, the journal filename and `Date:`
+in Phase 5, `Last audit:` in Phase 6, `Ruled:` in `rulings.md`.
+
+A recalled date is an invented value, which C1 forbids, but this invention hides: it is
+well-formed, plausible, and nothing in the run can check it. The next audit is the first
+reader, and it *subtracts* it — so one unread date rescales every delta in the next
+report, misorders the "last 3 entries" step 2 reads, and ages every ruling against the
+wrong clock. `qa` already states the general form for a different fact, recording its
+version as *"read from `.claude-plugin/plugin.json`; `unknown` if unreadable"*: a recorded
+fact names its source, and has a value for an unreadable one. If `date` fails, `today` is
+unknown — write that where the date would go, take the default window, and skip the
+comparisons, exactly as a missing prior audit does.
+
 ## Pre-flight
 
 1. Call `tabs_context_mcp`; create a fresh tab with `tabs_create_mcp`. Work in that tab only — the operator's other tabs are their session, not your workspace.
@@ -104,9 +120,44 @@ A hub/index is rarely the page that earns clicks — the individual content page
 
 For each, navigate + screenshot + extract via JS: title (+length), meta description (+length), H1/H2/H3, structured data, canonical, word count (`document.body.innerText.split(/\s+/).length`), internal links, FAQ presence, OG image. Then evaluate: does the title match the target query and beat competitors? Is the meta description click-worthy (numbers/freshness)? Content depth, rich-snippet readiness, internal linking. Record per-page findings in a table — these pages have the highest CTR leverage.
 
-## Phase 2: Search Console (28 days)
+## Phase 1c: Fix the measurement window
 
-Navigate to the property's Search Console performance URL (28-day window, broken down by page). If not logged in, tell the user and wait. Screenshot, then extract:
+Every number you are about to collect is a value **over an interval**, and a delta between
+two such numbers is a period-over-period change only when their intervals are **equal and
+adjacent**. A dashboard's default range is a constant; your audit cadence is not. Take a
+28-day default audited fortnightly: consecutive windows share 14 days, so half of each total
+is literally the same rows. A real change is reported at half its size, and whatever moved
+inside the shared half cancels out of the delta entirely. The comparison looks quantified and
+measures almost nothing.
+
+So fix the window once, here, before any dashboard is read:
+
+1. **Compute the elapsed days `E`** — today minus the `Last audit:` date in `current.md` (or
+   the latest journal entry). No prior audit: `E` is undefined, take the default and skip the
+   comparisons Phase 0 already told you to skip.
+2. **Set every dashboard to the same `E`-day range ending today**, whenever the service can
+   express it. Consecutive audits then tile the timeline — adjacent, equal, no overlap, no
+   hole — and the delta means what the report says it means.
+3. **If you cannot** (`E` is a day or two and the shortest useful range is longer, or the
+   picker is out of reach): keep the default, and state the overlap in days next to every
+   delta computed from it. A diluted delta may be reported as a diluted delta; it may never be
+   restated as the change since the last audit.
+4. **If `E` exceeds the window** (overdue audit, or one was skipped): the `E − window` days
+   between the two windows are unmeasured. Say the delta spans a gap and name its length —
+   don't average across it or call it a trend.
+
+Then **record the window with every number, not just the date you read it** — `clicks 1,240
+(28d to 2026-03-14)`. A row carrying only a read-date pins neither endpoint of what it
+measured, which is why `current.md`'s KPI Dashboard and Audit History both need a **Window**
+column: without it, a year of tiled rows and a year of 75%-overlapping rows are the same
+table. A prior row with no window recorded has an *unknown* window — report its delta as
+unavailable rather than assuming the default.
+
+## Phase 2: Search Console
+
+Navigate to the property's Search Console performance URL, set the date range to the window
+fixed in Phase 1c, and break down by page. If not logged in, tell the user and wait.
+Screenshot, then extract (recording the window alongside):
 
 - Top cards: total clicks, impressions, CTR, average position.
 - Top ~20 queries (Queries tab): clicks, impressions, CTR, position.
@@ -115,7 +166,7 @@ Navigate to the property's Search Console performance URL (28-day window, broken
 
 ## Phase 3: Analytics
 
-Navigate to the Analytics (e.g. GA4) report URL. If not logged in, tell the user and wait. Screenshot, then extract: active users (daily/weekly/monthly trend), traffic-source breakdown (organic vs direct vs referral vs social), top pages by views, engagement (session duration, bounce/engagement rate), geographic split if shown.
+Navigate to the Analytics (e.g. GA4) report URL and set **the same window as Phase 2** — the report's own default is not Search Console's, and the KPI Dashboard stacks both services' numbers in one `Current` column under one `Delta`. If not logged in, tell the user and wait. Screenshot, then extract: active users (daily/weekly/monthly trend), traffic-source breakdown (organic vs direct vs referral vs social), top pages by views, engagement (session duration, bounce/engagement rate), geographic split if shown.
 
 ## Phase 4: SERP Analysis
 
@@ -236,15 +287,15 @@ Overwrite **`<workspace>/current.md`** — the living snapshot that persists bet
 # SEO — Current Status (<domain>)
 > Last audit: <YYYY-MM-DD>   Journal: <path to latest entry>
 
-## KPI Dashboard         (Metric | Current | Previous | Delta | Target)
+## KPI Dashboard         (Metric | Window | Current | Previous | Delta | Target — Delta blank when the two windows are not equal and adjacent; say why)
 ## SERP Positions        (Query | Position | Trend | Target)
-## Top Pages Performance (Page | Clicks 28d | Impressions | CTR | Position)
+## Top Pages Performance (Page | Window | Clicks | Impressions | CTR | Position)
 ## Completed Actions     (carried forward from previous current.md, marked [x]; each with the delta it produced)
 ## Applied, No Effect    (observed live, a full window elapsed, target metric flat or worse — do not re-issue)
 ## Next Actions          (priority-ordered; each names its target metric and that metric's current value; flag how many audits each has been pending)
 ## New Landing Pages     (Slug | Target Query | Priority | Status)
 ## Key Findings This Session
-## Audit History         (Date | Clicks | Impressions | CTR | Pos | VU/day | Journal — accumulates all past rows)
+## Audit History         (Date | Window | Clicks | Impressions | CTR | Pos | VU/day | Journal — accumulates all past rows)
 ```
 
 Rules for `current.md`: overwrite the whole file (it is a snapshot; the journal is the append log). Carry forward completed actions; if a prior "Next Action" was done, move it to Completed, else keep it and flag its age. Accumulate the Audit History table from the previous `current.md`.
@@ -256,6 +307,22 @@ Rules for `current.md`: overwrite the whole file (it is a snapshot; the journal 
 - It exists but Phase 0 didn't read it, or the Audit History didn't parse → **do not overwrite.** Write `<workspace>/current.next.md` beside it and tell the user which rows you could not carry, so they can reconcile the two by hand. That path is in [the artifact table](../../../../docs/artifacts-declare-their-git-status.md) and is **tracked**, like the file it stands in for — say so when you create it. A reconciliation copy nobody can see is the data loss this branch exists to avoid, taken one step later.
 
 Rebuilding Audit History from the journal's `<!-- kpi -->` rows is always a valid recovery — prefer it over dropping rows you can't find.
+
+**A row's window is carried, never inferred.** Audit History is the one table here that
+accumulates instead of being re-measured, so it is the one where an unrecorded window
+compounds: `E` moves with the audit cadence, and a column of totals over unequal intervals
+still reads as a trend. Three rules, in the units Phase 1c fixed (`14d`, `28d`):
+
+- **Write the window on the row you are adding.** It is already known — Phase 1c fixed it.
+- **Copy a prior row's window verbatim. Never backfill one.** A row written before this rule
+  recorded no window: put `unknown` in the cell, not a blank and not the old 28-day default.
+  A blank cell in a column that sometimes has values reads as *same as the row above* — the
+  inference this column exists to refuse.
+- **`unknown` is comparable to nothing, including another `unknown`.** A delta spanning such
+  a row is unavailable, not zero.
+
+Any record this table can be rebuilt from carries the window too. A recovery source missing a
+column produces a rebuild lossier than the loss it repairs, and it looks complete.
 
 ## Rules
 
