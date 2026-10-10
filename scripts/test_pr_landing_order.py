@@ -1121,5 +1121,128 @@ class TheTrimIsNotTheFix(unittest.TestCase):
         self.assertNotIn("a defect in the assembled tree", out)
 
 
+class Concentration(unittest.TestCase):
+    def test_the_file_hosting_the_most_pairs_comes_first(self):
+        self.assertEqual(
+            p.concentration({frozenset((1, 2)): ["a.md", "b.md"],
+                             frozenset((1, 3)): ["b.md"],
+                             frozenset((2, 3)): ["b.md"]}),
+            [("b.md", 3), ("a.md", 1)])
+
+    def test_ties_break_by_path_so_the_report_is_stable(self):
+        self.assertEqual(
+            p.concentration({frozenset((1, 2)): ["b.md", "a.md"]}),
+            [("a.md", 1), ("b.md", 1)])
+
+    def test_a_pair_sharing_no_path_contributes_no_row(self):
+        # A conflict with no single home — a scalar bumped on both sides. It is
+        # still a resolution the operator pays, so it must not be read off this
+        # table as if the rows summed to the queue's cost.
+        self.assertEqual(p.concentration({frozenset((1, 2)): []}), [])
+
+    def test_no_conflicts_is_an_empty_table(self):
+        self.assertEqual(p.concentration({}), [])
+
+
+class FoldCost(unittest.TestCase):
+    """A real repo whose cost is a property of one file, not of the order.
+
+    Three branches append a different line to the *same* place in one file.
+    Whichever lands first, the other two collide with the accumulation — so
+    every permutation costs two refusals and the band is a point. That is the
+    shape the queue has, and the shape the wave report cannot express.
+    """
+
+    def git(self, *args):
+        subprocess.run(("git",) + args, check=True, capture_output=True)
+
+    def branch(self, name, text):
+        self.git("checkout", "-q", "main")
+        self.git("checkout", "-qb", name)
+        Path("doc.md").write_text(f"# Doc\n\n{text}\n")
+        self.git("commit", "-qam", name)
+        self.git("update-ref", f"refs/remotes/origin/{name}", "HEAD")
+
+    def setUp(self):
+        self.dir = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.dir)
+        self.addCleanup(os.chdir, os.getcwd())
+        os.chdir(self.dir)
+        self.git("init", "-q", "-b", "main")
+        self.git("config", "user.email", "t@example.com")
+        self.git("config", "user.name", "t")
+        Path("doc.md").write_text("# Doc\n\noriginal\n")
+        self.git("add", "doc.md")
+        self.git("commit", "-qm", "base")
+        self.base = subprocess.run(
+            ["git", "rev-parse", "main"], capture_output=True, text=True,
+            check=True).stdout.strip()
+        for number, name in ((1, "one"), (2, "two"), (3, "three")):
+            self.branch(name, f"rewritten by #{number}")
+        self.git("checkout", "-q", "main")
+        self.refs = [(1, "one"), (2, "two"), (3, "three")]
+
+    def test_every_order_costs_the_same_two_refusals(self):
+        self.assertEqual(set(p.fold_cost(self.base, self.refs, trials=6)), {2})
+
+    def test_the_result_is_sorted_so_the_caller_can_read_a_band(self):
+        band = p.fold_cost(self.base, self.refs, trials=6)
+        self.assertEqual(band, sorted(band))
+
+    def test_the_seed_makes_the_band_reproducible(self):
+        self.assertEqual(p.fold_cost(self.base, self.refs, trials=5, seed=7),
+                         p.fold_cost(self.base, self.refs, trials=5, seed=7))
+
+    def test_it_does_not_disturb_the_working_tree_it_measures(self):
+        # The fold is in-memory; a report that checked branches out would eat
+        # the operator's uncommitted work to tell them about their queue.
+        p.fold_cost(self.base, self.refs, trials=3)
+        self.assertEqual(Path("doc.md").read_text(), "# Doc\n\noriginal\n")
+
+    def test_a_queue_with_no_collisions_costs_nothing(self):
+        self.git("checkout", "-q", "main")
+        self.git("checkout", "-qb", "apart")
+        Path("other.md").write_text("elsewhere\n")
+        self.git("add", "other.md")
+        self.git("commit", "-qm", "apart")
+        self.git("update-ref", "refs/remotes/origin/apart", "HEAD")
+        self.git("checkout", "-q", "main")
+        self.assertEqual(
+            p.fold_cost(self.base, [(4, "apart")], trials=3), [0, 0, 0])
+
+    def test_a_contended_paragraph_is_not_mechanical(self):
+        self.assertFalse(
+            p.mechanical(self.base, self.refs, "doc.md", ceiling=0))
+
+    def test_a_one_line_bump_on_every_branch_is_mechanical(self):
+        self.assertTrue(p.mechanical(self.base, self.refs, "doc.md"))
+
+    def test_one_branch_past_the_ceiling_decides_for_the_path(self):
+        # The advice is about the file, so a single real rewrite disqualifies
+        # it — otherwise a majority of bumps would recommend picking a number
+        # over a paragraph somebody has to re-author.
+        self.git("checkout", "-q", "main")
+        self.git("checkout", "-qb", "wordy")
+        Path("doc.md").write_text("# Doc\n\n" + "\n".join("l%d" % i
+                                                          for i in range(9)))
+        self.git("commit", "-qam", "wordy")
+        self.git("update-ref", "refs/remotes/origin/wordy", "HEAD")
+        self.git("checkout", "-q", "main")
+        self.assertFalse(
+            p.mechanical(self.base, self.refs + [(4, "wordy")], "doc.md"))
+
+    def test_a_path_no_branch_touches_is_vacuously_mechanical(self):
+        # No contention means no advice to give; the caller only asks about
+        # paths concentration already named, so this branch is never printed.
+        self.assertTrue(p.mechanical(self.base, self.refs, "absent.md"))
+
+    def test_the_count_is_a_lower_bound_not_the_fold_it_describes(self):
+        # union_tree skips a refused ref, so the tree the last fold met is
+        # missing two of three rewrites. The band prices the comparison between
+        # orders; it must never be read as the tree the operator will land.
+        joined = p.union_tree(self.base, self.refs)[1]
+        self.assertEqual(len(joined), 1)
+
+
 if __name__ == "__main__":
     unittest.main()

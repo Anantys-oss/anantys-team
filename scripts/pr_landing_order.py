@@ -16,6 +16,14 @@ Output is a set of waves. A wave is a set of PRs that are mutually clean: land
 them in any order, no rebase between them. Only crossing a wave boundary costs
 a rebase, so N waves means N-1 rebase rounds for the whole queue.
 
+A rebase round is not the bill, though, and the ordering below is only worth
+what the bill varies by. So the report opens with the other measurement: fold
+the whole queue in a dozen random orders and count the conflicts a human has to
+resolve in each. A wide band means the waves are the lever. A narrow one means
+they are not — the cost belongs to the files the queue concentrates in, and the
+useful move is to split one, not to sequence thirty. Printing the order without
+that band invites optimising a variable with no range.
+
 A rebase is the cheap case, and not every boundary is one. When a PR in an
 earlier wave *restructures* a file that a later one edits — a split into
 `reference/*.md`, a rule hoisted into a shared contract — the later PR's hunks
@@ -95,8 +103,10 @@ Exit 0 always — this is an operator report, not a gate.
 """
 
 import argparse
+import collections
 import contextlib
 import json
+import random
 import posixpath
 import re
 import subprocess
@@ -396,6 +406,76 @@ def union_tree(base, refs, start=None):
                   "-m", f"union #{number}").strip()
         joined.append(number)
     return acc, joined, refused
+
+
+def fold_cost(base, refs, trials=12, seed=0):
+    """Refusals when the whole queue is folded, over `trials` random orders.
+
+    Everything above prices the *order*: waves, relocation direction, rebase
+    rounds. None of it prices what the operator pays — the number of conflicts
+    they resolve by hand to get one tree. Those are different questions, and a
+    report that answers only the first implies the second follows from it.
+
+    So measure it. Each trial folds the queue in a shuffled order and counts the
+    refusals; the spread across trials is what the ordering is worth. A wide
+    spread means the order below is the lever. A narrow one means the cost is a
+    property of the queue — the files it concentrates in — and no permutation
+    reaches it. Reported as a range rather than a single number for that reason:
+    one count read alone is indistinguishable from an optimum.
+
+    Every count is a *lower* bound, because `union_tree` skips a refused ref
+    instead of resolving it: the folds after it meet a tree missing its content,
+    and a conflict that content would have caused is never counted. Resolving
+    for real only raises the figure, so the comparison across orders stays sound
+    while the absolute number does not — say so when printing it.
+
+    Seeded, so re-running the report on an unchanged queue prints the same band.
+    """
+    rng = random.Random(seed)
+    counts = []
+    for _ in range(trials):
+        shuffled = list(refs)
+        rng.shuffle(shuffled)
+        counts.append(len(union_tree(base, shuffled)[2]))
+    return sorted(counts)
+
+
+def concentration(edges):
+    """[(path, pairs that conflict in it)] for the queue's conflicting pairs.
+
+    `fold_cost` says whether ordering is worth anything; when it is not, this
+    says what is. A conflict lives in a file, and a file that hosts most of them
+    is a file to split — which is a change to make, where "land #A before #B" is
+    only a sequence to follow. Pairs sharing no path are real conflicts with no
+    single home (a version scalar bumped on both sides, say) and belong to no
+    row here; the caller prints the total separately.
+    """
+    counted = collections.Counter(
+        path for shared in edges.values() for path in shared)
+    return sorted(counted.items(), key=lambda kv: (-kv[1], kv[0]))
+
+
+def mechanical(base, refs, path, ceiling=2):
+    """Does every ref touching `path` change at most `ceiling` lines in it?
+
+    `concentration` counts pairs, and a count cannot tell a contended paragraph
+    from a contended integer. Both are resolutions the operator pays, and they
+    are not the same work: two PRs rewriting one rule need the rule re-authored,
+    while two PRs bumping `0.6.0` to `0.6.1` need the higher number picked. Only
+    the first is evidence that a file wants splitting — advising a split on a
+    version manifest sends the operator to restructure a four-line JSON object.
+
+    Measured from the diffs rather than the filename, because the property is
+    about how a file is edited and not what it is called: a manifest that grows
+    a real section is no longer mechanical, and a prose file where every PR
+    appends one line is.
+    """
+    for _, ref in refs:
+        stat = run("git", "diff", "--numstat", f"{base}...origin/{ref}",
+                   "--", path).split()
+        if stat and max(int(stat[0]), int(stat[1])) > ceiling:
+            return False
+    return True
 
 
 def checker_scripts(scripts_dir, only=None):
@@ -831,6 +911,28 @@ def main():
 
     print(f"{len(prs)} open PRs, {len(edges)} conflicting pairs, "
           f"{len(order)} waves ({max(len(order) - 1, 0)} rebase rounds)\n")
+    if edges:
+        band = fold_cost(base, [(n, refs[n]) for n in sorted(refs)])
+        print(f"Hand resolutions to fold the whole queue: "
+              f"{band[0]}-{band[-1]} across {len(band)} random orders "
+              f"(a lower bound — a refused PR is skipped, so the folds after "
+              f"it never meet its content).")
+        if band[-1] - band[0] <= max(1, band[-1] // 4):
+            print("  That band is flat: the order below saves a rebase round, "
+                  "not a resolution. The cost is in the files, not the "
+                  "sequence —")
+            members = [(n, refs[n]) for n in sorted(refs)]
+            for path, pairs in concentration(edges)[:4]:
+                verdict = ("pick the higher value, no authoring"
+                           if mechanical(base, members, path)
+                           else "a file to split, not an order to follow")
+                print(f"    {pairs:>3} of {len(edges)} conflicting pairs "
+                      f"are in {path} — {verdict}")
+            print("  — a queue whose conflicts are mechanical is not an "
+                  "ordering problem *or* a splitting one: it wants the "
+                  "contended value computed at merge, not written on every "
+                  "branch.")
+        print()
     for small, big in sorted(contained.items()):
         print(f"#{small} is contained in #{big} — landing #{big} closes it; "
               f"not counted above\n")
