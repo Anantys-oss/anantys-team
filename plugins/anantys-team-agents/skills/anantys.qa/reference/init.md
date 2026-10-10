@@ -29,7 +29,9 @@ Then ask the operator only what you could not infer, in one batch:
   be filed as a defect.
 - **`local` only:** the reset procedure for a fresh test subject, and a payment sandbox instrument
   (test card / token) if any journey touches money — without one, every checkout case is BLOCKED.
-- **`shared` only:** how the operator's signed-in browser session is made available to you, whether
+- **`shared` only:** how the operator's signed-in browser session is made available to you **and
+  how to tell at a glance that it is still live** (`Signed in when:` — an account menu, an avatar, a
+  `/me` returning 200; see Environments), whether
   a real record exhibiting the behaviour under test exists there (a shared env has no fixtures), and
   how deploy lag shows up (a fix merged but not yet deployed), and **whether it is production**
   (`Production: yes | no`). A `shared` block is always written with `Reset — NONE`, never a reset
@@ -42,8 +44,11 @@ environment blocks and leaves the others untouched.
 **Re-running `init` on a flat file migrates it first.** If the existing `.anantys/qa.md` has no
 `## Environment:` blocks (the legacy layout, see `reference/environments.md`), rewrite its flat
 `## Surfaces` / `## Preflight` / `## Reset` / `## Credentials` / … sections as one
-`## Environment: local (kind: local, default)` block **before** adding any new one, and show the
-converted file in the confirmation below. Appending a `shared` block to a flat file leaves the local
+`## Environment: local (kind: <asked>, default)` block **before** adding any new one, and show the
+converted file in the confirmation below. **Ask the kind — never carry it over from the name.** A
+flat file's sections say nothing about whether they describe a dev stack or a deployed one, and the
+migration is the moment the answer becomes durable; a `local` answer also needs the Target and probe
+the Reset block predates. Appending a `shared` block to a flat file leaves the local
 sections read by nothing and no environment marked default — the local campaign stops resolving.
 
 Confirm the file back to the operator before writing. `.anantys/qa.md` is committed — so it must

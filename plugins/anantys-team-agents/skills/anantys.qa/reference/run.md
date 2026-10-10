@@ -59,19 +59,49 @@ operator's go before any write.
 
    The line is absent for a merged/deployed feature, and then there is nothing extra to check.
 
+   **The same probe response also says which host answered — read it.** Compare it to the
+   environment's `Answers as:` line (`reference/environments.md`). A match confirms this block's
+   `kind:` and `Production:` for this run; a mismatch, or a response carrying no identity, leaves
+   both **unconfirmed** — no reset in step 2, and the environment is treated as production. Record
+   `Identity: confirmed` or `Identity: unconfirmed — <what answered> ≠ <declared>` in the run
+   section next to `Subject:`, and never edit `Answers as:` to match. This check is free: the probe
+   already ran above, and the commit it returns is what `Answers as:` exists to supplement — the
+   same commit is served by staging and production between deploys.
+
    **On a `shared` env, confirm the target before anything is written** — the pre-write
-   confirmation in `reference/environments.md`. No go, no run.
-2. **Reset — `local` only.** On a `local` environment, apply its reset procedure and confirm it took
-   effect (a stale auth cookie or leftover cache silently invalidates every assertion that follows) —
-   verify by observing the app, not by trusting the command's exit code. On a **`shared`**
-   environment there is **NO reset**: never reset staging / preview / prod — reuse the operator's
-   session and create any needed test data additively.
+   confirmation in `reference/environments.md`, which echoes the environment name, its base URL,
+   the build it serves, whether it is production **and whether that was confirmed or declared**,
+   and the scenarios that will create data there. No go, no run. Reading `Production: no` back as
+   fact is how a mistyped block gets confirmed by the person who mistyped it; an unconfirmed env is
+   presented as production, and the question is whether to proceed at all.
+2. **Reset — a confirmed `local` env only.** On an environment whose block declares `kind: local`
+   *and* whose identity step 1 confirmed, apply its reset procedure and confirm it took effect (a
+   stale auth cookie or leftover cache silently invalidates every assertion that follows) — verify
+   by observing the app, not by trusting the command's exit code. On a **`shared`** environment
+   there is **NO reset**: never reset staging / preview / prod — reuse the operator's session and
+   create any needed test data additively. On an environment whose kind is **undeclared** (a flat
+   legacy file) or **unconfirmed** (step 1 found a different host, or none) there is also no reset:
+   ask the operator to re-run `init`, or walk the plan with whatever subject state exists and mark
+   anything the leftover state invalidates `BLOCKED` (`reference/environments.md`).
 3. **Walk the scenarios in order**, in a real browser driven as the environment's `Driven by:`
    line says. On production, skip the unsafe scenario classes and record them
    `BLOCKED`. Per scenario: establish the precondition,
    perform the steps, then evaluate each assertion **individually**. In **interactive** mode the
    first *new* DEFECT ends the walk: finish that assertion's evidence, do steps 5–6, then hand off
    (see Run mode).
+
+   **On a `shared` env, the session is part of that precondition — check it, per scenario.** Before
+   the first step, confirm the environment's `Signed in when:` condition still holds. If it does not,
+   the walk is **over**: you cannot sign in, so every remaining scenario would observe a login wall
+   and file it as a defect. Mark this scenario's assertions — and every one not yet walked —
+   `BLOCKED`, reason `session ended`, record it in the run section, do steps 5–7, and tell the
+   operator what to re-establish. This is a preflight failure found late, not a verdict on the
+   product: name no defect, and do not let `report` lead with one.
+   Two cases stay ordinary FAILs, or the rule would suppress the defects it most resembles: an
+   assertion **about** authentication (a requirement that an unauthenticated visitor is redirected,
+   or that a session survives a reload) is judged on its merits; and a login wall on **one** surface
+   while `Signed in when:` still holds elsewhere is the product logging the user out, which is the
+   defect.
 4. **Post a one-line result after each scenario.** The operator is watching; a campaign that
    reports only at the end is one where a bad reset costs you the whole run.
 5. **Append a run section to `qa-runs.md`**, its header naming the environment and the mode —
@@ -87,9 +117,11 @@ operator's go before any write.
 - **Behaviour over stores.** Judge from what the product shows, not from a database or cache you
   polled. Reads race the writes they observe, and tokens lag the events that invalidate them —
   both will lie to you at exactly the wrong moment.
-- **Confirm your own preconditions before asserting.** A surviving session, a leftover record, or
-  state you created yourself by re-walking a flow invalidates the result. A defect you caused is
-  not a defect.
+- **Confirm your own preconditions before asserting — in both directions.** A surviving session, a
+  leftover record, or state you created yourself by re-walking a flow invalidates the result. So
+  does the same state *gone*: an expired session, a fixture reaped by a nightly job, a preview
+  environment torn down mid-walk. A defect you caused is not a defect, and neither is one you
+  observed through a precondition that had quietly lapsed.
 - **Screenshot anything visual**, and capture the URL plus any console/network error on every FAIL.
 - **Never infer a PASS from a screen you did not reach.**
 - Check every FAIL against the adjudication annotations in `qa-plan.md` **scoped to this environment
@@ -132,6 +164,9 @@ A full re-run after a fix pass is expensive and mostly re-confirms green. Instea
 
 1. Take from `qa-runs.md` every assertion whose latest result **on the selected environment** is
    FAIL or BLOCKED — a result recorded on another environment neither adds nor removes a case.
+   **Except a refused one** (`BLOCKED — unsafe on production` and any other rule-refusal, see
+   Environments): it is not a case a second pass can settle, and walking it is what the refusing
+   rule forbids. Say it is excluded and why, with the environment that answers it if one does.
 2. Add the **regression-risk set** around each fix — the assertions the fix could plausibly have
    broken, especially the ones an *over-fix* would break. A guard added to stop a wrong behaviour
    very often also suppresses the right one; assert the right one explicitly.

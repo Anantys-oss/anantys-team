@@ -84,7 +84,16 @@ context but not yours. For each open defect:
 
 Close with the release verdict: the blocker list, its status, and — explicitly — the assertions
 that were never observed. **Passing every blocker is not the same as having tested everything**;
-say which gaps a green list is hiding.
+say which gaps a green list is hiding. Split the never-observed into the two kinds (see
+Environments): **unreached** here and green on no environment — the real gap — and **refused**
+here, naming the environment whose PASS answers it, or stating that none does. A verdict that
+reports a refusal as a gap is unshippable by construction; one that reports an unanswered refusal
+as a non-gap ships a money path nobody tested.
+
+"Open defect" here means open on **any** environment, not only the selected one (see Environments):
+the selected environment orders the brief and is named at the top, it does not filter it. *What a fix
+must not break* likewise spans every environment's passing assertions. The release verdict stays
+per environment — it answers "can this ship *here*".
 
 Tell the operator the file is ready to paste into a dev session. Do not open issues or PRs.
 
@@ -93,7 +102,7 @@ Tell the operator the file is ready to paste into a dev session. Do not open iss
 For the selected environment (`--env <name>`, else the most recent run's — say which), read
 `qa-plan.md` + `qa-runs.md` and report, without running anything: the progress table
 (PASS / DEFECT / BLOCKED / Not run), the blocker list with each blocker's status, the open
-defects, and the never-observed gaps. One short table, then the single sentence that answers
-"can this ship?".
+defects, and the never-observed gaps — split unreached from refused, as `report` does. One short
+table, then the single sentence that answers "can this ship?".
 
 `status` and `report` print the selected environment's table; they write nothing to the plan.

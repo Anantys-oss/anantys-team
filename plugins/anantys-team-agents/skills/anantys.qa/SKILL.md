@@ -165,5 +165,7 @@ whole number on its own; show a non-zero value below 1% as `<1%` (never `0%`) an
 - **Append runs, never overwrite them.** The history is what stops a fixed defect from being
   re-diagnosed six weeks later.
 - **BLOCKED is a real result.** Report it as loudly as a FAIL — an unreachable case is untested,
-  and a green blocker list that quietly contains one is worse than a red one.
+  and a green blocker list that quietly contains one is worse than a red one. A `BLOCKED` this
+  skill **refused** to walk is answered by another environment's PASS, not by a louder report
+  (see `reference/environments.md`).
 - Report what you actually observed. Never a PASS you inferred.
