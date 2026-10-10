@@ -359,6 +359,32 @@ class Rounds(unittest.TestCase):
         self.assertEqual(p.rounds([], self.refs), [])
 
 
+class Rebases(unittest.TestCase):
+    def test_one_wave_rebases_nothing(self):
+        self.assertEqual(p.rebases([[1, 2, 3]]), 0)
+
+    def test_no_waves_rebases_nothing(self):
+        self.assertEqual(p.rebases([]), 0)
+
+    def test_every_pr_after_the_first_wave_is_a_rebase(self):
+        self.assertEqual(p.rebases([[1], [2], [3]]), 2)
+
+    def test_a_round_is_not_a_rebase(self):
+        # One boundary, 28 branches crossing it — the round count says 1.
+        self.assertEqual(p.rebases([[0], list(range(1, 29))]), 28)
+
+    def test_fewer_rounds_can_cost_more_rebases(self):
+        # The pair the headline exists to separate: 3 rounds beats 1 round.
+        three_rounds = [list(range(19)), list(range(19, 25)),
+                        list(range(25, 28)), [28]]
+        one_round = [[0], list(range(1, 29))]
+        self.assertGreater(len(three_rounds), len(one_round))
+        self.assertLess(p.rebases(three_rounds), p.rebases(one_round))
+
+    def test_it_counts_prs_not_waves(self):
+        self.assertEqual(p.rebases([[1, 2], [3, 4, 5]]), 3)
+
+
 class SuiteIsAGate(unittest.TestCase):
     """A real tree: one checker, one test beside it. CI runs both.
 

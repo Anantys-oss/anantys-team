@@ -17,7 +17,18 @@ share a tree that already holds whatever they contest.
 
 Output is a set of waves. A wave is a set of PRs that are mutually clean: land
 them in any order, no rebase between them. Only crossing a wave boundary costs
-a rebase, so N waves means N-1 rebase rounds for the whole queue.
+a rebase, so N waves means the queue lands in N-1 rebase *rounds*.
+
+A round is not a unit of work, and reporting only the round count prices the
+queue as if it were. Every PR in a wave after the first is in it because it
+conflicts with something earlier, so each one is a branch a human rebases by
+hand: a boundary costs one rebase per PR that has to cross it, not one rebase.
+Splitting 29 PRs into 1 + 28 is "one round" and 28 rebases; splitting them
+19/6/3/1 is "three rounds" and ten. Minimising the boundary count is therefore
+the wrong objective, and `waves` does not pursue it — it places the
+highest-degree PR earliest precisely to keep PRs *out* of later waves, which is
+the per-PR cost. The headline reports both numbers so the one being optimised is
+the one the operator reads.
 
 A rebase is the cheap case, and not every boundary is one. When a PR in an
 earlier wave *restructures* a file that a later one edits — a split into
@@ -320,6 +331,17 @@ def rounds(order, refs):
         seen = seen + [(n, refs[n]) for n in wave]
         out.append(list(seen))
     return out
+
+
+def rebases(order):
+    """Branches a human rebases by hand to land `order`.
+
+    The round count measures boundaries; this measures the PRs that have to
+    cross one. A PR sits in a wave after the first only because it conflicts
+    with something earlier, so every one of them is a rebase — and the two
+    numbers diverge without bound: 1 + 28 is one round and 28 rebases.
+    """
+    return sum(len(wave) for wave in order[1:])
 
 
 def conflicts(base, prs):
@@ -1155,7 +1177,8 @@ def main():
                   list(relocated) + list(unresolved))
 
     print(f"{len(prs)} open PRs, {len(edges)} conflicting pairs, "
-          f"{len(order)} waves ({max(len(order) - 1, 0)} rebase rounds)\n")
+          f"{len(order)} waves over {max(len(order) - 1, 0)} rebase rounds, "
+          f"{rebases(order)} branches to rebase\n")
     if pending := unopened(prs):
         carried = sum(len(subjects) for _, subjects in pending)
         print(f"{len(pending)} branch(es) on `origin` carry {carried} commit(s) "
