@@ -47,7 +47,7 @@ matter how the plan was derived.
    - Named: `/anantys.qa plan 206-subscribe-funnel`.
    - Else read `specs_dir` from `.anantys/qa.md` (default `specs/`), list its subdirectories, and
      take the one matching the current git branch's name; otherwise ask.
-2. **`--brief <file.md>`** — a single markdown brief you wrote by hand (`templates/feature-brief.md`),
+2. **`--brief <file.md>`** — a single markdown brief you wrote by hand (`${CLAUDE_SKILL_DIR}/templates/feature-brief.md`),
    carrying **Requirements** (each with a stable id), a **What shipped** summary, and a **Not
    shipped / known gaps** section. The universal, dependency-free path for any feature NOT built
    with spec-kit — a bot-loop feature, a hotfix, a design doc. `plan` **copies** the brief to
@@ -101,7 +101,7 @@ or `brief.md`):
 The skill knows *how* to QA. It must know nothing about *this* project's stack. Everything
 environment-specific goes into `.anantys/qa.md` at the repo root.
 
-Read `templates/qa-config.md` for the shape. Fill it by **interviewing the operator**, but do the
+Read `${CLAUDE_SKILL_DIR}/templates/qa-config.md` for the shape. Fill it by **interviewing the operator**, but do the
 legwork first so the questions are few and precise:
 
 - Read `README.md`, `CLAUDE.md`/`AGENTS.md`, `Makefile`, `docker-compose*.yml`, `.env.example`, `package.json` scripts.
@@ -180,7 +180,7 @@ Then transform into scenarios (identical for every source):
   true mobile viewports. These are `BLOCKED` by construction and need a named human step. Say so
   in the plan rather than letting a run discover it.
 
-Write `qa-plan.md` following `templates/qa-plan.md`. Every assertion gets a stable id
+Write `qa-plan.md` following `${CLAUDE_SKILL_DIR}/templates/qa-plan.md`. Every assertion gets a stable id
 (`A1`, `B5`, …) — ids are referenced by runs, notes and reports forever, so **never renumber
 them**. On a regeneration, keep existing ids and their adjudication annotations; append new ones.
 
@@ -267,7 +267,7 @@ kind; an env whose kind you cannot establish is not run.
 **Results are per environment**, since an assertion can pass on one and fail on another (a fix
 deployed to staging but not the local stack, or the reverse):
 
-- Every `qa-runs.md` run header names its environment (`templates/qa-plan.md`).
+- Every `qa-runs.md` run header names its environment (`${CLAUDE_SKILL_DIR}/templates/qa-plan.md`).
 - The per-assertion status in `qa-plan.md` is recorded **per environment** (`local: FAIL ·
   staging: PASS`) — the suffix is the authoritative record, required on every assertion that has
   run anywhere; the checkbox is checked only when every declared environment is PASS. A run
@@ -494,6 +494,11 @@ whole number on its own; show a non-zero value below 1% as `<1%` (never `0%`) an
 
 ## Rules
 
+- **A file bundled with this skill is named `${CLAUDE_SKILL_DIR}/<path>`, never bare.** The
+  placeholder is substituted with this skill's own directory when the skill loads; a bare
+  `templates/x.md` resolves against the session's working directory — the operator's repo — and
+  does not exist there. Applies to anything under `templates/`, and to any companion a future
+  split adds.
 - **Environment details live in `.anantys/qa.md`, never in this skill and never in `qa-plan.md`.**
   A plan that hardcodes a hostname stops working for the next project — and for the next dev stack.
 - **Never reset — or write destructively to — a `shared` environment** (staging, a preview, prod).
