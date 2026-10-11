@@ -12,8 +12,9 @@ python3 scripts/check_plugins.py
 It fails on: a version/name/description mismatch between the two manifests, a skill whose
 frontmatter `name` doesn't match its directory, an agent missing `name`/`description`/
 `tools`/`model`, a role count in the description that the tree contradicts, a role the
-README never mentions, and a role whose preamble does not link `TEAM-CONTRACT.md`. CI runs
-it on every push and pull request.
+README never mentions, a role whose preamble does not link `TEAM-CONTRACT.md`, a companion a
+role names that is not in the tree, and either token budget the loader's own cost table puts
+the plugin over. CI runs it on every push and pull request.
 
 ## Linking the contract is not optional
 
@@ -22,118 +23,86 @@ file points here"*. Those were assertions about the tree that nothing verified �
 because every author had so far remembered. A new role that simply never mentions the
 contract was a complete, installable, green role bound by nothing.
 
-The incentive ran the wrong way, too. The contract counts toward the ceiling below, so the
-five roles that point at it load 207–733 against a limit of 200. Deleting the one line that
-binds each of them takes three under the ceiling and leaves the run green: the cheapest way
-to satisfy the ceiling was to stop being bound. The ceiling may make a role shorter; it may
-not make it unbound, so the link is now an error to omit and the warning's remedy says so.
+The incentive ran the wrong way, too. The retired line ceiling counted the contract into
+every role that pointed at it, so the five roles that linked it loaded 207–733 against a
+limit of 200, and deleting the one line that bound a role took it under the ceiling with the
+run still green: the cheapest way to satisfy that ceiling was to stop being bound. The
+loader charges the contract nothing, so the incentive is gone — and this check no longer
+stands on it. It stands on the first paragraph: the contract asserts the binding, and an
+assertion about the tree is checkable.
 
 The link must sit in the **preamble** — above the role's first `## ` heading. A link below
-one is read when the reader reaches it, which is after the role has already acted; the check
-measures the same region `check_load` does, for the same reason.
+one is read when the reader reaches it, which is after the role has already acted.
 
 A plugin with no `TEAM-CONTRACT.md` at all is a **warning**, not an error: the contract is a
 file some other change lands, and a gate that reddens every branch until it arrives forces
 an order on changes that have none. It is not silent either — a check whose input is absent
 must say so rather than print the output of a healthy run.
 
-A role over 200 lines is loaded in full on every invocation, so past that size the per-action
-detail belongs in a `reference/` page the actions table links to — and that page is counted
-too, see below.
+## What a role costs, in the loader's own currency
 
-**Taking a role over the ceiling is an error; finding it there is a warning.** The checker
-prices the load against the merge-base so it can tell those apart, and for a while the
-distinction changed only the wording of a warning. Measured over the open queue, four
-branches each take a role that is *clean at the base* past the ceiling on their own —
-`anantys.design` 115 → 261 and 115 → 221, `anantys.ops` 131 → 204, 131 → 213, 131 → 238 —
-and ten more add to `anantys.qa`, already at 648, one of them by 253 lines. Every one of
-those runs exits 0. A ceiling nothing ever fails is a number in a docstring.
+A role used to be priced at **200 lines**, summed over the role file, its preamble links, the
+largest `reference/` topic it named and the largest `templates/` file — justified by a single
+sentence: *a role loads in full, every invocation*. Nine rounds of work refined that ceiling's
+severity arms, argued over who owned its remedy, and reported a paradox: the remedy, *split
+detail into `reference/`*, pointed into a directory the ceiling itself charged, so past some
+size emptying the role file changed nothing and the advice was arithmetic nonsense.
 
-So the line is the one the contract-clause and version-bump gates already draw: a regression
-is an error, inherited debt is a warning. A crossing is a regression, and it is wholly inside
-the branch's own diff — the role, its `reference/` pages and its `templates/` all arrive in
-the same change, so the remedy is available on that branch and there is no other branch to
-wait on. That is the same test the dangling-companion error earns below. Growth above a
-ceiling the base already broke is *not* this branch's regression; it stays a warning until
-the head that splits the role lands, and the gate then holds the result.
+Nobody measured the premise. `claude plugin details` does — it prints the loader's own cost
+table, tokenized locally, with no credential and no network. Measured:
 
-**One part of the load is not in the branch's own diff.** "Wholly inside" is the test, and
-`TEAM-CONTRACT.md` is the one measured part that fails it: the role file, its `reference/`
-pages and its `templates/` are this role's to shorten, while the contract is seven roles' at
-once. Shortening it to clear one role edits what every other role loads — the same "other
-branch to wait on" the paragraph above refuses to force. So the crossing is re-measured
-without the shared lines, and a role that fits without them gets a warning that names the
-contract as the cause instead of an error whose printed remedy — *split detail into
-`reference/`* — cannot move a line the role did not write. On the queue assembled from the
-two landing heads this is two of five reported crossings: `anantys.debug` (174 lines of its
-own, 231 with the contract) and `anantys.spec-tester` (151 / 208). The other three cross on
-their own prose and stay errors, which is the point — this subtracts the shared part, not the
-ceiling. Only the contract is subtracted: a `reference/` page or a `templates/` file arrives
-in the same change, so a crossing it causes stays the role's own, and the escape the template
-arm closed stays closed.
+| change to a role | always-on | on invoke |
+|---|---|---|
+| +4000 lines in `SKILL.md` | unchanged | 950 → **73k** |
+| +4000-line `reference/huge.md`, named in the role's prose | unchanged | **unchanged** |
 
-**The 200 is a ceiling on the load, not on the file.** A role's preamble — everything above
-its first `## ` heading — is where it names what binds it before it acts, so every local
-`.md` it links there is read on the same invocation and counts toward the total. The checker
-discovers those from the links, never from a filename: a role that points somewhere else is
-measured against what it actually points at, and one that points nowhere is measured on
-itself alone, exactly as before. The warning prints the breakdown, so the file to shrink is
-visible without reopening any of them.
+So the premise is false twice over. A role's **body** is charged on the invocation that fires
+it, not on every session. A **companion is charged nothing at all** — the loader never loads
+it; the role `Read`s it at runtime, on the one action that needs it. The ceiling was in the
+wrong currency *and* over the wrong population, and the paradox was an artifact of its own
+accounting: against the loader the remedy works exactly as intended. Prose only `plan` needs
+is not paid by `run` or `report`. That is progressive disclosure, it is the design the
+platform intends, and it is not a hole to be closed by charging for it.
 
-That distinction is not hypothetical. All seven roles open by linking a shared contract and
-saying *"read it before acting"*; at 502 lines it made every one of them — including two
-under 100 lines of their own — invoke at between 578 and 733 against a ceiling of 200, while
-the checker reported one warning, for the one file that was individually long. A ceiling
-measured on the wrong unit reads as compliance.
+`check_cost` reads that table instead, and bills in the two currencies the loader does
+— they are not fungible, so neither number substitutes for the other:
 
-**The remedy is inside the unit, not outside it.** `reference/` is where this page sends
-the detail, so it is where the load goes — a ceiling that stopped at the always-loaded set
-would be satisfiable by relocating prose into a file every action still reads. So the total
-also carries the **largest** `reference/*.md` the role names: an action reads one topic on
-top of the always-loaded set, and a ceiling is a worst-case bound. Splitting into several
-small topics lowers the measured load; moving the same prose into one big topic file does
-not. `check_tool_grants` and `check_delegation_grants` already read these files, for the
-same reason and with the same backticked-path convention; this is the gate that prices them.
+- **`ALWAYS_ON_MAX` (1000) over the plugin's total.** Every session with the plugin enabled
+  pays this whether or not it ever invokes a role, which makes it the only truly non-optional
+  cost. The column is the roles' frontmatter `description`s — what the loader shows the model
+  deciding whether to fire a skill — so it is a *plugin*-level number: no single description
+  is the problem, the sum is. Seven roles measure **716**, leaving room for roughly three more.
+- **`ON_INVOKE_MAX` (12000) per component.** Paid once by the session that fires the role,
+  against which a campaign's own spend is far larger. Loose on purpose: it bounds the preamble
+  a role charges before doing any work. Six roles measure 820–2.1k; `anantys.qa` measures
+  **8.6k** and is the only role this number is about.
 
-**`templates/` is read on the same invocation, so it is charged the same way.** The reason
-written beside the 200 is that *a role loads in full, every invocation* — and a template an
-action is told to *follow* satisfies that reason exactly. It was not priced. `anantys.qa`'s
-`plan` step says *"Write `qa-plan.md` following `templates/qa-plan.md`"*, a file that on the
-assembled queue runs to 229 lines, longer than the whole ceiling, against a role the gate
-reported at 513. Any directory whose files an action reads is a place the prose can go, so
-the escape is closed by **directory, not by file**: the total carries the largest named
-`reference/*.md` *and* the largest named `templates/*.md`. They sum rather than compete —
-one action reads at most one of each, but it can read both.
+Both are **errors**, on the test the rest of the gate uses: the remedy is wholly inside the
+branch's own diff. A description and a role body are the role's own files, arriving in the
+role's own change, with no other branch to wait on. The old ceiling needed an inherited-debt
+arm precisely because it charged `TEAM-CONTRACT.md`, which is seven roles' at once; the
+contract is in neither column here, so that arm is gone with it — and so is the merge-base
+baseline the ceiling needed to tell a crossing from standing debt.
 
-**A directory is only closed if the mention is scanned where it is written.** The rule above
-was applied to the role file alone, and that is not where a template is named: the action
-told to follow one is the action whose detail the split moved into `reference/`, so the
-mention went with it. `anantys.qa` names none of its three templates in `SKILL.md` — `plan`
-names `templates/qa-plan.md` from `reference/sources.md`, `init` names `templates/qa-config.md`
-from `reference/init.md` — so the arm that this page introduced, citing that exact `plan`
-sentence, charged nothing on the one role it was written for. On the queue as it assembles
-today the gate reported `anantys.qa` at **283** (153 + 130 `reference/sources.md`) where its
-`plan` action reads **491**, the 208-line `templates/qa-plan.md` uncharged; unsplit
-`anantys.ops` was charged normally. Templates are therefore discovered in the role **plus
-the topics it names**, and the escape is worth stating plainly: this check's own remedy is
-the thing that hid the mention, so the arm switched off at exactly the load it exists to
-price.
+**A gate that cannot measure does not rule.** With no `claude` on `PATH` the check warns and
+says so. CI installs the CLI for exactly that reason: a budget nothing measures is a number
+in a docstring, which is what the 200 turned out to be.
 
-Topic discovery stays one level deep — a `reference/` page naming another is a question the
-two grant gates answer the same way, and one gate must not widen alone. There is no
-directory glob either: every companion on disk is named today, and those gates already warn
-about a `reference/` file no action names.
+The CLI's own `claude plugin validate .` runs in CI beside this gate, and the two do not
+overlap much — it is a manifest schema check, and it accepts a skill whose frontmatter `name`
+disagrees with its directory, an empty skill directory, and a marketplace entry whose
+`source` points at nothing. Those stay this file's job.
 
-The two grant gates stay on `reference/` alone, and that is not an oversight: a template is
-a file shape, it names no tools, and there is nothing in it to union into a grant set. Load
-is a claim about bytes; authority is not. The units genuinely differ here, which is why this
-page says so rather than leaving the next reader to call it an inconsistency.
+### Why the companion surface is still resolved
 
-It is a floor, not an exact load: an action that reads two topic files pays for both, and
-the checker charges one. Measured on the assembled queue, `anantys.qa` — the only split
-role today — invokes at 385 (160 + 95 contract + 130 `reference/sources.md`) where the
-always-loaded set alone reported 255. No individual branch shows this: the split lands on
-one head, the contract on another, and this checker on a third.
+Nothing above prices a `reference/` page, but the checker still discovers every one a role
+names — see the next section. The surface is the same it always was; what changed is the
+question it answers. It used to be *how much does this cost*, which the loader answers better.
+It is now *does this file exist*, which the loader does not answer at all.
+
+The two grant gates stay on `reference/` and leave `templates/` alone, and that is not an
+oversight: a template is a file shape, it names no tools, and there is nothing in it to union
+into a grant set. Authority and existence are different questions, and neither is cost.
 
 ## A companion you name has to be there
 
@@ -161,10 +130,10 @@ whatever tree it came from. Across every open head today zero citations dangle, 
 reddens nothing: it is a regression gate with live input, not one waiting for its input to
 land.
 
-The surface is exactly the one `measured_load` resolves — the preamble's markdown links, the
-`reference/` topics the role names, and the `templates/` the role or one of those topics
-names. A link a role writes **below** its first `## ` heading is out of it, as it is out of
-the ceiling above. Widening discovery past the preamble is a question `check_tool_grants` and
+The surface is the preamble's markdown links, the `reference/` topics the role names, and
+the `templates/` the role or one of those topics names — two levels, because a role's own
+split moves an action's template mention into the topic that action reads. A link a role
+writes **below** its first `## ` heading is out of it. Widening discovery past the preamble is a question `check_tool_grants` and
 `check_delegation_grants` answer the same way, and one gate must not widen alone. The
 `docs/*.md` pages a role links from a rule body are the live case that boundary leaves
 unmeasured, and closing it is a change to all three gates at once.

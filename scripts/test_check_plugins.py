@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The ceiling is on the load, not on the file — these are the cases that differ."""
+"""Where this gate's checks decide differently from the obvious reading of their rule."""
 
 import contextlib
 import io
@@ -21,26 +21,13 @@ class Harness(unittest.TestCase):
         cp.errors.clear()
         cp.warnings.clear()
         self.tmp = tempfile.TemporaryDirectory()
-        cp.ROOT = Path(self.tmp.name).resolve()  # check_load resolves its links
+        cp.ROOT = Path(self.tmp.name).resolve()  # the checks resolve their links
         self.addCleanup(self.tmp.cleanup)
-        cp.ROLE_MAX_LINES = 10
         cp.BASE = None
         self.addCleanup(setattr, cp, "at", cp.at)
 
     def write(self, name: str, n: int) -> None:
         (cp.ROOT / name).write_text(lines(n), encoding="utf-8")
-
-    def check(self, text: str) -> list[str]:
-        """What `check_load` reported, whichever list it went to.
-
-        The measurement and the severity are separate questions: every test below
-        about *what* is counted reads this, and the two that care *which list* read
-        `cp.errors` / `cp.warnings` directly.
-        """
-        path = cp.ROOT / "SKILL.md"
-        path.write_text(text, encoding="utf-8")
-        cp.check_load(path)
-        return cp.errors + cp.warnings
 
     def baseline(self, **texts: str) -> None:
         """Pretend `texts` (file name -> content) is what the baseline commit held."""
@@ -49,293 +36,144 @@ class Harness(unittest.TestCase):
         cp.at = lambda commit, path: held.get(path)
 
 
-class CheckLoad(Harness):
-    def test_role_alone_under_the_ceiling_is_silent(self) -> None:
-        self.assertEqual(self.check("one\ntwo\n"), [])
+#: A real `claude plugin details` cost table, trimmed to the part this gate reads.
+DETAILS = """\
+Projected token cost
+  Always-on:   ~716 tok   added to every session
 
-    def test_a_preamble_link_counts_toward_the_load(self) -> None:
-        self.write("CONTRACT.md", 20)
-        warning, = self.check("Read the [contract](CONTRACT.md) before acting.\n")
-        self.assertIn("loads 21 lines", warning)
-        self.assertIn("1 SKILL.md + 20 CONTRACT.md", warning)
-
-    def test_a_link_below_the_first_heading_does_not(self) -> None:
-        self.write("CONTRACT.md", 20)
-        self.assertEqual(self.check("preamble\n\n## Step\n\n[c](CONTRACT.md)\n"), [])
-
-    def test_a_link_to_a_file_that_is_not_there_is_ignored(self) -> None:
-        self.assertEqual(self.check("[gone](MISSING.md)\n"), [])
+Per-component (rounded)
+  component             always-on  on-invoke
+  anantys.review             ~100      ~1.3k
+  anantys.qa                 ~190      ~8.6k
+  tiny                       < 20       < 20
+"""
 
 
-class TheRemedyIsCountedToo(Harness):
-    """reference/ is where the remedy puts the load, so it is part of the load."""
-
-    def reference(self, name: str, n: int) -> None:
-        (cp.ROOT / "reference").mkdir(exist_ok=True)
-        (cp.ROOT / "reference" / name).write_text(lines(n), encoding="utf-8")
-
-    def test_a_named_topic_file_counts_toward_the_load(self) -> None:
-        self.reference("run.md", 20)
-        warning, = self.check("| run | `reference/run.md` |\n")
-        self.assertIn("loads 21 lines", warning)
-        self.assertIn("20 reference/run.md", warning)
-
-    def test_only_the_largest_topic_file_counts(self) -> None:
-        # One action reads one topic, so the bound is the worst action, not the sum.
-        self.reference("small.md", 4)
-        self.reference("big.md", 20)
-        warning, = self.check("`reference/small.md` `reference/big.md`\n")
-        self.assertIn("loads 21 lines", warning)
-        self.assertIn("20 reference/big.md", warning)
-        self.assertNotIn("small.md", warning)
-
-    def test_a_topic_file_no_action_names_is_not_counted(self) -> None:
-        self.reference("unused.md", 20)
-        self.assertEqual(self.check("preamble only\n"), [])
-
-    def test_a_named_topic_file_that_is_not_there_is_ignored(self) -> None:
-        self.assertEqual(self.check("`reference/gone.md`\n"), [])
-
-    def test_splitting_into_one_big_topic_file_is_not_a_pass(self) -> None:
-        # The defect this closes: relocating prose into a file every action still
-        # reads took a role from over-ceiling to clean without lowering the load.
-        self.baseline(**{"SKILL.md": lines(20)})
-        self.reference("all.md", 16)
-        warning, = self.check("`reference/all.md`\n" + lines(2))
-        self.assertIn("loads 19 lines (> 10), down from 20", warning)
-
-    def test_the_baseline_counts_its_own_topic_file(self) -> None:
-        self.baseline(**{
-            "SKILL.md": "`reference/run.md`\n" + lines(5),
-            "reference/run.md": lines(20),
-        })
-        warning, = self.check(lines(14))
-        self.assertIn("down from 26", warning)
+def details(always_on: str, **components: str) -> str:
+    """A cost table with `always_on` as the total and one row per component."""
+    rows = "\n".join(f"  {name}  ~70  {cost}" for name, cost in components.items())
+    return f"Projected token cost\n  Always-on:   {always_on} tok\n\n{rows}\n"
 
 
-class ATemplateIsReadLikeATopic(Harness):
-    """templates/ is the other directory an action reads, so it is priced the same."""
+class CostIsPricedInTheLoadersCurrency(Harness):
+    """The two budgets are read out of `claude plugin details`, not computed from lines."""
 
-    def companion(self, folder: str, name: str, n: int) -> None:
-        (cp.ROOT / folder).mkdir(exist_ok=True)
-        (cp.ROOT / folder / name).write_text(lines(n), encoding="utf-8")
+    def cost(self, table: str | None) -> list[str]:
+        cp.check_cost(cp.ROOT, "p", table)
+        return cp.errors + cp.warnings
 
-    def test_a_named_template_counts_toward_the_load(self) -> None:
-        # The hole: a template the action is told to follow was read and never charged.
-        self.companion("templates", "plan.md", 20)
-        warning, = self.check("Write it following `templates/plan.md`.\n")
-        self.assertIn("loads 21 lines", warning)
-        self.assertIn("20 templates/plan.md", warning)
+    def test_a_table_under_both_budgets_is_silent(self) -> None:
+        self.assertEqual(self.cost(DETAILS), [])
 
-    def test_only_the_largest_template_counts(self) -> None:
-        self.companion("templates", "small.md", 4)
-        self.companion("templates", "big.md", 20)
-        warning, = self.check("`templates/small.md` `templates/big.md`\n")
-        self.assertIn("20 templates/big.md", warning)
-        self.assertNotIn("small.md", warning)
+    def test_an_always_on_total_over_budget_is_an_error(self) -> None:
+        error, = self.cost(details("~1.4k", a="~900"))
+        self.assertIn("1400 always-on tokens (> 1000)", error)
+        self.assertIn("`description`", error)
 
-    def test_a_topic_and_a_template_are_both_charged(self) -> None:
-        # One action can read both, so the two directories sum — they do not compete.
-        self.companion("reference", "run.md", 8)
-        self.companion("templates", "plan.md", 9)
-        warning, = self.check("`reference/run.md` `templates/plan.md`\n")
-        self.assertIn("loads 18 lines", warning)
-        self.assertIn("8 reference/run.md", warning)
-        self.assertIn("9 templates/plan.md", warning)
+    def test_a_component_over_the_on_invoke_budget_is_an_error(self) -> None:
+        error, = self.cost(details("~700", fat="~73k"))
+        self.assertIn("fat: 73000 tokens on invoke (> 12000)", error)
 
-    def test_moving_prose_into_a_template_is_not_a_pass(self) -> None:
-        # Same defect reference/ already closed, through the sibling directory.
-        self.baseline(**{"SKILL.md": lines(20)})
-        self.companion("templates", "plan.md", 16)
-        warning, = self.check("`templates/plan.md`\n" + lines(2))
-        self.assertIn("loads 19 lines (> 10), down from 20", warning)
+    def test_the_remedy_names_reference_which_the_loader_charges_this_column_nothing(self) -> None:
+        error, = self.cost(details("~700", fat="~20k"))
+        self.assertIn("`reference/`", error)
 
-    def test_a_template_no_action_names_is_not_counted(self) -> None:
-        self.companion("templates", "unused.md", 20)
-        self.assertEqual(self.check("preamble only\n"), [])
+    def test_each_component_is_judged_on_its_own_row(self) -> None:
+        self.assertEqual(len(self.cost(details("~700", a="~20k", b="~1.3k", c="~40k"))), 2)
 
-    def body(self, folder: str, name: str, text: str) -> None:
-        (cp.ROOT / folder).mkdir(exist_ok=True)
-        (cp.ROOT / folder / name).write_text(text, encoding="utf-8")
+    def test_a_k_suffix_is_thousands_not_a_literal(self) -> None:
+        # `~8.6k` under a 12000 budget is 8600 and passes; read as 8.6 it would also
+        # pass, and read as 86 it would too — so the case that separates them is one
+        # where the suffix decides the verdict.
+        self.assertEqual(self.cost(details("~700", a="~11.9k")), [])
+        self.assertEqual(len(self.cost(details("~700", b="~12.1k"))), 1)
 
-    def test_a_template_named_only_in_a_topic_is_charged(self) -> None:
-        # The shape every split role has: the action that follows the template was
-        # moved into reference/, taking the mention with it. Charging only what the
-        # role file names switched the arm off at exactly the load it was built for.
-        self.body("reference", "sources.md", "`templates/plan.md`\n" + lines(4))
-        self.companion("templates", "plan.md", 8)
-        warning, = self.check("`reference/sources.md`\n")
-        self.assertIn("loads 14 lines", warning)
-        self.assertIn("5 reference/sources.md", warning)
-        self.assertIn("8 templates/plan.md", warning)
+    def test_a_four_digit_count_carries_a_thousands_separator(self) -> None:
+        # The loader prints `~1,736 tok` once the total has four digits — the real
+        # notation that first ran this check into a ValueError, which is the one
+        # outcome a gate may not have: no verdict at all.
+        self.assertEqual(cp.tokens("1,736"), 1736)
+        error, = self.cost(details("~1,736", a="~900"))
+        self.assertIn("1736 always-on tokens", error)
 
-    def test_the_largest_template_is_found_across_role_and_topics(self) -> None:
-        self.body("reference", "init.md", "`templates/config.md`\n")
-        self.companion("templates", "config.md", 20)
-        self.companion("templates", "brief.md", 4)
-        warning, = self.check("`reference/init.md` `templates/brief.md`\n")
-        self.assertIn("20 templates/config.md", warning)
-        self.assertNotIn("brief.md", warning)
+    def test_a_cost_under_the_reporting_floor_is_read_as_its_bound_not_skipped(self) -> None:
+        # The loader prints `< 20` instead of `~N` below its floor. A row that matches
+        # no pattern is a row this gate passes in silence, which is the whole defect
+        # the line ceiling had: a measurement that quietly declines to measure.
+        self.assertEqual(cp.tokens("20"), 20)
+        self.assertEqual(self.cost("Projected token cost\n  Always-on:   < 20 tok\n"), [])
 
-    def test_a_topic_named_only_in_a_topic_is_not_followed(self) -> None:
-        # Deliberate: topic discovery stays one level, as the two grant gates read it.
-        self.body("reference", "a.md", "`reference/b.md`\n")
-        self.companion("reference", "b.md", 20)
-        warning, = self.check("`reference/a.md`\n" + lines(9))
-        self.assertIn("loads 11 lines", warning)
-        self.assertNotIn("reference/b.md", warning)
+    def test_a_table_whose_shape_changed_is_an_error_not_a_pass(self) -> None:
+        error, = self.cost("Projected token cost\n  Nothing recognisable here\n")
+        self.assertIn("printed no always-on total", error)
+
+    def test_a_cli_that_did_not_run_warns_rather_than_passing_or_failing(self) -> None:
+        # A gate that cannot measure must not rule: an error would redden every tree
+        # without the CLI installed, and silence would report a budget it never read.
+        warning, = self.cost(None)
+        self.assertIn("did not run", warning)
+        self.assertEqual(cp.errors, [])
 
 
-class AgainstTheBaseline(Harness):
-    """A ceiling report is only actionable if it says what *this* change did to it."""
+@unittest.skipIf(shutil.which("claude") is None, "needs the Claude Code CLI")
+class TheLoaderChargesTheBodyOnInvokeAndCompanionsNotAtAll(unittest.TestCase):
+    """The measurement the retired 200-line ceiling asserted without taking.
 
-    def test_a_change_that_pushes_a_role_over_is_named_as_the_cause(self) -> None:
-        self.baseline(**{"SKILL.md": lines(8)})
-        warning, = self.check(lines(20))
-        self.assertIn("pushes the load over the ceiling, 8 -> 20", warning)
-
-    def test_a_role_this_change_adds_is_its_own_cause(self) -> None:
-        self.baseline()  # the role is not in the baseline tree at all
-        warning, = self.check(lines(20))
-        self.assertIn("pushes the load over the ceiling, 0 -> 20", warning)
-
-    def test_growing_an_already_over_role_reports_the_delta(self) -> None:
-        self.baseline(**{"SKILL.md": lines(20)})
-        warning, = self.check(lines(26))
-        self.assertIn("grows a load already over the ceiling, 20 -> 26 (+6)", warning)
-
-    def test_an_untouched_over_role_is_not_blamed_on_this_change(self) -> None:
-        self.baseline(**{"SKILL.md": lines(20)})
-        warning, = self.check(lines(20))
-        self.assertIn("loads 20 lines", warning)
-        self.assertNotIn("this change", warning)
-
-    def test_the_baseline_load_counts_its_own_links(self) -> None:
-        # Dropping a linked contract is a shrink, so the baseline must be priced
-        # by the same rule as the working tree — not by the role file alone.
-        self.baseline(**{"SKILL.md": "[c](CONTRACT.md)\n" + lines(5), "CONTRACT.md": lines(20)})
-        warning, = self.check(lines(14))
-        self.assertIn("down from 26", warning)
-
-    def test_without_a_baseline_the_absolute_warning_still_fires(self) -> None:
-        cp.BASE = None
-        warning, = self.check(lines(20))
-        self.assertIn("loads 20 lines (> 10)", warning)
-
-
-class TheCrossingIsTheError(Harness):
-    """A ceiling nothing fails is a number in a docstring.
-
-    The baseline above separates a crossing from a standing fact; these say the
-    separation reaches the exit code. Four open heads take a clean role over the
-    ceiling on their own and every run exits 0, so this is the arm with live input.
+    Its premise was *a role loads in full, every invocation*, and it summed the role
+    file, its preamble links, the largest `reference/` topic and the largest
+    `templates/` file into one line count. Both halves of that are wrong, and these
+    two cases are the ones that say so — run against the real loader, because a
+    fixture of its output could only repeat whatever this file already believes.
     """
 
-    def test_pushing_a_clean_role_over_the_ceiling_is_an_error(self) -> None:
-        self.baseline(**{"SKILL.md": lines(8)})
-        self.check(lines(20))
-        self.assertEqual([], cp.warnings)
-        error, = cp.errors
-        self.assertIn("pushes the load over the ceiling, 8 -> 20", error)
+    def plugin(self) -> Path:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name).resolve()
+        (root / ".claude-plugin").mkdir()
+        (root / ".claude-plugin/plugin.json").write_text(
+            json.dumps({"name": "p", "version": "0.1.0", "description": "d"}), encoding="utf-8"
+        )
+        (root / "skills/s").mkdir(parents=True)
+        self.skill = root / "skills/s/SKILL.md"
+        self.skill.write_text(
+            "---\nname: s\ndescription: A role that does a thing.\n---\n\n" + lines(400),
+            encoding="utf-8",
+        )
+        return root
 
-    def test_a_role_this_change_adds_over_the_ceiling_is_an_error(self) -> None:
-        # Nothing to wait on: the role and its companions arrive in this diff.
-        self.baseline()
-        self.check(lines(20))
-        self.assertEqual([], cp.warnings)
-        self.assertEqual(1, len(cp.errors))
+    def measure(self, root: Path) -> tuple[int, int]:
+        """`(always-on total, the one component's on-invoke cost)`."""
+        table = cp.loader_details(root, "p")
+        self.assertIsNotNone(table, "the CLI is installed but printed no cost table")
+        total = cp.tokens(cp.LOADER_TOTAL.search(table).group(1))
+        (_, _, on_invoke), = cp.LOADER_ROW.findall(table)
+        return total, cp.tokens(on_invoke)
 
-    def test_growing_a_role_the_baseline_already_broke_stays_a_warning(self) -> None:
-        # Not this branch's regression — it waits on the head that fixes the role.
-        self.baseline(**{"SKILL.md": lines(20)})
-        self.check(lines(26))
-        self.assertEqual([], cp.errors)
-        self.assertEqual(1, len(cp.warnings))
+    def test_the_body_is_charged_on_invoke_and_not_always_on(self) -> None:
+        root = self.plugin()
+        before_total, before_invoke = self.measure(root)
+        with self.skill.open("a", encoding="utf-8") as handle:
+            handle.write(lines(4000))
+        after_total, after_invoke = self.measure(root)
+        self.assertGreater(after_invoke, before_invoke * 4)
+        self.assertEqual(after_total, before_total)
 
-    def test_an_untouched_over_role_stays_a_warning(self) -> None:
-        self.baseline(**{"SKILL.md": lines(20)})
-        self.check(lines(20))
-        self.assertEqual([], cp.errors)
-
-    def test_no_baseline_is_not_an_error(self) -> None:
-        # An absent baseline cannot tell a crossing from inherited debt, and
-        # guessing the stricter reading reddens every branch git cannot price.
-        cp.BASE = None
-        self.check(lines(20))
-        self.assertEqual([], cp.errors)
-
-    def test_a_shrink_that_is_still_over_stays_a_warning(self) -> None:
-        self.baseline(**{"SKILL.md": lines(26)})
-        self.check(lines(20))
-        self.assertEqual([], cp.errors)
-
-
-class TheSharedPartIsNotTheRolesRegression(Harness):
-    """"Wholly inside the branch's own diff" is the error's test — the contract fails it.
-
-    A role's own files are its to shorten. `TEAM-CONTRACT.md` is seven roles' at
-    once, so a crossing that only the contract's lines cause has its remedy on
-    somebody else's account. Measured on the queue assembled from the two landing
-    heads, two of five reported crossings are exactly that shape.
-    """
-
-    def role(self, own: int, contract: int) -> str:
-        self.write(cp.CONTRACT, contract)
-        return f"[contract]({cp.CONTRACT}) binds you.\n" + lines(own - 1)
-
-    def test_a_crossing_only_the_contract_causes_is_a_warning(self) -> None:
-        self.baseline(**{"SKILL.md": lines(4)})
-        self.check(self.role(own=9, contract=4))
-        self.assertEqual([], cp.errors)
-        warning, = cp.warnings
-        self.assertIn("only with the 4 shared lines of TEAM-CONTRACT.md", warning)
-        self.assertIn("the role's own files load 9", warning)
-
-    def test_the_warning_sends_the_fix_to_the_contract_not_to_reference(self) -> None:
-        # The printed remedy was "split detail into reference/" — it cannot move a
-        # line this role did not write, which is what made it unreachable advice.
-        self.baseline(**{"SKILL.md": lines(4)})
-        self.check(self.role(own=9, contract=4))
-        warning, = cp.warnings
-        self.assertIn("the lines to remove are in TEAM-CONTRACT.md", warning)
-        self.assertNotIn("reference/", warning)
-
-    def test_a_role_over_the_ceiling_on_its_own_prose_is_still_an_error(self) -> None:
-        self.baseline(**{"SKILL.md": lines(4)})
-        self.check(self.role(own=11, contract=4))
-        self.assertEqual([], cp.warnings)
-        error, = cp.errors
-        self.assertIn("pushes the load over the ceiling, 4 -> 15", error)
-        self.assertNotIn("shared lines", error)
-
-    def test_own_lines_exactly_at_the_ceiling_are_not_the_cause(self) -> None:
-        self.baseline(**{"SKILL.md": lines(4)})
-        self.check(self.role(own=10, contract=4))
-        self.assertEqual([], cp.errors)
-
-    def test_a_companion_is_charged_to_the_role_not_excused(self) -> None:
-        # Only the contract is shared. A topic file arrives in the same diff, so a
-        # crossing it causes stays the role's own — otherwise the subtraction would
-        # re-open the relocate-the-load escape the template arm was added to close.
-        (cp.ROOT / "reference").mkdir()
-        (cp.ROOT / "reference/t.md").write_text(lines(6), encoding="utf-8")
-        self.baseline(**{"SKILL.md": lines(4)})
-        self.check(self.role(own=6, contract=4) + "\n## Actions\n\n`reference/t.md`\n")
-        self.assertEqual([], cp.warnings)
-        self.assertEqual(1, len(cp.errors))
-
-    def test_growth_above_a_broken_ceiling_is_not_relabelled_as_a_crossing(self) -> None:
-        # Inherited debt was already a warning; it must not borrow the new wording,
-        # which claims the role's own files fit.
-        self.baseline(**{"SKILL.md": lines(20)})
-        self.check(self.role(own=9, contract=4))
-        self.assertEqual([], cp.errors)
-        warning, = cp.warnings
-        self.assertNotIn("shared lines", warning)
+    def test_a_companion_the_role_names_is_charged_to_neither_column(self) -> None:
+        root = self.plugin()
+        before = self.measure(root)
+        (self.skill.parent / "reference").mkdir()
+        (self.skill.parent / "reference/huge.md").write_text(lines(4000), encoding="utf-8")
+        with self.skill.open("a", encoding="utf-8") as handle:
+            handle.write("\nFollow `reference/huge.md` for the detail.\n")
+        after_total, after_invoke = self.measure(root)
+        self.assertEqual(after_total, before[0])
+        # The one added sentence is the whole difference; 4000 lines cost nothing.
+        self.assertLess(after_invoke - before[1], 100)
 
 
 class TheContractBinds(Harness):
-    """The ceiling counts the contract, so unlinking it is the cheapest way to pass."""
+    """The contract asserts that every role points here; these cases read the link."""
 
     def contract(self, text: str) -> list[str]:
         self.write(cp.CONTRACT, 20)
@@ -357,12 +195,15 @@ class TheContractBinds(Harness):
         error, = self.contract(f"preamble\n\n## Step\n\n[c]({cp.CONTRACT})\n")
         self.assertIn("does not link TEAM-CONTRACT.md", error)
 
-    def test_shrinking_under_the_ceiling_by_unlinking_is_not_a_pass(self) -> None:
-        # The whole point: 25 lines with the contract is over a ceiling of 10, and
-        # dropping the link takes it under. The load goes quiet; the binding does not.
-        self.write(cp.CONTRACT, 20)
-        self.assertEqual(self.check(lines(5)), [])
-        cp.check_contract(cp.ROOT / "SKILL.md", cp.ROOT / cp.CONTRACT)
+    def test_unlinking_the_contract_costs_the_role_nothing_and_is_still_an_error(self) -> None:
+        # The retired line ceiling counted the contract, so unlinking it was the
+        # cheapest way to pass. `check_cost` charges it nothing — the loader does not
+        # load it — so the incentive is gone and this is the only check that notices.
+        path = cp.ROOT / "SKILL.md"
+        path.write_text(lines(5), encoding="utf-8")
+        cp.check_cost(cp.ROOT, "p", DETAILS)
+        self.assertEqual(cp.errors, [])
+        cp.check_contract(path, cp.ROOT / cp.CONTRACT)
         self.assertEqual(len(cp.errors), 1)
 
 
@@ -625,7 +466,7 @@ class ANamedCompanionMustBeThere(Harness):
         self.assertIn("names `templates/gone.md`", error)
 
     def test_a_template_named_only_in_a_named_topic_is_checked(self) -> None:
-        # The surface `worst_action_part` reaches: a role's own split moves the
+        # The surface `named_companions` reaches: a role's own split moves the
         # template mention into the topic, so a dangling one hides there too.
         self.companion("reference", "sources.md", 3)
         (cp.ROOT / "reference/sources.md").write_text("Follow `templates/gone.md`.\n")
@@ -635,15 +476,16 @@ class ANamedCompanionMustBeThere(Harness):
     def test_a_markdown_link_below_the_first_heading_is_out_of_scope(self) -> None:
         # Stated boundary, not an oversight: widening discovery past the preamble is
         # a question the two grant gates answer the same way, and one must not widen
-        # alone. `measured_load` draws the line in the same place.
+        # alone. `load_parts` draws the line in the same place.
         self.assertEqual(self.companions("pre\n\n## Step\n\n[x](GONE.md)\n"), [])
 
-    def test_a_dangling_citation_does_not_lower_the_reported_load(self) -> None:
-        # Both checks run: the absence is still uncharged, and now also reported.
+    def test_only_the_dangling_one_of_two_citations_is_reported(self) -> None:
+        # The present companion is not a finding and the absent one is exactly one:
+        # this check reports a name, not a count, so a role that cites both reports
+        # neither twice nor not at all.
         self.companion("reference", "big.md", 16)
-        warning, = self.check("`reference/big.md` `reference/gone.md`\n")
-        self.assertIn("loads 17 lines", warning)
-        self.assertEqual(len(self.companions("`reference/big.md` `reference/gone.md`\n")), 1)
+        error, = self.companions("`reference/big.md` `reference/gone.md`\n")
+        self.assertIn("names `reference/gone.md`", error)
 
 
 class DelistingATreeIsNotRemovingIt(DeletingTheContractIsNotAnAbsentContract):

@@ -11,9 +11,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # The default shallow checkout has no origin/main, so the load check would
-          # fall back to an absolute total it cannot attribute to this PR.
+          # The default shallow checkout has no origin/main, so the clause check would
+          # have no baseline to compare this PR's contract against.
           fetch-depth: 0
+      # `check_cost` reads `claude plugin details` — the loader's own token table — so
+      # without the CLI it degrades to a warning and the two token budgets go
+      # unmeasured, which is the "checker nothing runs" failure `gates.yml` names.
+      # No credential is needed: the table is tokenized locally, not fetched.
+      - run: npm install -g @anthropic-ai/claude-code
+      - run: claude plugin validate .
       - run: python3 scripts/check_plugins.py
       # Runs here because a `.gitignore` arriving on another branch is what makes this
       # class silent, and `validate` is the job every pull_request already triggers.

@@ -15,8 +15,28 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-ROLE_MAX_LINES = 200  # see docs/adding-a-role.md — a role loads in full, every invocation
 CONTRACT = "TEAM-CONTRACT.md"  # the rules every role in a plugin shares; each must link it
+
+#: Tokens every session pays for having the plugin enabled, whether or not a role
+#: is ever invoked — the sum of the per-component always-on column. The only
+#: non-optional cost the plugin imposes, so the only one with a tight ceiling:
+#: seven roles measure 716, and this leaves room for roughly three more.
+ALWAYS_ON_MAX = 1_000
+#: Tokens one role's body costs on the invocation that fires it. Paid once per
+#: campaign rather than once per session, so the ceiling is loose — it bounds the
+#: preamble a role spends before doing any work. Six roles measure 820-2.1k;
+#: `anantys.qa` measures 8.6k and is the only one this number is about.
+ON_INVOKE_MAX = 12_000
+#: `Always-on:   ~716 tok   added to every session`
+#: A cost under the loader's reporting floor prints as `< 20` rather than `~N`, so
+#: both forms are accepted and `< 20` is read as its own upper bound — the alternative
+#: is a row this gate silently skips, which is the failure mode it exists to replace.
+LOADER_TOTAL = re.compile(r"^\s*Always-on:\s+[~<] ?([\d.,k]+) tok", re.M)
+#: `  anantys.qa                 ~190      ~8.6k` — component, always-on, on-invoke.
+#: The `component  always-on  on-invoke` header carries neither marker, so it is not a row.
+#: Both capture digits rather than non-space, so a count this gate cannot read fails to
+#: match and is reported as a changed table shape — never passed to ``tokens`` to crash on.
+LOADER_ROW = re.compile(r"^ +(\S+) +[~<] ?([\d.,k]+) +[~<] ?([\d.,k]+)$", re.M)
 #: A fenced block in README — a layout listing, an install snippet, a usage example.
 #: Matched non-greedily from one fence to the next so the gaps between blocks survive.
 FENCED = re.compile(r"^```.*?^```", re.S | re.M)
@@ -27,9 +47,10 @@ FENCED = re.compile(r"^```.*?^```", re.S | re.M)
 REFERENCE_LINK = re.compile(r"`(reference/[\w.-]+\.md)`")
 
 #: How a role names a file shape an action is told to *follow* (`templates/qa-plan.md`).
-#: Read on that invocation exactly as a reference topic is, so it costs the same lines.
-#: It names no tools, which is why the two grant gates stay on ``reference/`` alone:
-#: load is a claim about bytes, authority is not, and the units do not coincide.
+#: Read on that invocation exactly as a reference topic is — and, exactly as a
+#: reference topic is, charged to that action alone and to no token budget the loader
+#: reports. It names no tools, which is why the two grant gates stay on ``reference/``
+#: alone: the question there is authority, and these files carry a file shape.
 TEMPLATE_LINK = re.compile(r"`(templates/[\w.-]+\.md)`")
 
 #: How a role names a file it loads *before* acting — an ordinary markdown link, read
@@ -66,8 +87,8 @@ def rel(path: Path) -> str:
 def merge_base() -> str | None:
     """The commit the working tree departs from, or ``None`` when git cannot say.
 
-    Absence of a baseline is not a pass: ``check_load`` keeps its absolute warning
-    and only loses the ability to attribute growth to the change under review.
+    ``None`` is not a pass: every check that reads it reports its standing finding
+    and only loses the ability to attribute a change to the branch under review.
     """
     for ref in ("origin/main", "main"):
         try:
@@ -131,66 +152,8 @@ def named_parts(path: Path, pattern: re.Pattern, text: str, read) -> list[tuple[
     return found
 
 
-def worst_action_part(path: Path, read) -> list[tuple[Path, int]]:
-    """The largest companion file per companion directory, as ``(file, lines)`` pairs.
-
-    ``check_load``'s own remedy is to move detail into ``reference/``, so that
-    directory is where a role's load *goes* — measuring the always-loaded set alone
-    would make the remedy a way to satisfy the ceiling without lowering the load.
-    An action reads one topic file on top of that set and the ceiling is a worst-case
-    bound, so the largest named file is the part that counts.
-
-    ``templates/`` is the second such directory and was the hole in that argument.
-    The ceiling's stated reason is that *the role loads in full, every invocation*;
-    a template an action is told to follow satisfies that reason exactly, and nothing
-    priced it. `anantys.qa`'s plan action is told to follow a 229-line template —
-    longer than the whole ceiling — while the gate reported the role at 513. Any
-    directory whose files an action reads is a place the prose can go, so the escape
-    is closed by directory, not by file: a template is charged like a topic.
-
-    One per directory, summed: an action reads at most one topic and at most one
-    template, but it can read both, so maxing across the union would understate it.
-
-    **A template is named where its action's detail lives, which is not always this
-    file.** Scanning the role alone made the template arm dead on the only role it
-    was written for: `anantys.qa` names none of its three templates in `SKILL.md` —
-    every mention sits in the `reference/` topic whose action follows it (`plan` in
-    `reference/sources.md`, `init` in `reference/init.md`). And that is not an
-    accident of style, it is this very check's remedy: splitting an over-ceiling role
-    moves action detail into `reference/`, so the fix for the warning is what hides
-    the template mention from a scan of the role file. The arm therefore switched off
-    at exactly the load where it mattered — on the assembled queue `anantys.qa`
-    reported 283 while its `plan` action reads 491, the 208-line `templates/qa-plan.md`
-    uncharged, and unsplit `anantys.ops` was charged normally. So templates are
-    discovered in the role **plus the topics it names**.
-
-    Topic discovery stays one level deep: a `reference/` page naming another is a
-    question ``check_tool_grants`` and ``check_delegation_grants`` answer the same way,
-    and one gate must not widen alone. Nor is there a directory glob here — on the
-    assembled queue every companion on disk is named, and the two grant gates already
-    warn about a `reference/` file no action names.
-
-    A floor, not an exact load: an action that reads two topic files pays for both.
-    """
-    text = read(path) or ""
-    topics = named_parts(path, REFERENCE_LINK, text, read)
-    templates = named_parts(
-        path, TEMPLATE_LINK, "\n".join([text, *(body for _, body in topics)]), read
-    )
-    return [
-        max(((p, len(b.splitlines())) for p, b in group), key=lambda part: part[1])
-        for group in (topics, templates)
-        if group
-    ]
-
-
-def measured_load(path: Path, read) -> list[tuple[Path, int]]:
-    """Every file one action of ``path`` reads, worst case, as ``(file, lines)`` pairs."""
-    return load_parts(path, read) + worst_action_part(path, read)
-
-
 def named_companions(path: Path) -> list[str]:
-    """Every companion path ``path`` names, as written — the surface ``measured_load`` resolves.
+    """Every companion path ``path`` names, as written — the surface this file resolves.
 
     Same three patterns, same two levels: the preamble's markdown links, the
     ``reference/`` topics the role names, and the ``templates/`` the role or one of
@@ -234,7 +197,7 @@ def check_companions(path: Path) -> None:
     this is a regression gate with live input, not one waiting for its input to land.
 
     Links a role writes *below* its first ``## `` heading are out of this surface, as
-    they are out of ``measured_load``'s: widening discovery is a separate question,
+    they are out of ``named_companions``'s: widening discovery is a separate question,
     and ``check_tool_grants`` and ``check_delegation_grants`` answer it the same way
     this file does. One gate must not widen alone.
     """
@@ -247,90 +210,111 @@ def check_companions(path: Path) -> None:
             )
 
 
-def check_load(path: Path) -> None:
-    """Report a role whose worst-case *one-action load* exceeds the ceiling — and say who did it.
+def loader_details(plugin_dir: Path, name: str) -> str | None:
+    """`claude plugin details` for the plugin at ``plugin_dir``, or ``None`` if it cannot run.
 
-    An absolute total is the same number on every branch, so a warning phrased
-    only as "loads N lines" says nothing about the change being reviewed: a commit
-    that adds forty lines to an over-ceiling role and one that adds none report
-    identically. That is how a queue of individually-clean changes walks a role
-    past the ceiling without any single one of them being the branch that did it.
-
-    So the load is also priced against ``BASE``, and the message names the delta.
-
-    **The crossing is an error; the standing fact is a warning.** The baseline was
-    added to separate those two, and for a while the separation changed only the
-    wording. It should not: measured over the open queue, four branches each take a
-    role that is *clean at the base* past the ceiling on their own — `anantys.design`
-    115 -> 261 and 115 -> 221, `anantys.ops` 131 -> 204, 131 -> 213, 131 -> 238 — and
-    ten more add to `anantys.qa`, already at 648, one of them by 253 lines. Every one
-    of those runs exits 0. A ceiling nothing ever fails is a number in a docstring.
-
-    The line between them is the one `check_contract_clauses` and `check_version_bump`
-    already draw: a regression is an error, inherited debt is a warning. A crossing is
-    a regression and it is **wholly inside the branch's own diff** — the role, its
-    `reference/` pages and its `templates/` all arrive in the same change, so the
-    remedy is available on that branch and there is no other branch to wait on. That
-    is exactly the test ``check_companions`` used to earn its error. Growth above a
-    ceiling the base already broke is not this branch's regression, so it stays a
-    warning until the head that fixes the role lands; the gate then holds the result.
-
-    **One part of the load is not in the branch's own diff.** "Wholly inside" is the
-    test, and the shared contract fails it: the role, its `reference/` pages and its
-    `templates/` are this role's to shorten, while `TEAM-CONTRACT.md` is seven roles'
-    at once. A role whose own files fit the ceiling and that crosses it only because
-    the contract's lines are added has no remedy on its own branch — shortening the
-    contract to clear it edits what every other role loads, which is the same "other
-    branch to wait on" the paragraph above refuses to force. Measured on the queue
-    assembled from the two landing heads, that is not a hypothetical: of five roles
-    reported as crossings, `anantys.debug` (174 own, 231 with the contract) and
-    `anantys.spec-tester` (151 / 208) are under the ceiling on everything they own,
-    and the remedy printed at them — *split detail into `reference/`* — cannot move a
-    line they did not write. The other three cross on their own prose and stay errors.
-
-    So the crossing is re-measured without the shared part. If the role fits without
-    it, the contract is named as the cause and the finding is a warning: the number to
-    change lives in the contract's own budget, which `check_contract_clauses` and the
-    contract's maintenance note already govern.
+    The cost table is produced by tokenizing the tree, not by calling the API: it
+    needs no credential and no network, which is what makes it usable as a gate.
+    ``None`` when the CLI is absent or fails — a gate that cannot measure must not
+    rule, so the caller warns instead.
     """
-    parts = measured_load(path, disk)
-    total = sum(n for _, n in parts)
-    if total <= ROLE_MAX_LINES:
+    try:
+        done = subprocess.run(
+            ["claude", "--plugin-dir", str(plugin_dir), "plugin", "details", name],
+            cwd=plugin_dir, capture_output=True, text=True, timeout=180,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return done.stdout if done.returncode == 0 else None
+
+
+def tokens(printed: str) -> int:
+    """`190` -> 190, `8.6k` -> 8600, `1,736` -> 1736. The loader rounds; so does this.
+
+    Three notations in one column: the thousands separator appears once a count has
+    four digits, and the `k` suffix once the loader stops printing them exactly.
+    """
+    bare = printed.replace(",", "").rstrip("k")
+    return round(float(bare) * (1000 if printed.endswith("k") else 1))
+
+
+def check_cost(plugin_dir: Path, name: str, details: str | None) -> None:
+    """Error when the loader's own cost table puts a plugin over one of its two budgets.
+
+    This replaces a 200-**line** ceiling over a role's "worst-case one-action load"
+    — the role file, its preamble links, the largest `reference/` topic it names and
+    the largest `templates/` file — justified by *a role loads in full, every
+    invocation*. Nine rounds of work refined which arm of that ceiling was an error,
+    who owned the remedy, and whether the shared contract's lines were attributable.
+    None of them measured the premise. `claude plugin details` does, and it says:
+
+    - A role's **body** is charged **on invoke**, not always-on. Appending 4000 lines
+      to `anantys.debug/SKILL.md` moves its on-invoke cost 950 -> 73k and its
+      always-on cost **not at all**; the plugin total stays 716. Always-on is the
+      frontmatter `description`, which is what the loader shows the model when it is
+      deciding whether to fire the skill.
+    - A **companion** is charged **nothing**. A 4000-line `reference/huge.md`, named
+      in the role's own prose, moves neither column by a token. The old gate counted
+      it in full.
+
+    So the ceiling was in the wrong currency *and* over the wrong population, and the
+    paradox a previous round reported — that the remedy, *move detail into
+    `reference/`*, pointed into a directory the gate itself charged, making the advice
+    arithmetic nonsense for the one role it was written for — was an artifact of the
+    accounting rather than a property of the tree. Against the loader the remedy works
+    exactly as intended: prose only the `plan` action needs, read by that action alone,
+    is not paid by `run` or `report`. That is progressive disclosure, and it is the
+    design the platform intends — not a hole to be closed by charging for it.
+
+    Two budgets, because the loader bills in two currencies and they are not fungible:
+
+    - ``ALWAYS_ON_MAX`` over the plugin's **total**. Every session with the plugin
+      enabled pays this whether or not it ever invokes a role, so it is the only truly
+      non-optional cost — and it is a *plugin*-level number, not a role-level one: no
+      single role's description is the problem, the sum is. Reported against the whole
+      plugin for that reason.
+    - ``ON_INVOKE_MAX`` per **component**. Paid once by the session that fires the
+      role, against which a campaign's own token spend is far larger. Loose, and it
+      bounds one thing: the preamble a role charges before doing any work.
+
+    Both are errors rather than warnings, on the test the rest of this file uses: the
+    remedy is wholly inside the branch's own diff. A description and a role body are
+    the role's own files, arriving in the role's own change, with no other branch to
+    wait on — unlike the shared contract, whose lines the old ceiling counted and
+    which is precisely why that gate needed an inherited-debt arm at all. The contract
+    is not in either column here, so the arm is not needed either.
+    """
+    if details is None:
+        warnings.append(
+            f"{name}: `claude plugin details` did not run, so neither token budget was "
+            "checked — install the Claude Code CLI to measure the cost the loader "
+            "actually charges (it needs no credential: the table is tokenized locally)"
+        )
         return
 
-    breakdown = " + ".join(f"{n} {rel(p)}" for p, n in parts)
-    remedy = (
-        "split detail a given action does not need into reference/ topic files — the "
-        "largest reference/ and the largest templates/ the role names are counted too, "
-        "so one big topic file, or a template carrying the prose, relocates the load "
-        f"without lowering it; never into the {CONTRACT}, whose lines every role pays "
-        "and whose clauses `check_contract_clauses` holds in place"
-    )
-    shared = sum(n for p, n in parts if p.name == CONTRACT)
-    before = sum(n for _, n in measured_load(path, lambda p: at(BASE, p))) if BASE else None
+    if not (total := LOADER_TOTAL.search(details)):
+        errors.append(
+            f"{name}: `claude plugin details` printed no always-on total — this gate "
+            "reads the CLI's cost table and the table's shape has changed"
+        )
+        return
 
-    crossed = before is not None and before != total and before <= ROLE_MAX_LINES
-    inherited = crossed and total - shared <= ROLE_MAX_LINES
-    if inherited:
-        change = (
-            f"this change pushes the load over the ceiling, {before} -> {total} "
-            f"(> {ROLE_MAX_LINES}), but only with the {shared} shared lines of "
-            f"{CONTRACT}: the role's own files load {total - shared}"
+    if (always_on := tokens(total.group(1))) > ALWAYS_ON_MAX:
+        errors.append(
+            f"{name}: {always_on} always-on tokens (> {ALWAYS_ON_MAX}) — every session "
+            "with this plugin enabled pays them before invoking anything; the column is "
+            "the roles' frontmatter `description`s, so what has to shorten is those, or "
+            "the plugin has fewer roles"
         )
-        remedy = (
-            f"nothing in this role is over-long — the lines to remove are in {CONTRACT}, "
-            "which every role pays and no single role may shorten on its own account"
-        )
-    elif before is None or before == total:
-        change = f"loads {total} lines (> {ROLE_MAX_LINES})"
-    elif crossed:
-        change = f"this change pushes the load over the ceiling, {before} -> {total} (> {ROLE_MAX_LINES})"
-    elif total > before:
-        change = f"this change grows a load already over the ceiling, {before} -> {total} (+{total - before})"
-    else:
-        change = f"loads {total} lines (> {ROLE_MAX_LINES}), down from {before}"
-    dest = errors if crossed and not inherited else warnings
-    dest.append(f"{rel(path)}: {change} — {breakdown}; {remedy}")
+
+    for component, _, on_invoke in LOADER_ROW.findall(details):
+        if (cost := tokens(on_invoke)) > ON_INVOKE_MAX:
+            errors.append(
+                f"{component}: {cost} tokens on invoke (> {ON_INVOKE_MAX}) — move detail "
+                "a given action does not need into `reference/` topic files, which the "
+                "loader charges only to the action that reads them, and this column not "
+                "at all"
+            )
 
 
 def check_contract(path: Path, contract: Path) -> None:
@@ -341,12 +325,13 @@ def check_contract(path: Path, contract: Path) -> None:
     role"*. Those are three assertions about the tree, and nothing checked any of
     them — the binding was a convention that happened to hold.
 
-    Worse, the one check that read the link read it as a cost. The contract counts
-    toward ``check_load``'s ceiling, so the five roles that point at it load 207-723
-    against a 200 limit; deleting the single line that binds them takes three of
-    those under the ceiling and the run stays green. The cheapest way to satisfy the
-    ceiling was to stop being bound. A ceiling may make a role shorter; it may not
-    make it unbound.
+    Worse, the one check that read the link read it as a cost: the retired line
+    ceiling counted the contract into every role that pointed at it, so deleting the
+    single line that bound a role took it under the ceiling and the run stayed green.
+    The cheapest way to satisfy that ceiling was to stop being bound. ``check_cost``
+    does not charge the contract — the loader does not load it — so that incentive is
+    gone and this gate no longer stands on it. It stands on the first paragraph: the
+    contract asserts the binding, and an assertion about the tree is checkable.
     """
     if contract not in [p for p, _ in load_parts(path, disk)]:
         errors.append(
@@ -368,16 +353,17 @@ def check_contract_clauses(contract: Path) -> None:
     """Error when a clause that existed at ``BASE`` is no longer in the contract.
 
     ``check_contract`` guarantees that every role *links* this file. Nothing read
-    what the file then says — and ``check_load``'s remedy pointed at that guarantee
+    what the file then says — and the retired ceiling's remedy pointed at that guarantee
     as if it covered the content: *"never into the TEAM-CONTRACT.md, which
     `check_contract` requires"*. A reader following that line concludes the contract
     is held in place. It was not: renaming `## C2 — A stop is a result` to anything
     else left 0 errors, the same warning count, and 227 passing tests.
 
     That is the inverse of the hole ``check_contract`` closed. There, the cheapest
-    way to satisfy the ceiling was for a role to stop being bound; here it is for
-    the contract to stop binding, which takes *every* role under the ceiling at once
-    and is invisible in both the error list and the warning list.
+    way to satisfy the old ceiling was for a role to stop being bound; here it is for
+    the contract to stop binding, which unbinds *every* role at once and is invisible
+    in both the error list and the warning list. The ceiling that made the move
+    profitable is retired; the move is still silent, which is what this gate is for.
 
     Only deletion is an error. Adding a clause is how the contract grows, and a
     reworded title is not a changed rule — the label is the identity because the
@@ -405,9 +391,9 @@ def check_contract_clauses(contract: Path) -> None:
         return
     if here is None:
         # Deleting the file is the same move as relabelling a clause, taken to its
-        # limit: it drops every clause at once. It is also the profitable one, because
-        # the contract's lines are what put the roles over `check_load`'s ceiling, so
-        # the deletion that unbinds all of them is the edit that makes them all clean.
+        # limit: it drops every clause at once, and does it without appearing in any
+        # list — no role reports a missing link, because `check_contract` only runs
+        # where the contract exists.
         errors.append(
             f"{rel(contract)}: present at the baseline and gone here — deleting the "
             "contract unbinds every role at once; retire it by name in the same change "
@@ -485,6 +471,10 @@ def main() -> int:
         # about the baseline, which is `check_contract_clauses`'s subject — so absence is
         # routed into it rather than short-circuited around it. Deciding here, where the
         # baseline is not read, is what let a deletion pass as a not-landed-yet file.
+        # One CLI call per plugin: the always-on budget is a property of the plugin,
+        # and the per-component rows come out of the same table.
+        check_cost(plugin_dir, manifest["name"], loader_details(plugin_dir, manifest["name"]))
+
         contract = plugin_dir / CONTRACT
         check_contract_clauses(contract)
         if not contract.is_file():
@@ -499,14 +489,12 @@ def main() -> int:
             if contract:
                 check_contract(skill, contract)
             check_companions(skill)
-            check_load(skill)
 
         for agent in agents:
             require(agent, frontmatter(agent), ("name", "description", "tools", "model"), agent.stem)
             if contract:
                 check_contract(agent, contract)
             check_companions(agent)
-            check_load(agent)
 
         # The description advertises counts ("5 skills … 2 review agents") to users browsing
         # the marketplace, and nothing keeps them true when a role is added.
@@ -522,8 +510,8 @@ def main() -> int:
         # every role's path, and that listing alone satisfied all seven: the role table,
         # the only text that says what a role *does*, deleted with zero errors, and a
         # new role joined the user-facing surface on one line of ASCII tree. Same unit
-        # mismatch as the ceiling above — the reason says "reads", the measurement
-        # accepted "appears". Fenced blocks are not read; drop them first.
+        # mismatch the retired line ceiling had — the reason says "reads", the
+        # measurement accepted "appears". Fenced blocks are not read; drop them first.
         raw_readme = (ROOT / "README.md").read_text(encoding="utf-8")
         readme = FENCED.sub("", raw_readme)
         for name in [d.name for d in skills] + [a.stem for a in agents]:
