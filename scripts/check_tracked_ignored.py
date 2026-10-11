@@ -67,8 +67,8 @@ def exclude_sources() -> list[str]:
 
     A nested `sub/.gitignore` and a rule in `info/exclude` are each enough for the
     measurement to answer; neither is a root `.gitignore`. Where `info/exclude` lives
-    is git's to say — in a linked worktree (which is how `pr_landing_order.py --verify`
-    runs every gate) `ROOT/.git` is a file, so composing the path by hand finds nothing.
+    is git's to say — in a linked worktree, which is where a fold's gates get run,
+    `ROOT/.git` is a file, so composing the path by hand finds nothing.
     """
     seen = (*git("ls-files"), *git("ls-files", "--others", "--exclude-standard"))
     sources = sorted({p for p in seen if Path(p).name == ".gitignore"})

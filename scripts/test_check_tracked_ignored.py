@@ -151,7 +151,7 @@ class TrackedIgnored(Harness):
         `info/exclude` is reached here through the path git reports, so to make the
         inventory blind without faking it, put the rule where only `--exclude-standard`
         looks: a linked worktree, whose `.git` is a file and whose `info/exclude` is the
-        *main* repo's. That is the tree `pr_landing_order.py --verify` runs the gates in.
+        *main* repo's. That is the tree a candidate fold runs the gates in.
         """
         self.track("keys.pem")
         self.git("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "seed")

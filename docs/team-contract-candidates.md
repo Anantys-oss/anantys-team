@@ -59,10 +59,12 @@ always-true predicate replaced by another, and the list still does not drain. Th
 it does not is not a property of any candidate.
 
 **A promotion is an N-file edit, and the queue holds all N.** The eleven together bind all
-seven role files. `scripts/pr_landing_order.py --verify --contracts` folds the open queue
-by file for the next round; the later waves it cannot assemble are added here by hand, from
+seven role files. The table below was produced by a `--verify --contracts` fold of the open
+queue, grouped by file; the later waves that fold could not assemble were added by hand from
 `git diff --name-only origin/main...<head>`, because their rebased content does not exist
-yet. Three waves, 27 open PRs:
+yet. That tool has since been removed — its own measurements showed a random landing order
+costs what its computed one does — so reproducing the table means repeating the `git diff`
+by hand. Three waves, 27 open PRs:
 
 | role file | wave 1 | wave 2 | wave 3 | clear after |
 |---|---|---|---|---|
