@@ -47,6 +47,28 @@ underscore is valid YAML, is ignored, and leaves that narrowing unset. The skill
 still loads. The grant does not. Nothing in this repo, and nothing in the
 loader, said a word about it before this gate.
 
+## A well-shaped grant that still bounds nothing
+
+`Name(scope)` is well-shaped on an agent and silently loses its scope there.
+A skill's `allowed-tools` entries are permission rules the runtime keeps whole,
+so `Bash(git diff:*)` really does reject `git push`. An agent's `tools:` is a
+set of tool *names*: the runtime parses each entry into a name and a scope,
+keeps the name, and discards the scope for every tool except the one that
+spawns agents — where the scope becomes the list of allowed agent types.
+
+So `tools: ["Bash(git diff:*)", "Read"]` resolves to the whole `Bash` tool.
+The subagent holds unrestricted shell, and the frontmatter that documents the
+restriction is the audit record that it was imposed. `anantys.code-auditor`
+carried five such grants and `claude plugin validate` was happy with all five:
+a scope that is valid, parsed, and thrown away leaves no trace to check.
+
+There is no agent-level field that narrows this. `disallowedTools` on an agent
+is documented as *"ignored if `tools` is set"*, so the two cannot be combined.
+The honest spelling is bare `Bash` with the bound in prose — which is why the
+role is now one of the six `check_tool_grants.py` names in its bare-`Bash`
+warning rather than silently exempt from it. The same five grants are still
+open on PR #63 and PR #13, which are not ancestors of this branch.
+
 ## Scope
 
 `check_platform.py` checks spelling and shape: that every frontmatter key is one
