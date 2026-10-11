@@ -8,8 +8,8 @@ It is a **runnable campaign, not a reading list**: worked top to bottom, one ass
 ```markdown
 # QA campaign — <feature>
 
-Derived from [`tasks.md`](./tasks.md) (what is built) and [`spec.md`](./spec.md) (what each case
-cites). Environment: [`.anantys/qa.md`](../../.anantys/qa.md). Runs: [`qa-runs.md`](./qa-runs.md).
+Derived from `tasks.md` (what is built) and `spec.md` (what each case
+cites). Environment: `.anantys/qa.md` at the repo root. Runs: `qa-runs.md`.
 
 **Under test:** <branch> @ <head commit> — <environment> (pr: <ref>). A `--from pr:` campaign
 records the head branch and commit it was derived from here, and `run` verifies the environment is

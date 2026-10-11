@@ -24,18 +24,32 @@ FENCED = re.compile(r"^```.*?^```", re.S | re.M)
 #: How a role names a topic file an action loads on top of its always-loaded set.
 #: Same literal as ``check_tool_grants`` and ``check_delegation_grants``: the
 #: convention is a backticked path, not a markdown link.
-REFERENCE_LINK = re.compile(r"`(reference/[\w.-]+\.md)`")
+#:
+#: The ``../`` prefix is part of the literal because a companion naming a companion has
+#: to use it: ``reference/x.md`` written *inside* ``reference/`` resolves to
+#: ``reference/reference/x.md`` for the role that reads it. The two grant gates keep the
+#: bare form and stay correct, because they scan the role file only, where there is no
+#: ``../`` to write — the prefix appears exactly where their surface ends.
+REFERENCE_LINK = re.compile(r"`((?:\.\./)*reference/[\w.-]+\.md)`")
 
 #: How a role names a file shape an action is told to *follow* (`templates/qa-plan.md`).
 #: Read on that invocation exactly as a reference topic is, so it costs the same lines.
 #: It names no tools, which is why the two grant gates stay on ``reference/`` alone:
 #: load is a claim about bytes, authority is not, and the units do not coincide.
-TEMPLATE_LINK = re.compile(r"`(templates/[\w.-]+\.md)`")
+TEMPLATE_LINK = re.compile(r"`((?:\.\./)*templates/[\w.-]+\.md)`")
 
 #: How a role names a file it loads *before* acting — an ordinary markdown link, read
 #: from the preamble only. Shared with ``load_parts`` so the discovery surface this
 #: file resolves and the surface ``check_companions`` holds in place are one literal.
 PREAMBLE_LINK = re.compile(r"\]\(([^)]+\.md)\)")
+
+#: Any markdown link, anywhere — ``check_resolution``'s subject is where a path lands,
+#: and a dead link below a heading lands exactly as badly as one above it.
+MD_LINK = re.compile(r"\[[^\]]*\]\(([^)\s]+)\)")
+
+#: A backticked multi-segment path. Whether it is a path *into the plugin* is decided
+#: by its first segment, not by this pattern — see ``check_resolution``.
+MD_PATH = re.compile(r"`([\w.-]+(?:/[\w.-]+)+\.md)`")
 
 #: Commit the working tree departs from, so a load can be reported as a *change*
 #: rather than as a standing fact. ``None`` = no baseline available; see ``merge_base``.
@@ -118,17 +132,28 @@ def load_parts(path: Path, read) -> list[tuple[Path, int]]:
     return parts
 
 
-def named_parts(path: Path, pattern: re.Pattern, text: str, read) -> list[tuple[Path, str]]:
-    """Every companion ``pattern`` names in ``text``, as ``(file, body)`` pairs.
+def named_parts(sources: list[tuple[Path, str]], pattern: re.Pattern, read) -> list[tuple[Path, str]]:
+    """Every companion ``pattern`` names across ``sources``, as ``(file, body)`` pairs.
 
     Bodies rather than line counts, because one caller needs the text back to
-    search it: a companion can name a companion.
+    search it: a companion can name a companion — which is why ``sources`` is pairs
+    and not one path and one string. **A name resolves from the file that wrote it.**
+    Keying the whole scan to the role file is what made the template arm measure a
+    path nobody follows: ``anantys.qa`` names its plan template only in
+    ``reference/sources.md``, so the name as written is ``../templates/qa-plan.md``,
+    and resolving that against ``SKILL.md``'s directory finds nothing. The arm then
+    silently drops the largest template in the tree — 307 lines — from a ceiling whose
+    stated reason is that an action reads it in full.
+
+    The return shape is the argument shape, so one round of discovery feeds the next.
+    Keyed by target, so a file two topics both name is one part, not two.
     """
-    found = []
-    for name in sorted(set(pattern.findall(text))):
-        if (body := read(target := (path.parent / name).resolve())) is not None:
-            found.append((target, body))
-    return found
+    found: dict[Path, str] = {}
+    for src, text in sources:
+        for name in sorted(set(pattern.findall(text))):
+            if (body := read(target := (src.parent / name).resolve())) is not None:
+                found.setdefault(target, body)
+    return list(found.items())
 
 
 def worst_action_part(path: Path, read) -> list[tuple[Path, int]]:
@@ -173,10 +198,8 @@ def worst_action_part(path: Path, read) -> list[tuple[Path, int]]:
     A floor, not an exact load: an action that reads two topic files pays for both.
     """
     text = read(path) or ""
-    topics = named_parts(path, REFERENCE_LINK, text, read)
-    templates = named_parts(
-        path, TEMPLATE_LINK, "\n".join([text, *(body for _, body in topics)]), read
-    )
+    topics = named_parts([(path, text)], REFERENCE_LINK, read)
+    templates = named_parts([(path, text), *topics], TEMPLATE_LINK, read)
     return [
         max(((p, len(b.splitlines())) for p, b in group), key=lambda part: part[1])
         for group in (topics, templates)
@@ -189,20 +212,26 @@ def measured_load(path: Path, read) -> list[tuple[Path, int]]:
     return load_parts(path, read) + worst_action_part(path, read)
 
 
-def named_companions(path: Path) -> list[str]:
-    """Every companion path ``path`` names, as written — the surface ``measured_load`` resolves.
+def named_companions(path: Path) -> list[tuple[Path, str]]:
+    """Every companion ``path`` names, as ``(naming file, path as written)`` pairs.
 
     Same three patterns, same two levels: the preamble's markdown links, the
     ``reference/`` topics the role names, and the ``templates/`` the role or one of
-    those topics names. Returned as the written strings rather than resolved paths,
-    because the question here is about a name that resolves to nothing.
+    those topics names. The written string rather than a resolved path, because the
+    question here is about a name that resolves to nothing — paired with the file that
+    wrote it, because that is what the name is relative to, exactly as in
+    ``named_parts``. A template named in a topic belongs to the topic.
     """
     text = disk(path) or ""
-    topics = named_parts(path, REFERENCE_LINK, text, disk)
+    topics = named_parts([(path, text)], REFERENCE_LINK, disk)
     return (
-        PREAMBLE_LINK.findall(text.split("\n## ", 1)[0])
-        + REFERENCE_LINK.findall(text)
-        + TEMPLATE_LINK.findall("\n".join([text, *(body for _, body in topics)]))
+        [(path, name) for name in PREAMBLE_LINK.findall(text.split("\n## ", 1)[0])]
+        + [(path, name) for name in REFERENCE_LINK.findall(text)]
+        + [
+            (src, name)
+            for src, body in [(path, text), *topics]
+            for name in TEMPLATE_LINK.findall(body)
+        ]
     )
 
 
@@ -238,13 +267,78 @@ def check_companions(path: Path) -> None:
     and ``check_tool_grants`` and ``check_delegation_grants`` answer it the same way
     this file does. One gate must not widen alone.
     """
-    for name in sorted(set(named_companions(path))):
-        if not (path.parent / name).is_file():
+    for src, name in sorted(set(named_companions(path))):
+        if not (src.parent / name).is_file():
             errors.append(
-                f"{rel(path)}: names `{name}`, which is not in the tree — an action "
+                f"{rel(src)}: names `{name}`, which is not in the tree — an action "
                 "told to read it reads nothing, and every check that resolves this "
                 "path treats the absence as if the role had never named it"
             )
+
+
+def check_resolution(plugin_dir: Path) -> None:
+    """Error when a path written in plugin prose does not resolve inside the plugin.
+
+    ``check_companions`` above asks whether the files a *role* names are in the tree,
+    and resolves every one of them from the role's own directory. That is the right
+    base for a name the role wrote, and the wrong base for a name it did not. A
+    ``templates/qa-config.md`` written inside ``reference/environments.md`` is reached
+    by ``named_companions`` — it searches topic bodies — but resolved against
+    ``SKILL.md``'s directory, where the file is. The role reading that topic resolves
+    it against the topic's own directory, where it is not. So the gate confirms a
+    path nobody follows, and the one a role actually follows goes unchecked.
+
+    Two things separate this check from that one, and both are why it is not a
+    widening of it. It resolves from *each* naming file, so a companion citing a
+    companion is measured where it will be read. And it bounds the result: what
+    ``claude plugin install`` copies is the plugin directory and nothing above it, so
+    ``../../../../docs/x.md`` from a skill does not land in this repo — it lands in
+    the marketplace cache beside *other plugins*, and the file is not there. A
+    containment bound cannot come from a check whose question is existence, because
+    in this repo the escaping path exists.
+
+    The surface is deliberately narrow in one direction and wide in the other. Wide:
+    every ``*.md`` under the plugin, not just the seven roles, because a companion is
+    prose a role is sent to and its paths are followed the same way. Narrow: a bare
+    backticked path counts only when its first segment is a directory the plugin
+    itself uses. That is what keeps ``.anantys/qa.md`` (the operator's repo),
+    ``qa-plan.md`` (an artifact a role writes) and ``docs/skill-size.md`` (a note to
+    whoever edits this repo, named in prose and never installed) out of it, without a
+    list of exceptions to maintain: add a ``reference/`` to the plugin and names of
+    that shape become checkable; have none and they are prose.
+
+    An error, not a warning, on the locality test the rest of this file uses: the fix
+    is a path in the naming file's own diff, so there is no other branch for it to be
+    waiting on, and a role sent to a file that is not in the installed tree is broken
+    for the user who installs it whatever tree it came from.
+    """
+    dirs = {d.name for d in plugin_dir.rglob("*") if d.is_dir()}
+    for path in sorted(plugin_dir.rglob("*.md")):
+        for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            named = [
+                m.group(1)
+                for m in MD_LINK.finditer(line)
+                if not m.group(1).startswith(("http", "#", "mailto:"))
+            ]
+            named += [
+                m.group(1)
+                for m in MD_PATH.finditer(MD_LINK.sub("", line))
+                if m.group(1).startswith(("./", "../")) or m.group(1).split("/")[0] in dirs
+            ]
+            for name in named:
+                target = (path.parent / name).resolve()
+                where = f"{rel(path)}:{lineno}: names `{name}`, which"
+                if not target.is_relative_to(plugin_dir):
+                    errors.append(
+                        f"{where} climbs out of the plugin root — only the plugin "
+                        "directory is installed, so at runtime this resolves into the "
+                        "marketplace cache beside other plugins, not into this repo"
+                    )
+                elif not target.is_file():
+                    errors.append(
+                        f"{where} resolves to {rel(target)} from the naming file's own "
+                        "directory, where there is no such file"
+                    )
 
 
 def check_load(path: Path) -> None:
@@ -456,6 +550,8 @@ def main() -> int:
         # baseline is not read, is what let a deletion pass as a not-landed-yet file.
         contract = plugin_dir / CONTRACT
         check_contract_clauses(contract)
+        # Whole-plugin, so it reaches the companions the loops below never visit.
+        check_resolution(plugin_dir)
         if not contract.is_file():
             contract = None  # no file, so no role can link it; checked once, above
 

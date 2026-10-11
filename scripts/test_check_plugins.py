@@ -162,15 +162,30 @@ class ATemplateIsReadLikeATopic(Harness):
         # The shape every split role has: the action that follows the template was
         # moved into reference/, taking the mention with it. Charging only what the
         # role file names switched the arm off at exactly the load it was built for.
-        self.body("reference", "sources.md", "`templates/plan.md`\n" + lines(4))
+        # `../templates/` because the topic sits one directory down — the form the
+        # role reading it resolves, and the only form that is not a dead path.
+        self.body("reference", "sources.md", "`../templates/plan.md`\n" + lines(4))
         self.companion("templates", "plan.md", 8)
         warning, = self.check("`reference/sources.md`\n")
         self.assertIn("loads 14 lines", warning)
         self.assertIn("5 reference/sources.md", warning)
         self.assertIn("8 templates/plan.md", warning)
 
+    def test_a_template_a_topic_names_from_the_roles_vantage_is_not_charged(self) -> None:
+        # Not a tolerated spelling: `templates/plan.md` inside reference/ resolves to
+        # reference/templates/plan.md for the role that reads it, so there is nothing
+        # to charge. Measuring it from SKILL.md's directory instead found the file and
+        # reported a load off a path no action can follow — and silently stopped
+        # reporting it the moment the prose was corrected.
+        self.body("reference", "sources.md", "`templates/plan.md`\n" + lines(12))
+        self.companion("templates", "plan.md", 8)
+        warning, = self.check("`reference/sources.md`\n")
+        self.assertIn("loads 14 lines", warning)
+        self.assertIn("13 reference/sources.md", warning)
+        self.assertNotIn("plan.md", warning)
+
     def test_the_largest_template_is_found_across_role_and_topics(self) -> None:
-        self.body("reference", "init.md", "`templates/config.md`\n")
+        self.body("reference", "init.md", "`../templates/config.md`\n")
         self.companion("templates", "config.md", 20)
         self.companion("templates", "brief.md", 4)
         warning, = self.check("`reference/init.md` `templates/brief.md`\n")
@@ -625,6 +640,79 @@ class DelistingATreeIsNotRemovingIt(DeletingTheContractIsNotAnAbsentContract):
         self.delist()
         self.assertEqual(self.run_main(), 0)
         self.assertEqual(cp.errors, [])
+
+
+class APathResolvesInTheInstalledPlugin(Harness):
+    """What ships is the plugin directory. A path is checked where it will be read."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.plugin = cp.ROOT / "plugins/p"
+        (self.plugin / "skills/r/reference").mkdir(parents=True)
+        (self.plugin / "skills/r/templates").mkdir()
+
+    def write(self, rel: str, text: str) -> None:
+        (self.plugin / rel).write_text(text, encoding="utf-8")
+
+    def check(self, rel: str, text: str) -> list[str]:
+        self.write(rel, text)
+        cp.check_resolution(self.plugin)
+        return cp.errors
+
+    def test_a_path_that_resolves_is_silent(self) -> None:
+        self.write("skills/r/reference/run.md", "body\n")
+        self.assertEqual(self.check("skills/r/SKILL.md", "`reference/run.md`\n"), [])
+
+    def test_a_path_that_climbs_out_of_the_plugin_root_is_an_error(self) -> None:
+        (cp.ROOT / "docs").mkdir()
+        (cp.ROOT / "docs/rule.md").write_text("body\n", encoding="utf-8")
+        error, = self.check("skills/r/SKILL.md", "[rule](../../../../docs/rule.md)\n")
+        self.assertIn("climbs out of the plugin root", error)
+        self.assertIn("marketplace cache", error)
+
+    def test_the_escaping_path_existing_in_this_repo_does_not_excuse_it(self) -> None:
+        # The whole reason a containment bound cannot come from an existence check.
+        (cp.ROOT / "docs").mkdir()
+        (cp.ROOT / "docs/rule.md").write_text("body\n", encoding="utf-8")
+        self.assertTrue((cp.ROOT / "docs/rule.md").is_file())
+        self.assertEqual(len(self.check("skills/r/SKILL.md", "[r](../../../../docs/rule.md)\n")), 1)
+
+    def test_a_companion_naming_a_sibling_from_the_roles_vantage_is_an_error(self) -> None:
+        # The 25-reference defect: `reference/x.md` written inside reference/.
+        self.write("skills/r/reference/environments.md", "body\n")
+        error, = self.check("skills/r/reference/run.md", "`reference/environments.md`\n")
+        self.assertIn("skills/r/reference/reference/environments.md", error)
+        self.assertIn("naming file's own directory", error)
+
+    def test_a_companion_naming_a_sibling_relatively_is_silent(self) -> None:
+        self.write("skills/r/templates/plan.md", "body\n")
+        self.assertEqual(
+            self.check("skills/r/reference/run.md", "`../templates/plan.md`\n"), []
+        )
+
+    def test_an_artifact_in_the_operators_repo_is_not_a_plugin_path(self) -> None:
+        # Nothing here ships these: they are files a role writes, where it is invoked.
+        self.assertEqual(
+            self.check("skills/r/SKILL.md", "`.anantys/qa.md`, `qa-plan.md`, `tasks.md`\n"), []
+        )
+
+    def test_a_directory_the_plugin_does_not_have_is_not_a_plugin_path(self) -> None:
+        # `docs/` is a note to whoever edits the repo, named in prose. No docs/ in the
+        # plugin, so the first segment settles it — no exception list to maintain.
+        self.assertEqual(
+            self.check("skills/r/SKILL.md", "see `docs/skill-size.md`\n"), []
+        )
+
+    def test_a_dead_link_below_the_first_heading_is_still_checked(self) -> None:
+        # Where check_companions' surface stops, deliberately. A dead path does not
+        # care which side of a heading it was written on.
+        error, = self.check("skills/r/SKILL.md", "## Rules\n[t](./gone.md)\n")
+        self.assertIn("gone.md", error)
+
+    def test_an_external_link_is_not_a_path(self) -> None:
+        self.assertEqual(
+            self.check("skills/r/SKILL.md", "[spec](https://example.com/a.md) [top](#a)\n"), []
+        )
 
 
 if __name__ == "__main__":
