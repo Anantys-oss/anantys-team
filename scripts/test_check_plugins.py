@@ -270,6 +270,70 @@ class TheCrossingIsTheError(Harness):
         self.assertEqual([], cp.errors)
 
 
+class TheSharedPartIsNotTheRolesRegression(Harness):
+    """"Wholly inside the branch's own diff" is the error's test — the contract fails it.
+
+    A role's own files are its to shorten. `TEAM-CONTRACT.md` is seven roles' at
+    once, so a crossing that only the contract's lines cause has its remedy on
+    somebody else's account. Measured on the queue assembled from the two landing
+    heads, two of five reported crossings are exactly that shape.
+    """
+
+    def role(self, own: int, contract: int) -> str:
+        self.write(cp.CONTRACT, contract)
+        return f"[contract]({cp.CONTRACT}) binds you.\n" + lines(own - 1)
+
+    def test_a_crossing_only_the_contract_causes_is_a_warning(self) -> None:
+        self.baseline(**{"SKILL.md": lines(4)})
+        self.check(self.role(own=9, contract=4))
+        self.assertEqual([], cp.errors)
+        warning, = cp.warnings
+        self.assertIn("only with the 4 shared lines of TEAM-CONTRACT.md", warning)
+        self.assertIn("the role's own files load 9", warning)
+
+    def test_the_warning_sends_the_fix_to_the_contract_not_to_reference(self) -> None:
+        # The printed remedy was "split detail into reference/" — it cannot move a
+        # line this role did not write, which is what made it unreachable advice.
+        self.baseline(**{"SKILL.md": lines(4)})
+        self.check(self.role(own=9, contract=4))
+        warning, = cp.warnings
+        self.assertIn("the lines to remove are in TEAM-CONTRACT.md", warning)
+        self.assertNotIn("reference/", warning)
+
+    def test_a_role_over_the_ceiling_on_its_own_prose_is_still_an_error(self) -> None:
+        self.baseline(**{"SKILL.md": lines(4)})
+        self.check(self.role(own=11, contract=4))
+        self.assertEqual([], cp.warnings)
+        error, = cp.errors
+        self.assertIn("pushes the load over the ceiling, 4 -> 15", error)
+        self.assertNotIn("shared lines", error)
+
+    def test_own_lines_exactly_at_the_ceiling_are_not_the_cause(self) -> None:
+        self.baseline(**{"SKILL.md": lines(4)})
+        self.check(self.role(own=10, contract=4))
+        self.assertEqual([], cp.errors)
+
+    def test_a_companion_is_charged_to_the_role_not_excused(self) -> None:
+        # Only the contract is shared. A topic file arrives in the same diff, so a
+        # crossing it causes stays the role's own — otherwise the subtraction would
+        # re-open the relocate-the-load escape the template arm was added to close.
+        (cp.ROOT / "reference").mkdir()
+        (cp.ROOT / "reference/t.md").write_text(lines(6), encoding="utf-8")
+        self.baseline(**{"SKILL.md": lines(4)})
+        self.check(self.role(own=6, contract=4) + "\n## Actions\n\n`reference/t.md`\n")
+        self.assertEqual([], cp.warnings)
+        self.assertEqual(1, len(cp.errors))
+
+    def test_growth_above_a_broken_ceiling_is_not_relabelled_as_a_crossing(self) -> None:
+        # Inherited debt was already a warning; it must not borrow the new wording,
+        # which claims the role's own files fit.
+        self.baseline(**{"SKILL.md": lines(20)})
+        self.check(self.role(own=9, contract=4))
+        self.assertEqual([], cp.errors)
+        warning, = cp.warnings
+        self.assertNotIn("shared lines", warning)
+
+
 class TheContractBinds(Harness):
     """The ceiling counts the contract, so unlinking it is the cheapest way to pass."""
 

@@ -274,6 +274,24 @@ def check_load(path: Path) -> None:
     is exactly the test ``check_companions`` used to earn its error. Growth above a
     ceiling the base already broke is not this branch's regression, so it stays a
     warning until the head that fixes the role lands; the gate then holds the result.
+
+    **One part of the load is not in the branch's own diff.** "Wholly inside" is the
+    test, and the shared contract fails it: the role, its `reference/` pages and its
+    `templates/` are this role's to shorten, while `TEAM-CONTRACT.md` is seven roles'
+    at once. A role whose own files fit the ceiling and that crosses it only because
+    the contract's lines are added has no remedy on its own branch — shortening the
+    contract to clear it edits what every other role loads, which is the same "other
+    branch to wait on" the paragraph above refuses to force. Measured on the queue
+    assembled from the two landing heads, that is not a hypothetical: of five roles
+    reported as crossings, `anantys.debug` (174 own, 231 with the contract) and
+    `anantys.spec-tester` (151 / 208) are under the ceiling on everything they own,
+    and the remedy printed at them — *split detail into `reference/`* — cannot move a
+    line they did not write. The other three cross on their own prose and stay errors.
+
+    So the crossing is re-measured without the shared part. If the role fits without
+    it, the contract is named as the cause and the finding is a warning: the number to
+    change lives in the contract's own budget, which `check_contract_clauses` and the
+    contract's maintenance note already govern.
     """
     parts = measured_load(path, disk)
     total = sum(n for _, n in parts)
@@ -288,10 +306,22 @@ def check_load(path: Path) -> None:
         f"without lowering it; never into the {CONTRACT}, whose lines every role pays "
         "and whose clauses `check_contract_clauses` holds in place"
     )
+    shared = sum(n for p, n in parts if p.name == CONTRACT)
     before = sum(n for _, n in measured_load(path, lambda p: at(BASE, p))) if BASE else None
 
     crossed = before is not None and before != total and before <= ROLE_MAX_LINES
-    if before is None or before == total:
+    inherited = crossed and total - shared <= ROLE_MAX_LINES
+    if inherited:
+        change = (
+            f"this change pushes the load over the ceiling, {before} -> {total} "
+            f"(> {ROLE_MAX_LINES}), but only with the {shared} shared lines of "
+            f"{CONTRACT}: the role's own files load {total - shared}"
+        )
+        remedy = (
+            f"nothing in this role is over-long — the lines to remove are in {CONTRACT}, "
+            "which every role pays and no single role may shorten on its own account"
+        )
+    elif before is None or before == total:
         change = f"loads {total} lines (> {ROLE_MAX_LINES})"
     elif crossed:
         change = f"this change pushes the load over the ceiling, {before} -> {total} (> {ROLE_MAX_LINES})"
@@ -299,7 +329,8 @@ def check_load(path: Path) -> None:
         change = f"this change grows a load already over the ceiling, {before} -> {total} (+{total - before})"
     else:
         change = f"loads {total} lines (> {ROLE_MAX_LINES}), down from {before}"
-    (errors if crossed else warnings).append(f"{rel(path)}: {change} — {breakdown}; {remedy}")
+    dest = errors if crossed and not inherited else warnings
+    dest.append(f"{rel(path)}: {change} — {breakdown}; {remedy}")
 
 
 def check_contract(path: Path, contract: Path) -> None:

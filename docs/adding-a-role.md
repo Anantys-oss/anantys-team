@@ -57,6 +57,21 @@ wait on. That is the same test the dangling-companion error earns below. Growth 
 ceiling the base already broke is *not* this branch's regression; it stays a warning until
 the head that splits the role lands, and the gate then holds the result.
 
+**One part of the load is not in the branch's own diff.** "Wholly inside" is the test, and
+`TEAM-CONTRACT.md` is the one measured part that fails it: the role file, its `reference/`
+pages and its `templates/` are this role's to shorten, while the contract is seven roles' at
+once. Shortening it to clear one role edits what every other role loads — the same "other
+branch to wait on" the paragraph above refuses to force. So the crossing is re-measured
+without the shared lines, and a role that fits without them gets a warning that names the
+contract as the cause instead of an error whose printed remedy — *split detail into
+`reference/`* — cannot move a line the role did not write. On the queue assembled from the
+two landing heads this is two of five reported crossings: `anantys.debug` (174 lines of its
+own, 231 with the contract) and `anantys.spec-tester` (151 / 208). The other three cross on
+their own prose and stay errors, which is the point — this subtracts the shared part, not the
+ceiling. Only the contract is subtracted: a `reference/` page or a `templates/` file arrives
+in the same change, so a crossing it causes stays the role's own, and the escape the template
+arm closed stays closed.
+
 **The 200 is a ceiling on the load, not on the file.** A role's preamble — everything above
 its first `## ` heading — is where it names what binds it before it acts, so every local
 `.md` it links there is read on the same invocation and counts toward the total. The checker
