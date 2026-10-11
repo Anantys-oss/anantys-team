@@ -96,6 +96,9 @@ them restricts anything:
 | `disallowed-tools:` | `skills/*/SKILL.md` | The only field on a skill that **removes** a tool. Lasts one user turn — see below. |
 
 Three consequences worth keeping in mind when editing a role:
+| `disallowed-tools:` | `skills/*/SKILL.md` | The only field on a skill that **removes** a tool. Cleared when the user sends their next message. |
+
+Two consequences worth keeping in mind when editing a role:
 
 1. **Omitting a tool from a skill's `allowed-tools` does not withhold it.** It costs the
    operator a prompt, not the capability. So a skill rule like "never push" is advisory
@@ -111,6 +114,10 @@ Three consequences worth keeping in mind when editing a role:
    denial, but so does refusing, and so does "what about the tests?". Treat the field as a
    guard over the current assistant turn and nothing more.
 3. **Listing a tool auto-approves it.** The browser grants on `anantys.design`,
+   and `gh pr create`) in frontmatter rather than only in prose. The field clearing on the
+   user's next message is the right shape here: the rules say *"unless the user explicitly
+   asks"*, and the asking is what lifts the denial.
+2. **Listing a tool auto-approves it.** The browser grants on `anantys.design`,
    `anantys.debug` and `anantys.ops` include `computer` and `javascript_tool` — full
    input control and arbitrary JS in the operator's signed-in session, with no prompt.
    That is deliberate (these roles are useless at one prompt per refresh), but it is a
