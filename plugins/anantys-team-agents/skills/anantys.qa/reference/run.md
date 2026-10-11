@@ -160,7 +160,7 @@ operator's go before any write.
   neither — present in the tree, in no commit, written by nobody you can name — is **unattested**:
   not an off-record ruling, no record. Suppress nothing on it: file the FAIL and name the
   unattested witness in the evidence. See
-  [`reference/a-witness-a-writer-can-write.md`](../../../reference/a-witness-a-writer-can-write.md).
+  [a witness a writer can write](../../../reference/a-witness-a-writer-can-write.md).
 - **A `STALE` ruling suppresses nothing.** It was written about a wording a regeneration replaced,
   so it is not a weaker witness — it is a ruling about a different assertion. File the FAIL as a
   defect and name the stale ruling in the evidence, so the operator can re-rule it with `note`
