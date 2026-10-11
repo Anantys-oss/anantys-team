@@ -13,6 +13,12 @@ def role(grants, body, agents=()):
     return c.check(Path("role.md"), grants, body, {"navigate", "tabs_context_mcp"}, agents)
 
 
+def agent(grants, body, agents=()):
+    """`check` keys the agent dialect off the directory, as `main` does."""
+    path = Path("plugins/p/agents/a.md")
+    return c.check(path, grants, body, {"navigate", "tabs_context_mcp"}, agents)
+
+
 class ToolGrants(unittest.TestCase):
     def test_browser_prose_without_browser_grant_is_an_error(self):
         errors, _ = role(["Bash", "Read"], "Walk the scenarios in a real browser.")
@@ -33,6 +39,29 @@ class ToolGrants(unittest.TestCase):
     def test_constrained_bash_rejects_an_ungranted_command(self):
         errors, _ = role(["Bash(ls:*)"], "```bash\nrm -rf build\n```")
         self.assertIn("`rm -rf build`", errors[0])
+
+    def test_a_subcommand_grant_on_an_agent_is_void(self):
+        errors, _ = agent(["Bash(git diff:*)", "Read"], "```bash\ngit diff --stat\n```")
+        self.assertIn("void in an agent", errors[0])
+
+    def test_an_agent_subcommand_grant_is_not_judged_against_the_prose(self):
+        """The remedy is the grant, not the prose: the scope bounds nothing, so
+        reporting which commands it permits would point at the wrong fix."""
+        errors, _ = agent(["Bash(ls:*)"], "```bash\nrm -rf build\n```")
+        self.assertEqual(len(errors), 1)
+        self.assertIn("void in an agent", errors[0])
+
+    def test_bare_bash_on_an_agent_is_not_reported(self):
+        errors, _ = agent(["Bash", "Read", "Glob", "Grep"], "```bash\ngit diff\n```")
+        self.assertEqual(errors, [])
+
+    def test_an_agent_without_bash_is_still_held_to_its_prose(self):
+        errors, _ = agent(["Read", "Glob"], "```bash\ngit diff --stat\n```")
+        self.assertIn("no Bash grant is granted", errors[0])
+
+    def test_the_same_grant_on_a_skill_is_still_a_narrowing(self):
+        errors, _ = role(["Bash(git diff:*)", "Read"], "```bash\ngit diff --stat\n```")
+        self.assertEqual(errors, [])
 
     def test_subcommand_grant_permits_its_own_subcommand(self):
         errors, _ = role(["Bash(git diff:*)"], "```bash\ngit diff --stat main...HEAD\n```")

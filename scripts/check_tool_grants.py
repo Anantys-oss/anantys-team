@@ -56,6 +56,12 @@ GENERIC = {"Bash", "Read", "Write", "Edit", "Glob", "Grep"}
 # `git x` is two calls, both inside `Bash(git:*)`, and `git fetch <url>` reaches
 # the network. Naming a subcommand escapes this set on purpose: the hatches are
 # themselves subcommands, so `Bash(git diff:*)` rejects `git config` already.
+#
+# That escape is a property of a *skill*, whose `allowed-tools` entries are
+# permission rules the runtime keeps whole. An agent's `tools:` is a tool-name
+# set: the scope is parsed and then thrown away, so there is no narrowed grant
+# to escape into and every `Bash(...)` on an agent is as wide as bare `Bash`.
+# See the `is_agent` branch in `check`.
 UNBOUNDED = {
     "bash",
     "docker",
@@ -208,6 +214,7 @@ def check(path, grants, body, known_mcp, agents=()):
     mcp_granted = {g.rsplit("__", 1)[-1] for g in grants if g.startswith("mcp__")}
     bash_grants = {g[5:-1].split(":", 1)[0] for g in grants if g.startswith("Bash(")}
     has_bare_bash = "Bash" in grants
+    is_agent = path.parent.name == "agents"
 
     for tool in sorted(mcp_used & known_mcp - mcp_granted):
         errors.append(f"prose uses browser tool `{tool}` but it is not granted")
@@ -217,7 +224,22 @@ def check(path, grants, body, known_mcp, agents=()):
     if "browser" in lowered and not mcp_granted:
         errors.append("prose commits to driving a browser but grants no browser tool")
 
-    if has_bare_bash:
+    if is_agent and bash_grants:
+        # An agent's `tools:` is a set of tool *names*, not permission rules. The
+        # runtime splits each entry into a name and a scope, then keeps only the
+        # name — for every tool but the one that spawns agents, where the scope
+        # becomes the allowed agent types. So `Bash(git diff:*)` on an agent
+        # resolves to the whole `Bash` tool and the scope is discarded: the
+        # subagent holds unrestricted shell while the frontmatter reads as a
+        # narrowing. This is the `UNBOUNDED` failure with no bounded case left,
+        # so naming more subcommands cannot be the remedy.
+        for prefix in sorted(bash_grants):
+            errors.append(
+                f"`Bash({prefix}:*)` is void in an agent — `tools:` keeps the "
+                f"tool name and drops the scope, so this grants all of `Bash`; "
+                f"write bare `Bash` and bound it in prose, or drop `Bash`"
+            )
+    elif has_bare_bash:
         # A prefix alongside bare `Bash` bounds nothing — the same frontmatter
         # already permits everything it excludes. The `UNBOUNDED` error below
         # would read as if the prefix were the problem, and its remedy — name
