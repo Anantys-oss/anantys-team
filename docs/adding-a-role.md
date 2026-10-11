@@ -129,6 +129,27 @@ a file shape, it names no tools, and there is nothing in it to union into a gran
 is a claim about bytes; authority is not. The units genuinely differ here, which is why this
 page says so rather than leaving the next reader to call it an inconsistency.
 
+**The loads it was pointed at are declared in `scripts/role-load-baseline.txt`.** Every
+rule above tells a crossing from inherited debt, and both arms assume *some* role can be on
+the clean side of the line. On the assembled tree none is: seven roles, 206 to 922 against
+200, the smallest over by six lines. The contract is 99 of those lines, `check_contract`
+requires every role to link it, and `check_contract_clauses` holds its clauses in place —
+so the budget left for a role's own prose is 101 lines, and nothing here fits in it. A
+ceiling its whole population fails is not a gate; it makes every change that touches a role
+file wait on a prose rewrite of all seven, which is the shape of order the rest of this page
+exists to avoid.
+
+So the number stays, and the loads that predate it are declared, one `<path>: <lines>` per
+line, on the argument `check_tool_grants`'s baseline already makes: a gate may not fix its
+own subject, because the fix belongs to the change that owns the prose. The difference is
+that this baseline carries an **integer**, so it bounds rather than mutes — growth past a
+declared load is still an error, which is the arm the crossing rule was added for. A role
+measured under its declared number warns and names the number to write instead, so the
+change that trims a role is told to lower the line rather than finding the gate red for
+having improved; back under 200, it is told to delete the line. A declaration naming no
+role in the tree warns too: a number nothing is measured against is a line nobody would
+ever be told to remove.
+
 It is a floor, not an exact load: an action that reads two topic files pays for both, and
 the checker charges one. Measured on the assembled queue, `anantys.qa` — the only split
 role today — invokes at 385 (160 + 95 contract + 130 `reference/sources.md`) where the

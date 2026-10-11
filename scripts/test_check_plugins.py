@@ -25,7 +25,17 @@ class Harness(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         cp.ROLE_MAX_LINES = 10
         cp.BASE = None
+        cp.priced.clear()
+        self.addCleanup(setattr, cp, "LOAD_BASELINE", cp.LOAD_BASELINE)
+        cp.LOAD_BASELINE = cp.ROOT / "role-load-baseline.txt"  # absent until `declare`
         self.addCleanup(setattr, cp, "at", cp.at)
+
+    def declare(self, **entries: int) -> None:
+        """Pretend the baseline file declares `entries` — file name -> allowed lines."""
+        cp.LOAD_BASELINE.write_text(
+            "# declared\n" + "".join(f"{n}: {v}\n" for n, v in entries.items()),
+            encoding="utf-8",
+        )
 
     def write(self, name: str, n: int) -> None:
         (cp.ROOT / name).write_text(lines(n), encoding="utf-8")
@@ -270,6 +280,70 @@ class TheCrossingIsTheError(Harness):
         self.assertEqual([], cp.errors)
 
 
+class ADeclaredLoadBoundsItRatherThanMutingIt(Harness):
+    """The ceiling's population satisfies it zero times, so the loads are declared.
+
+    Every role in the assembled tree is over 200 — 206 to 922, the smallest by six
+    lines — because ``TEAM-CONTRACT.md`` costs 99 of them, every role must link it,
+    and its clauses are frozen by ``check_contract_clauses``. The 101 lines left are
+    not a budget any role here fits, so the crossing arm above reddens all seven and
+    the queue becomes unlandable on a number no change can satisfy.
+
+    What makes a declaration a gate and not a mute is that it carries the integer:
+    growth past the declared load is still this branch's regression, which is the
+    distinction the crossing arm exists to draw. These say the error arm survives
+    the baseline — and that a role which *improves* is told to lower its line
+    instead of finding the gate red for having improved.
+    """
+
+    def test_a_declared_load_at_its_number_is_a_warning(self) -> None:
+        self.declare(**{"SKILL.md": 20})
+        self.baseline()  # no file at the base: the crossing arm would error here
+        self.check(lines(20))
+        self.assertEqual([], cp.errors)
+        warning, = cp.warnings
+        self.assertIn("within the 20 declared in role-load-baseline.txt", warning)
+
+    def test_growth_past_a_declared_load_is_an_error(self) -> None:
+        self.declare(**{"SKILL.md": 20})
+        self.baseline(**{"SKILL.md": lines(20)})  # inherited debt, not a crossing
+        self.check(lines(26))
+        self.assertEqual([], cp.warnings)
+        error, = cp.errors
+        self.assertIn("grows the load past the 20 declared", error)
+        self.assertIn("20 -> 26", error)
+
+    def test_a_role_under_its_declared_load_is_told_to_lower_the_line(self) -> None:
+        self.declare(**{"SKILL.md": 26})
+        self.check(lines(20))
+        self.assertEqual([], cp.errors)
+        warning, = cp.warnings
+        self.assertIn("lower that line to 20", warning)
+
+    def test_a_role_back_under_the_ceiling_is_told_to_delete_the_line(self) -> None:
+        self.declare(**{"SKILL.md": 26})
+        self.check(lines(4))
+        self.assertEqual([], cp.errors)
+        warning, = cp.warnings
+        self.assertIn("under the 10 ceiling", warning)
+        self.assertIn("so delete that line", warning)
+
+    def test_an_undeclared_role_crossing_the_ceiling_is_still_an_error(self) -> None:
+        # The arm the baseline must not weaken: a role nobody declared is priced
+        # exactly as before, so adding the file does not buy silence for the rest.
+        self.declare(**{"other/SKILL.md": 400})
+        self.baseline(**{"SKILL.md": lines(8)})
+        self.check(lines(20))
+        self.assertEqual([], cp.warnings)
+        self.assertEqual(1, len(cp.errors))
+
+    def test_a_comment_only_baseline_declares_nothing(self) -> None:
+        cp.LOAD_BASELINE.write_text("# why these exist\n\n", encoding="utf-8")
+        self.baseline(**{"SKILL.md": lines(8)})
+        self.check(lines(20))
+        self.assertEqual(1, len(cp.errors))
+
+
 class TheFloorIsTheConstraint(Harness):
     """A remedy that relocates prose cannot work once the destinations are the load.
 
@@ -450,6 +524,9 @@ class DeletingTheContractIsNotAnAbsentContract(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         cp.ROOT = Path(self.tmp.name).resolve()
         self.addCleanup(self.tmp.cleanup)
+        cp.priced.clear()
+        self.addCleanup(setattr, cp, "LOAD_BASELINE", cp.LOAD_BASELINE)
+        cp.LOAD_BASELINE = cp.ROOT / "role-load-baseline.txt"  # absent unless written
         self.addCleanup(setattr, cp, "at", cp.at)
         self.addCleanup(setattr, cp, "merge_base", cp.merge_base)
         cp.merge_base = lambda: "base"  # the tmp tree is not a git repo
@@ -489,6 +566,26 @@ class DeletingTheContractIsNotAnAbsentContract(unittest.TestCase):
         self.assertEqual(self.run_main(), 0)
         self.assertEqual(cp.errors, [])
         self.assertTrue(cp.warnings)
+
+
+class AStaleDeclarationBoundsNothing(DeletingTheContractIsNotAnAbsentContract):
+    """A declared load for a path no role resolves to will never be told to go away.
+
+    ``check_tool_grants``'s baseline reports a declared error that stopped occurring,
+    because a line nothing matches is a line nobody deletes. The same hole is wider
+    here: that baseline's entries are full messages, so a renamed role takes its
+    declaration out of play visibly, while a number keyed on a path just stops being
+    consulted. Checked in ``main``, where the set of roles is known.
+    """
+
+    def test_a_declaration_naming_no_role_in_the_tree_warns(self) -> None:
+        cp.LOAD_BASELINE.write_text("plugins/p/skills/gone/SKILL.md: 400\n", encoding="utf-8")
+        self.held(None)
+        self.assertEqual(self.run_main(), 0)
+        self.assertEqual(cp.errors, [])
+        stale, = [w for w in cp.warnings if "role-load-baseline.txt declares" in w]
+        self.assertIn("plugins/p/skills/gone/SKILL.md", stale)
+        self.assertIn("delete the line", stale)
 
 
 class ARoleIsDescribedNotJustNamed(unittest.TestCase):

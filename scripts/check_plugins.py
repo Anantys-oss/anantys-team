@@ -16,6 +16,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 ROLE_MAX_LINES = 200  # see docs/adding-a-role.md — a role loads in full, every invocation
+#: Loads already over the ceiling when it was pointed at this tree, `<path>: <lines>`.
+LOAD_BASELINE = Path(__file__).with_name("role-load-baseline.txt")
 CONTRACT = "TEAM-CONTRACT.md"  # the rules every role in a plugin shares; each must link it
 #: A fenced block in README — a layout listing, an install snippet, a usage example.
 #: Matched non-greedily from one fence to the next so the gaps between blocks survive.
@@ -43,6 +45,8 @@ BASE: str | None = None
 
 errors: list[str] = []
 warnings: list[str] = []
+#: Roles ``check_load`` actually priced, so a declaration naming none of them is visible.
+priced: set[str] = set()
 
 
 def frontmatter(path: Path) -> dict[str, str]:
@@ -247,6 +251,37 @@ def check_companions(path: Path) -> None:
             )
 
 
+def declared_load() -> dict[str, int]:
+    """Loads this ceiling was pointed at and could not ask to be fixed, as ``{path: lines}``.
+
+    ``check_tool_grants`` already argues the general case in ``baseline()``: a gate
+    added to a tree that violates it may not fix its own subject, because the fix
+    belongs to the change that owns the prose and declaring the violation is what
+    keeps the two landing orders independent. The same argument lands harder here,
+    for a reason specific to this ceiling.
+
+    **Every role in this tree is over it.** Not a majority — all seven, 206 to 922
+    against 200, and the smallest offender is over by six lines. Half the budget is
+    spent before a role's own first line: ``TEAM-CONTRACT.md`` is 99 lines, every
+    role must link it (``check_contract``), and ``check_contract_clauses`` holds its
+    clauses in place, so the 101 lines left are not a budget any real role fits in.
+    A ceiling whose population satisfies it zero times is not a gate; it is a number
+    that makes every change touching a role file wait on a prose rewrite of all seven.
+
+    So the ceiling keeps its number for roles that can still meet it, and the loads
+    it was pointed at are declared. What a declared load is *not* is a mute: it is
+    the integer a role may not exceed, so the arm that matters — you grew this —
+    still fails, and the arm that cannot be acted on — you inherited this — does not.
+    A role measured at or under its declared value warns, so the change that brings
+    it down is told to lower the line rather than finding the gate red for improving.
+    """
+    if not LOAD_BASELINE.is_file():
+        return {}
+    lines = LOAD_BASELINE.read_text(encoding="utf-8").splitlines()
+    entries = (s.partition(": ") for s in (line.strip() for line in lines) if s and s[0] != "#")
+    return {path: int(lines_) for path, _, lines_ in entries}
+
+
 def check_load(path: Path) -> None:
     """Report a role whose worst-case *one-action load* exceeds the ceiling — and say who did it.
 
@@ -293,7 +328,14 @@ def check_load(path: Path) -> None:
     """
     parts = measured_load(path, disk)
     total = sum(n for _, n in parts)
+    priced.add(rel(path))
+    declared = declared_load().get(rel(path))
     if total <= ROLE_MAX_LINES:
+        if declared is not None:
+            warnings.append(
+                f"{rel(path)}: loads {total} lines, under the {ROLE_MAX_LINES} ceiling — "
+                f"declared at {declared} in {LOAD_BASELINE.name}, so delete that line"
+            )
         return
 
     breakdown = " + ".join(f"{n} {rel(p)}" for p, n in parts)
@@ -340,7 +382,22 @@ def check_load(path: Path) -> None:
         change = f"this change grows a load already over the ceiling, {before} -> {total} (+{total - before})"
     else:
         change = f"loads {total} lines (> {ROLE_MAX_LINES}), down from {before}"
-    (errors if crossed or floor_crossed else warnings).append(
+    if declared is None:
+        failed = crossed or floor_crossed
+    else:
+        # A declared load bounds, it does not mute: the integer is the thing this
+        # role may not exceed, so growth past it is still this branch's regression
+        # while the inherited part has nothing left to report.
+        failed = total > declared
+        change = (
+            f"this change grows the load past the {declared} declared in "
+            f"{LOAD_BASELINE.name}, {declared} -> {total}"
+            if failed
+            else f"loads {total} lines (> {ROLE_MAX_LINES}), within the {declared} declared "
+            f"in {LOAD_BASELINE.name}"
+            + (f" — lower that line to {total}" if total < declared else "")
+        )
+    (errors if failed else warnings).append(
         f"{rel(path)}: {change} — {breakdown}; {unreachable}{remedy}"
     )
 
@@ -606,6 +663,15 @@ def main() -> int:
                 "marketplace.json has no `name`, so the `@<marketplace>` half of the "
                 "`/plugin install` line in README.md went unmeasured"
             )
+
+    # A declaration for a path no role resolves to is a line that will never be told
+    # to go away: the role it names was renamed or deleted, and the number it carries
+    # now bounds nothing. Reported where the tree is known, after every role is priced.
+    for stale in sorted(declared_load().keys() - priced):
+        warnings.append(
+            f"{LOAD_BASELINE.name} declares {stale}, which is no role in this tree — "
+            "nothing is measured against that number, so delete the line"
+        )
 
     for warning in warnings:
         print(f"warning: {warning}")
