@@ -53,5 +53,5 @@ nobody looking for it.
 
 Nothing is in this file that a role is not required to do. Everything addressed to
 whoever *edits* it — what is admitted here, what is not, and where a candidate rule goes
-instead — is in [`docs/team-contract-maintenance.md`](../../docs/team-contract-maintenance.md),
+instead — is in `docs/team-contract-maintenance.md` in the source repository,
 which no role loads.

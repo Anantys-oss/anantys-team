@@ -15,7 +15,7 @@ feature directory, so everything after `plan` is identical no matter how the pla
    - Named: `/anantys.qa plan 206-subscribe-funnel`.
    - Else read `specs_dir` from `.anantys/qa.md` (default `specs/`), list its subdirectories, and
      take the one matching the current git branch's name; otherwise ask.
-2. **`--brief <file.md>`** — a single markdown brief you wrote by hand (`templates/feature-brief.md`),
+2. **`--brief <file.md>`** — a single markdown brief you wrote by hand (`../templates/feature-brief.md`),
    carrying **Requirements** (each with a stable id), a **What shipped** summary, and a **Not
    shipped / known gaps** section. The universal, dependency-free path for any feature NOT built
    with spec-kit — a bot-loop feature, a hotfix, a design doc. `plan` **copies** the brief to
@@ -121,7 +121,7 @@ Identical for every source:
   without its environment BLOCKs a case elsewhere that could have been walked. Add what the contract
   missed, and say which items were yours.
 
-Write `qa-plan.md` following `templates/qa-plan.md`. Every assertion gets a stable id
+Write `qa-plan.md` following `../templates/qa-plan.md`. Every assertion gets a stable id
 (`A1`, `B5`, …) — ids are referenced by runs, notes and reports forever, so **never renumber
 them**.
 

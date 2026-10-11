@@ -1,6 +1,6 @@
 # `note`, `report`, `status` — adjudication and output
 
-Read `reference/environments.md` first: each of these actions selects an environment, and a ruling
+Read `environments.md` first: each of these actions selects an environment, and a ruling
 is scoped to one.
 
 ## `note` — record an operator adjudication
@@ -55,7 +55,7 @@ that dropped the behaviour). A REMOVED line citing nothing retires an assertion 
 for the life of the feature on the strength of its own say-so.
 
 `note` is not its only writer: `plan` marks REMOVED too, when a regeneration finds the assertion's
-cited requirement gone from the source (see `reference/sources.md`, "The requirement is the third
+cited requirement gone from the source (see `sources.md`, "The requirement is the third
 axis"). Those cite `source: <rev>` rather than an operator, and the distinction is reported, never
 flattened — one is a product ruling, the other is a source diff, and only the first one a person
 made. And a source diff is a witness only when the two sources are comparable: `plan` strikes

@@ -1,6 +1,6 @@
 # `run` / `retest` — executing the campaign
 
-Read `reference/environments.md` first — which environment is selected, and what may be done to it,
+Read `environments.md` first — which environment is selected, and what may be done to it,
 is decided there.
 
 Preconditions: `.anantys/qa.md` exists, `qa-plan.md` exists — and, if `qa-plan.md` carries an
@@ -60,7 +60,7 @@ operator's go before any write.
    The line is absent for a merged/deployed feature, and then there is nothing extra to check.
 
    **The same probe response also says which host answered — read it.** Compare it to the
-   environment's `Answers as:` line (`reference/environments.md`). A match confirms this block's
+   environment's `Answers as:` line (`environments.md`). A match confirms this block's
    `kind:` and `Production:` for this run; a mismatch, or a response carrying no identity, leaves
    both **unconfirmed** — no reset in step 2, and the environment is treated as production. Record
    `Identity: confirmed` or `Identity: unconfirmed — <what answered> ≠ <declared>` in the run
@@ -69,7 +69,7 @@ operator's go before any write.
    same commit is served by staging and production between deploys.
 
    **On a `shared` env, confirm the target before anything is written** — the pre-write
-   confirmation in `reference/environments.md`, which echoes the environment name, its base URL,
+   confirmation in `environments.md`, which echoes the environment name, its base URL,
    the build it serves, whether it is production **and whether that was confirmed or declared**,
    and the scenarios that will create data there. No go, no run. Reading `Production: no` back as
    fact is how a mistyped block gets confirmed by the person who mistyped it; an unconfirmed env is
@@ -82,7 +82,7 @@ operator's go before any write.
    create any needed test data additively. On an environment whose kind is **undeclared** (a flat
    legacy file) or **unconfirmed** (step 1 found a different host, or none) there is also no reset:
    ask the operator to re-run `init`, or walk the plan with whatever subject state exists and mark
-   anything the leftover state invalidates `BLOCKED` (`reference/environments.md`).
+   anything the leftover state invalidates `BLOCKED` (`environments.md`).
 3. **Walk the scenarios in order**, in a real browser driven as the environment's `Driven by:`
    line says. On production, skip the unsafe scenario classes and record them
    `BLOCKED`. Per scenario: establish the precondition,
@@ -121,7 +121,7 @@ operator's go before any write.
    An interrupted run is a result — it is just not a verdict.
 6. Update the per-assertion status in `qa-plan.md` **for the selected environment only**, and only
    for the assertions this run walked; then refresh that environment's progress table.
-7. **Finish:** write `qa-report.md` as `report` does (`reference/reporting.md`) — every run, both
+7. **Finish:** write `qa-report.md` as `report` does (`reporting.md`) — every run, both
    modes, so a defect this run saw PASS drops out of the brief. A defect that merely failed to
    reproduce has not become a PASS and does not drop (see `retest`). Interactive: you only reach this
    step if the walk met no new DEFECT, so say so. End the reply with the progress table.
@@ -160,7 +160,7 @@ operator's go before any write.
   neither — present in the tree, in no commit, written by nobody you can name — is **unattested**:
   not an off-record ruling, no record. Suppress nothing on it: file the FAIL and name the
   unattested witness in the evidence. See
-  [`docs/a-witness-a-writer-can-write.md`](../../../../../docs/a-witness-a-writer-can-write.md).
+  [`reference/a-witness-a-writer-can-write.md`](../../../reference/a-witness-a-writer-can-write.md).
 - **A `STALE` ruling suppresses nothing.** It was written about a wording a regeneration replaced,
   so it is not a weaker witness — it is a ruling about a different assertion. File the FAIL as a
   defect and name the stale ruling in the evidence, so the operator can re-rule it with `note`

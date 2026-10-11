@@ -63,11 +63,11 @@ run**: the flat layout predates the `local`/`shared` distinction, nothing in it 
 rule that asked which kind it targets, and it carries neither a declared Target nor a probe to
 compare one against. A campaign needing a fresh subject there asks the operator to re-run `init`
 first. `--env <other>` against such a file is an error: stop and tell the operator to re-run `init`,
-which migrates the file before declaring the new environment (see `reference/init.md`). Never guess
+which migrates the file before declaring the new environment (see `init.md`). Never guess
 an environment's kind; an env whose kind you cannot establish is not reset and not run.
 
 **An absent declaration is never a permission** — the general rule the three paragraphs above
-apply, stated once in `templates/qa-config.md`. A field this skill gates an action on can be
+apply, stated once in `../templates/qa-config.md`. A field this skill gates an action on can be
 missing: an older `init` wrote the file, a hand edit dropped a line, the operator skipped the
 question. Missing resolves to the **narrower** branch, and a field whose absence would widen what an
 action may do is asked, never inferred. Note which way the existing defaults already lean: the two
@@ -76,7 +76,7 @@ instrument ⇒ every checkout case `BLOCKED`). The fields about *permission to a
 watch, because their permissive branch reads like backward compatibility.
 
 **And a present declaration is not an observation** — the complement, also stated once in
-`templates/qa-config.md`. `kind:` and `Production:` are typed at `init` and read forever after as if
+`../templates/qa-config.md`. `kind:` and `Production:` are typed at `init` and read forever after as if
 they described the host; they describe a URL, and the URL is what moves — a retired staging hostname
 repointed at prod, a repointed dev box behind a `local` block (whose surface is *expected* not to be
 `localhost`), a `shared` block copied with only the name changed. No field is missing in any of
@@ -105,7 +105,7 @@ its loss as `BLOCKED`, which is what an unreachable case has always been.
 An assertion can pass on one environment and fail on another (a fix deployed to staging but not the
 local stack, or the reverse):
 
-- Every `qa-runs.md` run header names its environment (`templates/qa-plan.md`).
+- Every `qa-runs.md` run header names its environment (`../templates/qa-plan.md`).
 - The per-assertion status in `qa-plan.md` is recorded **per environment** (`local: FAIL ·
   staging: PASS`) — the suffix is the authoritative record, required on every assertion that has
   run anywhere; the checkbox is checked only when every declared environment **it was permitted to
@@ -114,7 +114,7 @@ local stack, or the reverse):
 - `retest`, `status` and `report` read only the results recorded for the selected environment and
   say which environment they describe. `status` and `report` also name every other environment
   that has results, so a defect recorded elsewhere is never silently out of view.
-- **Adjudications are scoped too** (see `reference/reporting.md`): most are drift rulings, and
+- **Adjudications are scoped too** (see `reporting.md`): most are drift rulings, and
   drift is per-environment. A ruling applies only to its own environment, or to all of them when
   scoped `all`.
 

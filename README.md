@@ -102,11 +102,12 @@ Then invoke a skill directly:
 ```
 anantys-team/
 ├── .claude-plugin/marketplace.json     # the catalog (what `marketplace add` reads)
-├── docs/                               # cross-cutting rules, one file per rule
+├── docs/                               # notes on maintaining *this repo* — never installed
 └── plugins/
     └── anantys-team-agents/
         ├── .claude-plugin/plugin.json  # the installable unit (name + version)
         ├── TEAM-CONTRACT.md            # the clauses every role loads first
+        ├── reference/                   # cross-cutting rules a role is told to read
         ├── skills/                     # invoked directly (/anantys.*)
         │   ├── anantys.design/SKILL.md
         │   ├── anantys.ops/SKILL.md
@@ -128,9 +129,22 @@ anantys-team/
 ## Conventions
 
 Cross-cutting rules — the ones that bind every role rather than one skill — live in
-[`docs/`](./docs/), one file per rule. A new convention is a new file there, never
-another section here: README has a single append point, and every PR that used it
-collided with every other PR that used it.
+one file per rule, and **which directory depends on who reads it**.
+
+What gets installed is the plugin directory, nothing above it: `agents/`, `skills/`,
+`TEAM-CONTRACT.md`, `reference/`. A role resolves every path it is told to read from
+the naming file's own directory *in that tree* — so a rule a role can be sent to
+must live in [`plugins/anantys-team-agents/reference/`](./plugins/anantys-team-agents/reference/).
+A path that climbs out of the plugin root resolves, at runtime, into the marketplace
+cache beside other plugins, and the file is not there.
+
+[`docs/`](./docs/) is the other half: notes addressed to whoever edits this repo — the
+evidence behind a clause, a measurement of the queue, a convention for authoring a role.
+Nothing installs it, so no role file may name it as a path to open.
+
+A new convention is a new file in one of those two directories, never another section
+here: README has a single append point, and every PR that used it collided with every
+other PR that used it.
 
 ## License
 

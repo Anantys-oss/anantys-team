@@ -1,12 +1,12 @@
 # `init` — write the environment contract
 
-Read `reference/environments.md` first: it defines the two kinds an environment can be, and `init`
+Read `environments.md` first: it defines the two kinds an environment can be, and `init`
 is where that choice is recorded.
 
 The skill knows *how* to QA. It must know nothing about *this* project's stack. Everything
 environment-specific goes into `.anantys/qa.md` at the repo root.
 
-Read `templates/qa-config.md` for the shape. Fill it by **interviewing the operator**, but do the
+Read `../templates/qa-config.md` for the shape. Fill it by **interviewing the operator**, but do the
 legwork first so the questions are few and precise:
 
 - Read `README.md`, `CLAUDE.md`/`AGENTS.md`, `Makefile`, `docker-compose*.yml`, `.env.example`, `package.json` scripts.
@@ -42,7 +42,7 @@ full of `<placeholders>` into the contract. Re-running `init` on an existing fil
 environment blocks and leaves the others untouched.
 
 **Re-running `init` on a flat file migrates it first.** If the existing `.anantys/qa.md` has no
-`## Environment:` blocks (the legacy layout, see `reference/environments.md`), rewrite its flat
+`## Environment:` blocks (the legacy layout, see `environments.md`), rewrite its flat
 `## Surfaces` / `## Preflight` / `## Reset` / `## Credentials` / … sections as one
 `## Environment: local (kind: <asked>, default)` block **before** adding any new one, and show the
 converted file in the confirmation below. **Ask the kind — never carry it over from the name.** A

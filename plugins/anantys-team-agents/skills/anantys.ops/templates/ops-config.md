@@ -1,7 +1,7 @@
 # `.anantys/ops.md` — template
 
 Copy to `.anantys/ops.md` at the repo root. Fill it by interviewing the operator once; read it
-on every run thereafter. See `docs/project-config.md` for what belongs here and what does not.
+on every run thereafter. See `../../../reference/project-config.md` for what belongs here and what does not.
 
 Every fact carries the date it was last confirmed. Confirming is part of using it: a URL that
 404s or lands on the wrong property has expired — re-ask, rewrite the line, and say so in the

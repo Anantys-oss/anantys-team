@@ -25,7 +25,7 @@ table all produce run-section text that `run` never appended.
 ## What can terminate it
 
 Something outside the class. Git already is that thing, and this tree already reaches for it:
-`/anantys.ops` and `/anantys.qa` both **[ask git, not just the filesystem](./not-found-is-not-absent.md)**
+`/anantys.ops` and `/anantys.qa` both **ask git, not just the filesystem**
 when deciding whether an artifact exists, on the grounds that "git knows what the project has
 had; the working tree only knows what is there now". The same source answers the harder
 question — a commit names an author and a date, exists outside the file, and cannot be produced

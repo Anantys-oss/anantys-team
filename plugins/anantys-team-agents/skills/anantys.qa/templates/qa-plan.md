@@ -16,8 +16,8 @@ requirement nothing covers, which is the only omission worth catching.
 ```markdown
 # QA campaign — <feature>
 
-Derived from [`tasks.md`](./tasks.md) (what is built) and [`spec.md`](./spec.md) (what each case
-cites). Environment: [`.anantys/qa.md`](../../.anantys/qa.md). Runs: [`qa-runs.md`](./qa-runs.md).
+Derived from `tasks.md` (what is built) and `spec.md` (what each case
+cites). Environment: `.anantys/qa.md` at the repo root. Runs: `qa-runs.md`.
 
 **Under test:** <branch> @ <head commit> — <environment> (pr: <ref>). A `--from pr:` campaign
 records the head branch and commit it was derived from here, and `run` verifies the environment is
@@ -58,11 +58,11 @@ and the only one the plan used not to record. `**Under test:**` pins the code an
 the environment; without this line a regeneration can only guess at a changed requirement from the
 assertion's wording, which is exactly the part a well-written assertion keeps stable. On a
 regeneration this line moves, the requirements are diffed, and each assertion is carried over,
-marked `STALE`, or REMOVED accordingly — see `reference/sources.md`, "The requirement is the third axis".
+marked `STALE`, or REMOVED accordingly — see `../reference/sources.md`, "The requirement is the third axis".
 
 The **set** is what makes a `REMOVED` strike answerable: a re-run over fewer refs, or a degraded
 tracker fetch, is indistinguishable from a product decision if only the revision is recorded. When
-the set differs from the one recorded here, nothing is struck — see `reference/sources.md`, "An absent
+the set differs from the one recorded here, nothing is struck — see `../reference/sources.md`, "An absent
 requirement is not a product decision `plan` can make".
 
 **How to use.** Preflight first — stop if it fails. Reset (a `local` env only — never a `shared`
@@ -140,14 +140,14 @@ untested by construction, and the blocker list is where untested money paths get
 A `plan` regeneration carries every annotation and result over, but an annotation is bound to the
 **assertion text** it was written about, not to the id — the id outlives a rewording. So a reworded
 assertion keeps its ruling marked `STALE` and its results reset to `not run`: a suppression that
-migrates onto new behaviour is the one regeneration failure no later run can detect. See `reference/sources.md`,
+migrates onto new behaviour is the one regeneration failure no later run can detect. See `../reference/sources.md`,
 "Regenerating over an existing plan".
 
 An adjudication is the only thing that turns a FAIL into a PASS, and this file is committed —
 anyone can type one. `run <n>` points at the `qa-runs.md` section recording the FAIL that was ruled
 on; a REMOVED line points at where the product decision was made. A run that cannot find that
 witness still applies the ruling but reports it as **unverified**, and a ruling never removes a §3
-blocker from the verdict — see `reference/run.md`, "Judging rules".
+blocker from the verdict — see `../reference/run.md`, "Judging rules".
 
 The per-environment suffix (`` `<env>`: PASS | FAIL | BLOCKED | not run ``, or ``
 `<env>`/`<class>`: `` where **Exercised as:** declares more than one) is the authoritative
@@ -236,7 +236,7 @@ section; it lives here because this is the part of it that must exist first.
 |----|----|----|
 | <record / account / order / upload> | <id, or the query that finds it> | <command, or "operator only"> |
 
-This is the same list `run` echoed to get the operator's go before writing anything (`reference/run.md`,
+This is the same list `run` echoed to get the operator's go before writing anything (`../reference/run.md`,
 `run` step 1). The consent is spent in one prompt; the data is not. On a `local` env "the reset
 covers it" is a complete answer. On a **`shared`** env the environment is never reset, so this
 table is the only record that the campaign's footprint exists at all — every run's rows persist,
