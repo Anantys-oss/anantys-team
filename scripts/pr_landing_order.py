@@ -10,11 +10,25 @@ it happens to walk into, and the cost is invisible until the merge button.
 This computes the graph instead of guessing it. Conflicts come from
 `git merge-tree --write-tree`, which performs a real merge in memory — not a
 filename-overlap heuristic, which over-reports (two PRs appending to different
-sections of one file merge cleanly) and would hide nothing useful.
+sections of one file merge cleanly) and would hide nothing useful. Always
+against `main` as the merge base, never the pair's own: the merge being
+predicted is the one onto `main`, and two heads that share a lineage past it
+share a tree that already holds whatever they contest.
 
 Output is a set of waves. A wave is a set of PRs that are mutually clean: land
 them in any order, no rebase between them. Only crossing a wave boundary costs
-a rebase, so N waves means N-1 rebase rounds for the whole queue.
+a rebase, so N waves means the queue lands in N-1 rebase *rounds*.
+
+A round is not a unit of work, and reporting only the round count prices the
+queue as if it were. Every PR in a wave after the first is in it because it
+conflicts with something earlier, so each one is a branch a human rebases by
+hand: a boundary costs one rebase per PR that has to cross it, not one rebase.
+Splitting 29 PRs into 1 + 28 is "one round" and 28 rebases; splitting them
+19/6/3/1 is "three rounds" and ten. Minimising the boundary count is therefore
+the wrong objective, and `waves` does not pursue it — it places the
+highest-degree PR earliest precisely to keep PRs *out* of later waves, which is
+the per-PR cost. The headline reports both numbers so the one being optimised is
+the one the operator reads.
 
 A rebase round is not the bill, though, and the ordering below is only worth
 what the bill varies by. So the report opens with the other measurement: fold
@@ -28,9 +42,9 @@ A rebase is the cheap case, and not every boundary is one. When a PR in an
 earlier wave *restructures* a file that a later one edits — a split into
 `reference/*.md`, a rule hoisted into a shared contract — the later PR's hunks
 do not merely move, they lose their anchors: the lines they patch are no longer
-in that file. Git reports the conflict in the shared path anyway, and the file
-intersection reported below names that same path, so both point at the one file
-the change must not be applied to. The destination lives only on the
+in that file. Git reports the conflict in the restructured path anyway, and the
+report below names that same path, so both point at the one file the change must
+not be applied to. The destination lives only on the
 restructurer's side of the diff. Each conflicting pair is therefore classified,
 and a relocated one is named as what it is — and then *ordered around*, because
 it is the one edge whose two directions do not cost the same. Landing the
@@ -40,6 +54,16 @@ already did on purpose. Degree-first would pick the expensive direction every
 time — the restructurer collides with the most PRs, so it sorts to the front —
 so a relocation is a precedence constraint on the waves, not merely a warning
 printed under them.
+
+And not every conflict is an ordering question at all. Two heads that change
+*exactly* the same files and still conflict are successive drafts of one change:
+neither leaves a path at `main`'s version for the other to rebase into, so the
+second to land has no hunk left to move and a rebase would re-apply a draft over
+its own successor. Git ancestry catches this only when the later work extended
+the earlier one; re-author it instead and the two share no commit, so the pair
+reads as an ordinary collision. What the operator owes there is a decision —
+which authoring `main` keeps — and closing the other removes the edge, which no
+ordering does.
 
 Not every ordering constraint is a conflict, and the ones that are not are the
 ones no tool here could see. A PR whose prose links a file another PR adds
@@ -98,8 +122,33 @@ each one. It renders no judgement — the fold is prose, and a script has no
 opinion about prose. It puts the whole fold on one screen, which is the only form
 in which a human has one.
 
+Every claim above is about the queue, and the queue is an input this file reads
+from two places that can disagree: the open list comes from the API, every tree
+comes from `origin/<head>`. Nothing downstream can tell a stale or absent ref
+from a real answer — `merge-tree` returns the same status for an unknown ref as
+for a conflict — so the whole report is as good as that one collection step and
+no better. `unreportable` is where it refuses.
+
+That collection step reads the API's *open list*, so the queue it builds is not
+the set of changes waiting on `main` — it is the subset of them someone opened a
+PR for. A branch pushed to `origin` and never opened is in the same state as
+every PR here and in none of the output: no wave, no round, no pair. It is also
+the only position no ordering helps, because it does not land at all.
+`unopened` names those branches and the commits that exist nowhere else.
+
+One claim here is not about the queue at all, and it is the one every per-PR
+verdict rests on: that CI asks each PR the questions this report declines to
+re-ask. A `pull_request` run is evaluated at the merge of the head into its
+base, so the gates a PR is judged by are the gates **`main`** has — not the ones
+the queue holds. In a queue where every gate arrives on its own branch, `main`
+can hold none, and then the deferral points at a run that never happened: no
+red, no pending, nothing on the PR to notice. `unasked` measures it instead of
+asserting it, because the remedy is the thing this report exists to recommend —
+land the round, and the sentence becomes true.
+
 Usage: python3 scripts/pr_landing_order.py [--limit N] [--verify] [--contracts]
-Exit 0 always — this is an operator report, not a gate.
+Exit 0 on any queue it could read — this is an operator report, not a gate. Exit
+1 only when it could not read one, which is not a verdict about the queue.
 """
 
 import argparse
@@ -120,13 +169,130 @@ def run(*args):
     return subprocess.run(args, capture_output=True, text=True, check=True).stdout
 
 
+def unreportable(prs, limit):
+    """Why this queue cannot be reported on, or None.
+
+    Two ways the input set is wrong while every line below still prints.
+
+    A head this clone has never seen is not a merge conflict, but
+    `git merge-tree --write-tree` exits 1 for an unknown ref exactly as it does
+    for a conflicted merge — `merge-tree: <ref> - not something we can merge`,
+    status 1, and `conflicts()` reads status only. So an unfetched PR is
+    recorded as colliding with *every* other PR, which files it in a terminal
+    wave of its own and keeps it out of every round `--verify` certifies. The
+    conflict graph is invented and nothing says so. `open_prs` fetches first,
+    which is what makes the API's queue and these trees one moment; what
+    survives a fetch is a head not on `origin` — a fork, a deleted branch — and
+    that is named rather than merged.
+
+    And `gh` truncates at `--limit` in silence. A queue cut short still prints
+    waves, `N-1 rebase rounds for the whole queue`, and a verified-green round,
+    each a claim about a subset presented as the queue — and the PRs it drops
+    are the oldest, which are the ones landing next. `len(prs) == limit` is the
+    only signal the API offers, so an exactly-full page is read as truncated:
+    the safe direction, since the remedy is one flag.
+    """
+    if len(prs) == limit:
+        return (f"--limit {limit} returned exactly {limit} open PRs — the page is "
+                f"full, so the queue is probably longer than this and every wave, "
+                f"rebase count and verified round below would describe a subset. "
+                f"Re-run with --limit {limit * 2}.")
+    unknown = [f"#{n} ({ref})" for n, ref, *_ in prs
+               if subprocess.run(["git", "rev-parse", "--verify", f"origin/{ref}"],
+                                 capture_output=True).returncode]
+    if unknown:
+        return ("no `origin` ref for " + ", ".join(unknown) + " — a fork or a "
+                "deleted head. `merge-tree` reads an unknown ref as a conflict, "
+                "so these would be reported as colliding with the whole queue.")
+    return None
+
+
 def open_prs(limit):
-    """[(number, headRefName, title, {files})] for the open queue, oldest first."""
+    """[(number, headRefName, title, {files}, {checks})] — open queue, oldest first.
+
+    Fetches first: the queue is read from the API and every tree below from
+    `origin/<head>`, and nothing else makes those the same moment. A failed
+    fetch raises rather than falling back to whatever this clone last saw —
+    see `unreportable` for what a stale or missing ref does to the graph.
+
+    `checks` is what CI actually ran, by name, and it comes from the API rather
+    than from the workflow files because the question is not which workflows
+    exist — see `unasked`.
+    """
+    run("git", "fetch", "--quiet", "origin")
     raw = run("gh", "pr", "list", "--state", "open", "--limit", str(limit),
-              "--json", "number,headRefName,title,files")
+              "--json", "number,headRefName,title,files,statusCheckRollup")
     prs = [(p["number"], p["headRefName"], p["title"],
-            {f["path"] for f in p["files"]}) for p in json.loads(raw)]
-    return sorted(prs)
+            {f["path"] for f in p["files"]},
+            {c.get("name") or c.get("context", "?")
+             for c in p["statusCheckRollup"] or ()})
+           for p in json.loads(raw)]
+    prs = sorted(prs)
+    if why := unreportable(prs, limit):
+        sys.exit(why)
+    return prs
+
+
+def ruled_on(branch):
+    """True when `branch` has ever had a PR — open, merged or closed."""
+    return bool(json.loads(run("gh", "pr", "list", "--head", branch,
+                               "--state", "all", "--json", "number")))
+
+
+def unopened(prs, ruled=ruled_on):
+    """[(branch, [subjects])] — `origin` branches no open PR will land.
+
+    `unreportable` guards the queue against a PR with no ref. This is the
+    mirror: a ref with no PR. A branch pushed to `origin` and never opened is a
+    change in exactly the state every line below is about — cut from `main`, not
+    landed, editing the files the queue edits — and it appears in no wave, no
+    round, no fold and no conflicting pair, because the queue is read from the
+    API's open list and that list is the one place it is absent. Nothing errors.
+    The report is simply about a smaller queue than the repository holds, and
+    `N-1 rebase rounds for the whole queue` is a claim about the whole of a
+    subset.
+
+    It is also the one position here that no ordering and no rebase improves. A
+    PR in a later wave lands late; a branch with no PR does not land, and its
+    cost grows with the queue rather than with its own content: every head
+    opened after it edits the files it was cut to change, so the work it carries
+    is re-found and re-authored rather than merged, and the authoring that
+    reaches `main` is whichever one someone remembered to open.
+
+    The test is reachability, not age. A branch whose every commit is reachable
+    from `main` or from an open head has already been landed or superseded, and
+    is stale rather than pending; what survives it is a diff that exists nowhere
+    else in the repository. Reachability is also why this runs before the API is
+    asked anything: it is local, it cuts the field to a handful, and each
+    survivor can then be checked exactly — `--head <branch> --state all`, which
+    has no page to truncate. A branch whose PR was *closed* is excluded by that
+    check and not reported, because a closed PR is a ruling. Listing a declined
+    change as forgotten work is how a section like this earns the habit of being
+    scrolled past.
+
+    Reachability's one blind spot is the same one `stacked` has, from the same
+    cause: a re-authoring shares no commit with its original. Lift a forgotten
+    branch's fix onto an open head and the branch keeps being reported, because
+    the commit that carries it is a different one. `patch-id` is the obvious
+    answer and does not work — the lift that prompts this is a cherry-pick with
+    a conflict, so the hunk lands with different context and hashes to something
+    else. The row that survives is therefore not a false positive to suppress
+    but the last thing holding a ref nobody will merge: the operator deletes it,
+    and until they do, a branch whose content has landed is reported in the one
+    way that costs an extra line rather than a lost fix.
+    """
+    landed = ["main", *(f"origin/{ref}" for _, ref, *_ in prs)]
+    out = []
+    for ref in run("git", "for-each-ref", "--format=%(refname:short)",
+                   "refs/remotes/origin").split():
+        if ref in ("origin", "origin/main") or ref in landed:
+            continue
+        carried = run("git", "log", "--no-merges", "--format=%s",
+                      ref, "--not", *landed).splitlines()
+        branch = ref.split("/", 1)[1]
+        if carried and not ruled(branch):
+            out.append((branch, carried))
+    return out
 
 
 def stacked(prs):
@@ -152,8 +318,8 @@ def stacked(prs):
             capture_output=True).returncode == 0
 
     out = {}
-    for a, ref_a, _, _ in prs:
-        for b, ref_b, _, _ in prs:
+    for a, ref_a, *_ in prs:
+        for b, ref_b, *_ in prs:
             if a == b or not ancestor(ref_a, ref_b):
                 continue
             if a < b and ancestor(ref_b, ref_a):
@@ -177,18 +343,152 @@ def rounds(order, refs):
     return out
 
 
-def conflicts(prs):
-    """{frozenset({a, b}): sorted(shared files)} for pairs that do not merge."""
+def rebases(order):
+    """Branches a human rebases by hand to land `order`.
+
+    The round count measures boundaries; this measures the PRs that have to
+    cross one. A PR sits in a wave after the first only because it conflicts
+    with something earlier, so every one of them is a rebase — and the two
+    numbers diverge without bound: 1 + 28 is one round and 28 rebases.
+    """
+    return sum(len(wave) for wave in order[1:])
+
+
+def conflicts(base, prs):
+    """{frozenset({a, b}): [conflicted paths]} for pairs that do not merge.
+
+    The paths come from `merge-tree --name-only`, not from intersecting the two
+    diffs. A pair's changed-file sets overlap far more widely than the merge
+    fails: every PR here bumps the same two version manifests to the same
+    string, so those two paths sit in 24 of this queue's 25 intersections and
+    conflict in none of them — git takes an identical edit from both sides
+    without asking. Printing the intersection sends the resolver to 96 files to
+    resolve 29, and the noise is not evenly spread: one pair's intersection
+    lists four role files where a single one disagrees, with the real one third
+    in the list. The question this report exists to answer is which file a
+    human has to open, and only the merge knows that.
+
+    An intersection is still the fallback when the command fails with no paths
+    to name, which is a git error rather than a conflict. `unreportable` turns
+    the one reachable cause away first; this keeps the older, wider answer for
+    anything that gets past it rather than reporting a clean merge.
+
+    Measured against `base`, explicitly, because the merge the operator is
+    going to perform is onto `main` and no other tree. Left to itself
+    `merge-tree` infers the pair's own merge base, which is `main` only for
+    branches that share nothing else — and in a queue where each session
+    builds on the last, two heads routinely share a lineage well past it. That
+    shared tip already holds the content the pair contests, so the merge git
+    answers about is a no-op and the conflict is simply not there.
+
+    One such pair is enough to empty the second half of this report. Its two
+    members look independent, so `waves` seats them together; the fold that
+    assembles the wave does pin `base`, refuses one of them, and every round
+    the run would have verified becomes unassemblable. The relation the waves
+    are built from has to be the relation the fold enforces.
+
+    Neither is it caught upstream: `stacked` drops a head whose whole diff
+    another contains, and these two diverged after the tip they share, so each
+    holds commits the other does not and both stay in the plan.
+    """
     found = {}
-    for i, (a, ref_a, _, files_a) in enumerate(prs):
-        for b, ref_b, _, files_b in prs[i + 1:]:
+    for i, (a, ref_a, _, files_a, *_) in enumerate(prs):
+        for b, ref_b, _, files_b, *_ in prs[i + 1:]:
             merged = subprocess.run(
-                ["git", "merge-tree", "--write-tree",
-                 f"origin/{ref_a}", f"origin/{ref_b}"],
+                ["git", "merge-tree", "--write-tree", "--name-only",
+                 "--merge-base", base, f"origin/{ref_a}", f"origin/{ref_b}"],
                 capture_output=True, text=True)
             if merged.returncode != 0:
-                found[frozenset((a, b))] = sorted(files_a & files_b)
+                # <tree oid>\n<conflicted path>*\n\n<informational messages>
+                named = merged.stdout.split("\n\n")[0].splitlines()[1:]
+                found[frozenset((a, b))] = named or sorted(files_a & files_b)
     return found
+
+
+def siblings(base, refs, edges):
+    """Edge pairs whose conflict is shared history, not contested content.
+
+    Returns {frozenset({a, b}): the commit the pair actually branches from}.
+
+    `conflicts` pins `--merge-base base` on purpose and has to: the fold that
+    assembles a wave pins it too, so the relation the waves are built from must
+    be the one the fold enforces. For two heads that diverged well past `main`
+    that pinning reports an add/add over every path their shared trunk created —
+    a conflict their real merge does not have. As an ordering input the
+    over-count is safe: a wave boundary where none was needed costs a rebase
+    round nobody has to run.
+
+    It is not safe for `competing`, which reads that same edge plus equal file
+    sets as "successive drafts of one change" and emits *close the other*. A
+    shared trunk guarantees equal file sets — each side carries every path the
+    trunk touched, whatever it went on to do — so the rivalry signature fires on
+    sibling heads for the very reason their conflict is false, and closing either
+    one deletes the commits it alone holds. The two readings disagree about
+    something answerable, so ask it: does the pair merge at its own base?
+
+    Over this queue's 25 edges exactly one pair has a merge base past `main`
+    (#6 and #50, thirteen commits of shared trunk), it merges clean there, and
+    it is the only pair `competing` names.
+    """
+    at = run("git", "rev-parse", base).strip()
+    out = {}
+    for pair in edges:
+        a, b = sorted(pair)
+        heads = [f"origin/{refs[a]}", f"origin/{refs[b]}"]
+        found = subprocess.run(["git", "merge-base", *heads],
+                               capture_output=True, text=True)
+        tip = found.stdout.strip()
+        # No merge base at all (unrelated histories) is not a shared trunk.
+        if found.returncode != 0 or not tip or tip == at:
+            continue
+        if subprocess.run(["git", "merge-tree", "--write-tree",
+                           "--merge-base", tip, *heads],
+                          capture_output=True).returncode == 0:
+            out[pair] = tip
+    return out
+
+
+def competing(files, edges, kin=()):
+    """Conflicting pairs that change *exactly* the same files — rival authorings.
+
+    `stacked` catches the case where one head's history is inside another's.
+    That is the cheap half of supersession. The other half is a head that was
+    re-authored rather than extended: the later work keeps the same file set,
+    rewrites the same lines, and shares no commit with the draft it replaces.
+    Ancestry sees nothing, so both stay in the graph as an ordinary conflict.
+
+    They are not an ordinary conflict, and the difference is an instruction.
+    A conflict between two changes means each has a hunk the other's tree does
+    not account for, and the second to land rebases those hunks. Here neither
+    PR touches a path the other leaves at `base`: whichever lands second has no
+    file left to rebase *into* — every one of them has already been rewritten
+    by the first. So the resolution is not a rebase, it is a choice of which
+    authoring `main` keeps, and closing the one not kept removes the edge
+    outright. A rebase cannot: it would re-apply a draft over its own successor.
+
+    Equal file sets are the whole test, and they are a narrow one by design.
+    Nesting is not enough — a PR that edits two of another's twelve paths is
+    routinely an unrelated change that happens to collide. Equality says the
+    two diffs were cut around the same unit of work, and a conflict says they
+    disagree about its content.
+
+    Narrow is not sufficient. Equality was claimed to fire "only on heads that
+    are literally successive drafts of one checker", and over this queue it
+    fires on one pair that is not: two sessions that branched from a common tip
+    and extended it in different directions. A shared trunk produces both halves
+    of the signature by itself — the same file set on each side, and an add/add
+    against `main` over every one of those files — so the test cannot tell a
+    re-authoring from a sibling, and the instruction it emits is destructive in
+    the wrong direction. `kin` is `siblings`, the pairs that merge at their own
+    base; they are an ordering question and never a close.
+
+    No ordering is emitted for what survives. Both directions cost the same —
+    nothing — because only one of the two is meant to land, and which one is the
+    operator's call: the newer head carries the later audits, the older carries
+    the review history. Naming the pair is the report's job; picking is not.
+    """
+    return {pair for pair in edges
+            if files[min(pair)] == files[max(pair)] and pair not in kin}
 
 
 def anchors(base, ref, path, minimum=30):
@@ -254,10 +554,10 @@ def relocations(base, prs, edges):
     resolution *goes*. When one PR of a pair restructures a file — splitting
     prose into new ones, as a progressive-disclosure refactor does — the other's
     hunks lose their anchors: the lines they patch are no longer in the shared
-    file at all. Git still reports the conflict there, and the intersection this
-    report prints names that same file, so both send the resolver to the one
-    place the change must not be applied. The destination only ever appears on
-    the restructurer's side of the diff, never in the intersection.
+    file at all. Git still reports the conflict there, and the path this report
+    prints is that same file, so both send the resolver to the one place the
+    change must not be applied. The destination only ever appears on the
+    restructurer's side of the diff, never among the conflicted paths.
 
     The distinction is the operator's cost, not a detail: a same-file conflict
     is a rebase either way round, and a relocated one is a hand re-authoring in
@@ -266,7 +566,7 @@ def relocations(base, prs, edges):
     keys are therefore read as precedence pairs by `waves`, which is the whole
     reason to classify the edge rather than just report it.
     """
-    refs = {n: f"origin/{ref}" for n, ref, _, _ in prs}
+    refs = {n: f"origin/{ref}" for n, ref, *_ in prs}
     out = {}
     for pair, shared in edges.items():
         a, b = sorted(pair)
@@ -315,7 +615,7 @@ def dangling(prs):
     that would be a defect in a role is the intended state in a template.
     Requiring a provider separates the two without naming either.
     """
-    heads = {n: f"origin/{ref}" for n, ref, _, _ in prs}
+    heads = {n: f"origin/{ref}" for n, ref, *_ in prs}
 
     def blob(ref, path):
         found = subprocess.run(["git", "show", f"{ref}:{path}"],
@@ -323,7 +623,7 @@ def dangling(prs):
         return found.stdout if found.returncode == 0 else None
 
     out = {}
-    for number, _, _, paths in prs:
+    for number, _, _, paths, *_ in prs:
         for path in sorted(p for p in paths if p.endswith(".md")):
             text = blob(heads[number], path)
             if text is None:  # the PR deletes it — nothing left to resolve
@@ -331,7 +631,7 @@ def dangling(prs):
             for target in links(path, text):
                 if blob(heads[number], target) is not None:
                     continue
-                for other, _, _, _ in prs:
+                for other, *_ in prs:
                     if other != number and blob(heads[other], target) is not None:
                         out.setdefault((other, number), {}).setdefault(
                             path, []).append(target)
@@ -604,10 +904,15 @@ def verify(base, refs):
              + (", ".join(f"#{n}" for n in joined) or "(none)")]
     if refused:
         held = set(refused)
+        # Not "conflict with an earlier round": that is the usual cause and the
+        # caller's `unverifiable` already says it, but round 1 has no earlier
+        # round, and a fold can refuse there too — pairwise clean is a weaker
+        # property than folds. Naming a cause this function cannot observe
+        # sends the operator to rebase onto a round that may not exist.
         lines = ["not assembled — "
                  + ", ".join(f"#{n}" for n in refused)
-                 + " conflict with an earlier round, which is why they are in "
-                   "this one; their rebased content does not exist yet",
+                 + " do not fold into the rest of this round; their resolved "
+                   "content does not exist yet",
                  "  what each one will owe once the round below lands:"]
         for number, paths in scope(
                 base, commit, [r for r in refs if r[0] in held]).items():
@@ -647,20 +952,172 @@ def unverifiable(round_number):
 def introduced(base, commit):
     """Gate names in `commit` that `base` does not have.
 
-    A gate already on `main` has judged every open branch — CI ran it on each
-    push. One arriving in this round has judged nothing but the branch that
+    A gate already on `main` has judged every open branch, because a
+    `pull_request` run is evaluated at the merge of the head into its base — so
+    `main`'s gate set is the one every PR answers to, whatever its own head
+    carries. `unasked` is where that holds or does not. One arriving in this
+    round has judged nothing but the branch that
     wrote it, and `--verify` does not close that gap: it asks each gate once,
     about the union. For a gate whose subject is a *tree* that is the right
     question. For one whose subject is a *diff* it is a question nobody will
     ever be asked — `check_version_bump.py` reads the union as a single change,
     so one member's version bump answers for the round's entire content.
     """
-    def gates(ref):
-        listed = run("git", "ls-tree", "-r", "--name-only", ref, "scripts/")
-        return {name for name in (Path(p).name for p in listed.splitlines())
-                if name.startswith("check_") and name.endswith(".py")}
+    return sorted(gates_in(commit) - gates_in(base))
 
-    return sorted(gates(commit) - gates(base))
+
+def gates_in(ref):
+    """Gate filenames in `ref`'s `scripts/` tree."""
+    listed = run("git", "ls-tree", "-r", "--name-only", ref, "scripts/")
+    return {name for name in (Path(p).name for p in listed.splitlines())
+            if name.startswith("check_") and name.endswith(".py")}
+
+
+def unasked(prs):
+    """Numbers whose CI ran nothing at all, in queue order.
+
+    `introduced` and `per_member` both stop at "CI asks each of them
+    separately", and the fold verdict is only honest because that sentence is
+    true. It is a claim about the *base branch*: a `pull_request` run is
+    evaluated at the merge of the head into its base, so a PR is judged by the
+    gates `main` has. When `main` has none — which is exactly the queue this
+    report is written for, every gate still on its own branch — the deferral
+    names a run that did not happen.
+
+    Zero is the only state worth naming. A red or pending check is a verdict
+    already on the PR, where the operator will see it; an absent one is the
+    question going unasked, and nothing distinguishes that from a pass. It is
+    read from the API rather than from the workflow files on each head because
+    those answer which workflows *exist*, and a workflow can exist and still
+    not run — wrong event, a path filter, a cancelled run.
+    """
+    return [n for n, _, _, _, checks in prs if not checks]
+
+
+def carried(base, refs, gates):
+    """Split `refs` into (the ones bringing a gate, the ones a gate can judge).
+
+    A gate cannot judge the PR that brings it: the gate is only present once
+    that PR lands, so its subject tree contains itself. Membership is decided by
+    whether the ref adds or edits a file named in `gates` — not by whether it
+    touches `scripts/` or `.github/workflows/`, which hold plenty no gate reads
+    (a report generator, a docs job, a gate's own tests). Folding by path swept
+    those in and printed the fold's colour against each of their numbers.
+    """
+    carriers, judged = [], []
+    for number, ref in refs:
+        changed = run("git", "diff", "--name-only", base,
+                      f"origin/{ref}").splitlines()
+        bucket = carriers if any(
+            Path(f).name in gates for f in changed) else judged
+        bucket.append((number, ref))
+    return carriers, judged
+
+
+def deferred(base, prs):
+    """The verdict the unasked run would print, measured rather than promised.
+
+    `unasked` establishes that a queue whose every gate is still on its own
+    branch defers each per-PR verdict to a run that did not happen. That is
+    where the report used to stop, on the assurance that *nothing on these PRs
+    needs fixing first*. Nothing measured it. The assurance is a claim about
+    every head in the queue, made from the one fact that none of them has a
+    check — which is the absence of the evidence, not evidence of absence, and
+    it reads as a pass.
+
+    It is also wrong about this queue, and the gates that prove it are already
+    in it. Each lives on the branch that wrote it, so each has only ever run
+    against its own author, and a checker pointed only at the work it was
+    written from can only confirm that work. Pointing every gate at every head
+    is one `run_checkers` call per head once the trees exist.
+
+    The tree each head is judged in is the queue's CI folded onto `base` plus
+    that one head — what `refs/pull/N/merge` becomes the moment the gates are on
+    `main`, and the verdict CI will actually print. Not narrowed to the gates a
+    round introduces: this answers a question about a tree, and a subset re-run
+    can only move the answer toward green.
+
+    A carrier the fold refuses is not a reason to print nothing, and it is not
+    free either. Which gates the landing ends up holding depends on which
+    carriers survived, so the refusal has to be priced — and by what the gate
+    *does*, never by whether a file of that name is present. Two carriers that
+    conflict are usually rival authorings of one gate, and the whole point of
+    one of this queue's rivalries is that it changes a finding's severity: the
+    older `check_plugins.py` prints the load ceiling as a warning and exits 0,
+    the newer makes it an error. Fold them in the order that keeps the older and
+    every head over the ceiling is green; keep the newer and four are red. A
+    report that checked `gates_in(landing)` for the filename called that "every
+    gate is still present" and printed the lenient verdict as the verdict.
+
+    So each refusal gets its own landing, folded with the refused carrier first
+    so the conflict resolves the other way, and every head is judged under all
+    of them. A head whose colour is the same either way is reported once. A head
+    whose colour depends on the resolution is reported as that: the operator is
+    already being asked to decide which authoring `main` keeps, and this is what
+    the decision costs in red PRs — which is the only form of the question that
+    can be answered with evidence rather than taste.
+    """
+    refs = [(n, ref) for n, ref, *_ in prs]
+    gates = sorted({g for _, ref in refs for g in gates_in(f"origin/{ref}")}
+                   - gates_in(base))
+    if not gates:
+        return []
+    carriers, judged = carried(base, refs, gates)
+    landing, folded, refused = union_tree(base, carriers)
+    landings = [(f"#{', #'.join(str(n) for n in folded)}", landing)]
+    for number in refused:
+        alt, kept, _ = union_tree(base, [(n, r) for n, r in carriers
+                                         if n == number]
+                                  + [(n, r) for n, r in carriers
+                                     if n != number])
+        landings.append((f"#{', #'.join(str(n) for n in kept)}", alt))
+
+    lines = [f"  gates the queue carries: {', '.join(gates)}"]
+    if missing := sorted(set(gates) - set().union(
+            *(gates_in(c) for _, c in landings))):
+        lines.append(f"  no carrier that assembles brings {', '.join(missing)} "
+                     f"— no verdict below was asked by those")
+    if len(landings) > 1:
+        lines.append(f"  {', '.join(f'#{n}' for n in refused)} conflict with the "
+                     f"fold, so the landing has more than one resolution and a "
+                     f"gate of the same name can judge differently in each; "
+                     f"each head below is asked under all "
+                     f"{len(landings)}: " + " | ".join(l for l, _ in landings))
+
+    for number, ref in judged:
+        verdicts = {}
+        for label, start in landings:
+            commit, _, denied = union_tree(base, [(number, ref)], start=start)
+            if denied:
+                verdicts[label] = (None, [])
+                continue
+            results = run_checkers(commit)
+            verdicts[label] = (
+                sorted(name for name, (code, _) in results.items() if code),
+                results)
+        if all(red == [] for red, _ in verdicts.values()):
+            continue
+        if len({tuple(red or ()) for red, _ in verdicts.values()}) == 1:
+            red, results = next(iter(verdicts.values()))
+            if red is None:
+                lines.append(f"  #{number:<5} conflicts with the queue's CI "
+                             f"— not judgeable until it rebases")
+                continue
+            lines.append(f"  #{number:<5} RED  {', '.join(red)}")
+            lines += [f"      {ln}" for name in red for ln in results[name][1]]
+            continue
+        lines.append(f"  #{number:<5} its colour depends on which resolution "
+                     f"`main` keeps:")
+        for label, (red, results) in verdicts.items():
+            if red is None:
+                lines.append(f"      under {label}: not judgeable")
+            elif red:
+                lines.append(f"      under {label}: RED  {', '.join(red)}")
+                lines += [f"        {ln}" for name in red
+                          for ln in results[name][1]]
+            else:
+                lines.append(f"      under {label}: green")
+    return lines
 
 
 def per_member(base, refs, gates):
@@ -690,14 +1147,7 @@ def per_member(base, refs, gates):
     a gate whose remedy is one shared location: the second member to land finds
     the first has already spent it.
     """
-    carriers, judged = [], []
-    for number, ref in refs:
-        changed = run("git", "diff", "--name-only", base,
-                      f"origin/{ref}").splitlines()
-        bucket = carriers if any(
-            Path(f).name in gates for f in changed) else judged
-        bucket.append((number, ref))
-
+    carriers, judged = carried(base, refs, gates)
     landing, folded, refused = union_tree(base, carriers)
     if refused:
         return ["  the round's tooling does not assemble — "
@@ -726,8 +1176,9 @@ def per_member(base, refs, gates):
         if label == fold:
             lines.append("      one verdict about one tree, and it is not any "
                          "of theirs: a gate cannot judge the PR that brings it. "
-                         "CI asks each of them separately, against a `main` "
-                         "that holds the others.")
+                         "Each is asked separately only once the others are on "
+                         "`main` — a `pull_request` run reads the base's gates, "
+                         "and this round is what puts them there.")
     return lines
 
 
@@ -815,6 +1266,16 @@ def clearing(base, landed, remaining, failing, edges, refs):
     it is a landing-order fact, and the only alternative wording this has is
     "a defect in the assembled tree", which would be false.
 
+    The trim runs in the other direction too, and the baseline is one baseline.
+    A blocker can be the *provider* a gate wants, not the cause of its red: take
+    it out and a gate green in the round is red in the tree the candidate was
+    tested in, with the candidate again merely standing there. Measured against
+    the round, that reads back as "it also turns X red — the move trades one
+    failure for another", which is an instruction to decline a move that fixed
+    what it claimed to. Credit and blame are the same comparison and must use the
+    same tree: green in the trimmed round, red once the candidate joins it.
+    Unblocked, nothing was removed and the trimmed round is the round.
+
     Every gate is re-run, not only the failing ones. `only=failing` is the right
     narrowing for `per_member`, which asks about one gate on purpose; here the
     output is an *instruction* — "move it here" — and that is a claim about the
@@ -839,10 +1300,6 @@ def clearing(base, landed, remaining, failing, edges, refs):
         if refused:
             continue
         results = run_checkers(commit)
-        # Green in the round, red once this candidate joins it. A gate missing
-        # from the fold counts as unresolved, not as cleared.
-        broke = sorted(name for name, (code, _) in results.items()
-                       if code and name not in failing)
         key = tuple(blocked)
         if key and key not in trims:
             kept, _, denied = union_tree(base, trimmed)
@@ -850,8 +1307,15 @@ def clearing(base, landed, remaining, failing, edges, refs):
                 name for name, (code, _) in run_checkers(kept).items() if code}
             for name in set(failing) - trims[key]:
                 removal.setdefault(name, set()).update(blocked)
+        # One baseline, both directions: the tree the candidate actually joined.
+        # Unblocked, nothing was removed and that tree is the round itself.
+        baseline = trims.get(key, failing)
+        # Green in the baseline, red once this candidate joins it. A gate missing
+        # from the fold counts as unresolved, not as cleared.
+        broke = sorted(name for name, (code, _) in results.items()
+                       if code and name not in baseline)
         for name in failing:
-            if name not in trims.get(key, failing):
+            if name not in baseline:
                 continue
             if results.get(name, (1, []))[0] == 0:
                 cleared[name].append((number, blocked, broke))
@@ -896,21 +1360,24 @@ def main():
     if not prs:
         print("no open PRs")
         return 0
-    titles = {n: t for n, _, t, _ in prs}
-    refs = {n: ref for n, ref, _, _ in prs}
-    files = {n: paths for n, _, _, paths in prs}
+    titles = {n: t for n, _, t, _, _ in prs}
+    refs = {n: ref for n, ref, *_ in prs}
+    files = {n: paths for n, _, _, paths, _ in prs}
     contained = stacked(prs)
     if contained:
         prs = [pr for pr in prs if pr[0] not in contained]
     base = run("git", "rev-parse", "main").strip()
-    edges = conflicts(prs)
+    edges = conflicts(base, prs)
+    kin = siblings(base, refs, edges)
+    rival = competing(files, edges, kin)
     relocated = relocations(base, prs, edges) if edges else {}
     unresolved = dangling(prs)
-    order = waves([n for n, _, _, _ in prs], edges,
+    order = waves([n for n, *_ in prs], edges,
                   list(relocated) + list(unresolved))
 
     print(f"{len(prs)} open PRs, {len(edges)} conflicting pairs, "
-          f"{len(order)} waves ({max(len(order) - 1, 0)} rebase rounds)\n")
+          f"{len(order)} waves over {max(len(order) - 1, 0)} rebase rounds, "
+          f"{rebases(order)} branches to rebase\n")
     if edges:
         band = fold_cost(base, [(n, refs[n]) for n in sorted(refs)])
         print(f"Hand resolutions to fold the whole queue: "
@@ -933,19 +1400,83 @@ def main():
                   "contended value computed at merge, not written on every "
                   "branch.")
         print()
+    if pending := unopened(prs):
+        carried = sum(len(subjects) for _, subjects in pending)
+        print(f"{len(pending)} branch(es) on `origin` carry {carried} commit(s) "
+              f"that no open PR lands, and no wave, round or conflicting pair "
+              f"below counts them — the queue is the API's open list, and these "
+              f"are the one thing missing from it:")
+        for branch, subjects in pending:
+            print(f"  {branch}")
+            for subject in subjects:
+                print(f"    {subject}")
+        print("A PR in a later wave lands late; a branch without one does not "
+              "land. Every head opened after it edits the files it was cut to "
+              "change, so what it carries gets re-found and re-authored instead "
+              "of merged. Opening a PR is what puts it in the graph below.\n")
+    if blind := unasked(prs):
+        print(f"CI ran no check at all on {len(blind)} of {len(prs)}: "
+              + ", ".join(f"#{n}" for n in blind)
+              + ". A `pull_request` run is evaluated at the merge of the head "
+                "into its base, so a PR is judged by the gates `main` has — "
+                "and `main` holds "
+              + (", ".join(sorted(gates_in(base))) or "none")
+              + ". Every per-PR verdict below is therefore deferred to a run "
+                "that did not happen, which looks exactly like a pass. Landing "
+                "the round that carries the gates is what asks the question.\n")
+        if args.verify:
+            print("What that run would print, asked here instead — every gate "
+                  "the queue carries, against every head it can judge:")
+            for line in deferred(base, prs):
+                print(line)
+            print()
+        else:
+            print("Which of them a gate would redden is not knowable from the "
+                  "absence of a check, and this report will not guess it: "
+                  "`--verify` folds the queue's CI onto `main` and asks each "
+                  "head the question CI has not.\n")
     for small, big in sorted(contained.items()):
         print(f"#{small} is contained in #{big} — landing #{big} closes it; "
               f"not counted above\n")
+    for pair in sorted(rival, key=sorted):
+        a, b = sorted(pair)
+        alone = [n for n in (a, b)
+                 if sum(1 for e in edges if n in e) == 1]
+        print(f"#{a} and #{b} change exactly the same {len(files[a])} file(s) "
+              f"and conflict — rival authorings of one change, not two changes. "
+              f"Neither leaves a path at `main`'s version for the other to "
+              f"rebase into, so the second to land has nothing to move: decide "
+              f"which one `main` keeps and close the other. "
+              + (f"That also removes the only conflict "
+                 + " and ".join(f"#{n}" for n in alone)
+                 + f" {'has' if len(alone) == 1 else 'have'}, "
+                   f"which a rebase would not.\n"
+                 if alone else "A rebase re-applies a draft over its own "
+                               "successor.\n"))
+    for pair, tip in sorted(kin.items(), key=lambda kv: sorted(kv[0])):
+        a, b = sorted(pair)
+        print(f"#{a} and #{b} branch from {run('git', 'rev-parse', '--short', tip).strip()} "
+              f"— {run('git', 'log', '-1', '--format=%s', tip).strip()} — and "
+              f"merge clean there. The conflict below is measured against "
+              f"`main`, which does not have that trunk yet, so it counts the "
+              f"files the trunk created on both sides at once. Nothing is in "
+              f"contention: each holds commits the other does not "
+              f"(#{a}: {len(run('git', 'rev-list', f'{tip}..origin/{refs[a]}').split())}, "
+              f"#{b}: {len(run('git', 'rev-list', f'{tip}..origin/{refs[b]}').split())}), "
+              f"and once either lands the trunk is on `main` and the other "
+              f"applies over it. Land them in either order; close neither. The "
+              f"wave boundary between them below is this report being "
+              f"conservative, not a rebase you owe.\n")
     for i, wave in enumerate(order, 1):
         print(f"Wave {i} — land in any order, no rebase between them:")
         for n in wave:
             print(f"  #{n:<4} {titles[n]}")
         print()
     if edges:
-        print("Conflicting pairs and the files they share:")
+        print("Conflicting pairs and the files the merge actually fails in:")
         for pair, shared in sorted(edges.items(), key=lambda kv: sorted(kv[0])):
             a, b = sorted(pair)
-            print(f"  #{a} <-> #{b}: {', '.join(shared) or '(no shared path)'}")
+            print(f"  #{a} <-> #{b}: {', '.join(shared) or '(no path named)'}")
             for loser, winner in ((a, b), (b, a)):
                 for path, destinations in sorted(
                         relocated.get((loser, winner), {}).items()):
@@ -984,7 +1515,7 @@ def main():
             if failing:
                 landed = {n for n, _ in cumulative}
                 for line in clearing(base, cumulative,
-                                     [n for n, _, _, _ in prs if n not in landed],
+                                     [n for n, *_ in prs if n not in landed],
                                      failing, edges, refs):
                     print(line)
             if refused:
@@ -993,7 +1524,8 @@ def main():
             gates = introduced(base, union_tree(base, cumulative)[0])
             if gates:
                 print("\n  A gate landing with the content it judges has judged "
-                      "none of it — the union answers it once, CI asks per PR:")
+                      "none of it — the union answers it once, and CI will ask "
+                      "per PR only once these are on the base:")
                 for line in per_member(base, cumulative, gates):
                     print(line)
     return 0

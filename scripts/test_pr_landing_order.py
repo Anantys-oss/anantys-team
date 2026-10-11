@@ -2,6 +2,7 @@
 """Fixture tests for pr_landing_order — run: python3 -m unittest discover scripts"""
 
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -357,6 +358,32 @@ class Rounds(unittest.TestCase):
 
     def test_no_waves_is_no_rounds(self):
         self.assertEqual(p.rounds([], self.refs), [])
+
+
+class Rebases(unittest.TestCase):
+    def test_one_wave_rebases_nothing(self):
+        self.assertEqual(p.rebases([[1, 2, 3]]), 0)
+
+    def test_no_waves_rebases_nothing(self):
+        self.assertEqual(p.rebases([]), 0)
+
+    def test_every_pr_after_the_first_wave_is_a_rebase(self):
+        self.assertEqual(p.rebases([[1], [2], [3]]), 2)
+
+    def test_a_round_is_not_a_rebase(self):
+        # One boundary, 28 branches crossing it — the round count says 1.
+        self.assertEqual(p.rebases([[0], list(range(1, 29))]), 28)
+
+    def test_fewer_rounds_can_cost_more_rebases(self):
+        # The pair the headline exists to separate: 3 rounds beats 1 round.
+        three_rounds = [list(range(19)), list(range(19, 25)),
+                        list(range(25, 28)), [28]]
+        one_round = [[0], list(range(1, 29))]
+        self.assertGreater(len(three_rounds), len(one_round))
+        self.assertLess(p.rebases(three_rounds), p.rebases(one_round))
+
+    def test_it_counts_prs_not_waves(self):
+        self.assertEqual(p.rebases([[1, 2], [3, 4, 5]]), 3)
 
 
 class SuiteIsAGate(unittest.TestCase):
@@ -892,7 +919,7 @@ class LinkPrecedence(unittest.TestCase):
     def test_the_pair_that_needs_ordering_has_no_conflict_to_find_it_by(self):
         prs = self.pr((1, "cites", ["docs/role.md"]),
                       (2, "writes", ["docs/why.md"]))
-        self.assertEqual(p.conflicts(prs), {})
+        self.assertEqual(p.conflicts("main", prs), {})
 
     def test_waves_place_the_provider_first(self):
         prs = self.pr((1, "cites", ["docs/role.md"]),
@@ -1242,6 +1269,766 @@ class FoldCost(unittest.TestCase):
         # orders; it must never be read as the tree the operator will land.
         joined = p.union_tree(self.base, self.refs)[1]
         self.assertEqual(len(joined), 1)
+
+
+class TheQueueIsAnInput(unittest.TestCase):
+    """Every wave, round and verdict is a claim about the set collected first.
+
+    Both shapes here are silent downstream: an unknown ref answers `merge-tree`
+    with a conflict's exit status, and a truncated page answers `gh` with a
+    perfectly well-formed queue.
+    """
+
+    def git(self, *args):
+        subprocess.run(("git",) + args, check=True, capture_output=True)
+
+    def setUp(self):
+        self.dir = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.dir)
+        self.addCleanup(os.chdir, os.getcwd())
+        os.chdir(self.dir)
+        self.git("init", "-q", "-b", "main")
+        self.git("config", "user.email", "t@example.com")
+        self.git("config", "user.name", "t")
+        Path("doc.md").write_text("# Doc\n")
+        self.git("add", "doc.md")
+        self.git("commit", "-qm", "base")
+        oid = subprocess.run(["git", "rev-parse", "HEAD"], check=True,
+                             capture_output=True, text=True).stdout.strip()
+        self.git("update-ref", "refs/remotes/origin/here", oid)
+
+    def pr(self, *refs):
+        return [(n, ref, f"pr {n}", set()) for n, ref in enumerate(refs, 1)]
+
+    def test_a_fetched_head_is_reportable(self):
+        self.assertIsNone(p.unreportable(self.pr("here"), 50))
+
+    def test_an_unknown_head_is_refused_by_name(self):
+        why = p.unreportable(self.pr("here", "never-fetched"), 50)
+        self.assertIn("never-fetched", why)
+        self.assertIn("#2", why)
+
+    def test_merge_tree_cannot_tell_an_unknown_ref_from_a_conflict(self):
+        # The reason the refusal above has to exist: `conflicts()` reads exit
+        # status, and git spends status 1 on both answers.
+        unknown = subprocess.run(
+            ["git", "merge-tree", "--write-tree", "origin/here", "origin/nope"],
+            capture_output=True)
+        self.assertEqual(unknown.returncode, 1)
+
+    def test_an_unknown_head_would_otherwise_conflict_with_everything(self):
+        edges = p.conflicts("main", self.pr("here", "never-fetched"))
+        self.assertEqual(edges, {frozenset((1, 2)): []})
+
+    def test_a_full_page_is_read_as_a_truncated_queue(self):
+        why = p.unreportable(self.pr("here", "here"), 2)
+        self.assertIn("--limit 4", why)
+
+    def test_a_short_page_is_the_whole_queue(self):
+        self.assertIsNone(p.unreportable(self.pr("here"), 2))
+
+    def test_truncation_is_reported_before_the_refs_are_read(self):
+        # A truncated page's members are all fetchable, so checking refs first
+        # would report nothing and let the subset through.
+        self.assertIn("--limit", p.unreportable(self.pr("here", "nope"), 2))
+
+
+class TheDeferralIsMeasured(unittest.TestCase):
+    """Every per-PR verdict is handed to CI; this is whether CI took it.
+
+    `introduced` and `per_member` both stop at "CI asks each of them
+    separately". That is a claim about the base branch — a `pull_request` run is
+    evaluated at the merge of the head into its base — and in a queue where
+    every gate is still on its own branch the base can hold none, so the
+    deferral lands on a run that never happened.
+    """
+
+    def pr(self, *checks):
+        return [(n, f"ref{n}", f"pr {n}", set(), set(names))
+                for n, names in enumerate(checks, 1)]
+
+    def test_a_pr_with_no_check_is_named(self):
+        self.assertEqual(p.unasked(self.pr([])), [1])
+
+    def test_a_checked_pr_is_not_named(self):
+        self.assertEqual(p.unasked(self.pr(["gates"])), [])
+
+    def test_only_the_unchecked_ones_are_named(self):
+        self.assertEqual(p.unasked(self.pr([], ["gates"], [])), [1, 3])
+
+    def test_queue_order_is_kept_so_the_report_is_stable(self):
+        queue = self.pr([], [], [])
+        self.assertEqual(p.unasked(queue), [1, 2, 3])
+        self.assertEqual(p.unasked(list(reversed(queue))), [3, 2, 1])
+
+    def test_an_empty_queue_names_nobody(self):
+        self.assertEqual(p.unasked([]), [])
+
+    def test_a_fully_checked_queue_is_falsy_not_empty_string(self):
+        # `main` prints the paragraph on truth, so the clean case has to be a
+        # value the walrus reads as nothing to say.
+        self.assertFalse(p.unasked(self.pr(["gates"], ["gates"])))
+
+
+class ARivalGateIsNotTheSameGate(unittest.TestCase):
+    """`deferred` answers what the unasked run would print. A real repo.
+
+    Two carriers bring `check_load.py` and conflict — rival authorings of one
+    gate, which is the shape this queue actually has. They disagree about
+    severity and nothing else: the older prints the ceiling and exits 0, the
+    newer exits 1. So whichever one the fold happens to keep decides the colour
+    of every head over the ceiling, and a report that confirmed the *filename*
+    was present printed the lenient answer as the answer.
+    """
+
+    LENIENT = ("import pathlib, sys\n"
+               "n = len(pathlib.Path('role.md').read_text().splitlines())\n"
+               "print(f'load {n}')\n"
+               "sys.exit(0)\n")
+    STRICT = ("import pathlib, sys\n"
+              "n = len(pathlib.Path('role.md').read_text().splitlines())\n"
+              "sys.exit('error: load %d over the ceiling' % n if n > 4 else 0)\n")
+
+    def git(self, *args):
+        return subprocess.run(("git",) + args, check=True,
+                              capture_output=True, text=True).stdout
+
+    def branch(self, name, files):
+        self.git("checkout", "-q", "main")
+        self.git("checkout", "-qb", name)
+        for path, text in files.items():
+            Path(path).parent.mkdir(parents=True, exist_ok=True)
+            Path(path).write_text(text)
+        self.git("add", "-A")
+        self.git("commit", "-qm", name)
+        self.git("update-ref", f"refs/remotes/origin/{name}", name)
+        self.git("checkout", "-q", "main")
+
+    def setUp(self):
+        self.dir = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.dir)
+        self.addCleanup(os.chdir, os.getcwd())
+        os.chdir(self.dir)
+        self.git("init", "-q", "-b", "main")
+        self.git("config", "user.email", "t@example.com")
+        self.git("config", "user.name", "t")
+        Path("role.md").write_text("# Role\n\ntop\n")
+        # CI's suite is `unittest discover -s scripts`, and a `scripts/` tree
+        # with nothing to discover exits non-zero — so a fixture without a test
+        # reports every head red on the suite and hides the gate's own verdict.
+        Path("scripts").mkdir()
+        Path("scripts/test_smoke.py").write_text(
+            "import unittest\n"
+            "class T(unittest.TestCase):\n"
+            "    def test_ok(self):\n"
+            "        pass\n")
+        self.git("add", "-A")
+        self.git("commit", "-qm", "base")
+        self.git("update-ref", "refs/remotes/origin/main", "main")
+        self.base = self.git("rev-parse", "main").strip()
+        # Rivals: same path, conflicting content, differing only in severity.
+        self.branch("lenient", {"scripts/check_load.py": self.LENIENT})
+        self.branch("strict", {"scripts/check_load.py": self.STRICT})
+        # One head pushes the load over the strict ceiling, one does not.
+        self.branch("heavy", {"role.md": "# Role\n\ntop\na\nb\nc\nd\n"})
+        self.branch("light", {"role.md": "# Role\n\ntop\na\n"})
+
+    def queue(self, *names):
+        return [(n, name, f"pr {n}", set(), set())
+                for n, name in enumerate(names, 1)]
+
+    def report(self, *names):
+        return "\n".join(p.deferred(self.base, self.queue(*names)))
+
+    def test_a_queue_with_no_gate_has_no_deferred_verdict(self):
+        self.assertEqual(p.deferred(self.base, self.queue("heavy", "light")),
+                         [])
+
+    def test_the_gate_judges_a_head_that_has_no_check_of_its_own(self):
+        out = self.report("strict", "heavy")
+        self.assertIn("RED", out)
+        self.assertIn("check_load.py", out)
+        self.assertIn("over the ceiling", out)
+
+    def test_a_head_under_the_ceiling_is_not_reported(self):
+        self.assertNotIn("#2", self.report("strict", "light"))
+
+    def test_a_gate_never_judges_the_head_that_brings_it(self):
+        # `strict` is the carrier: it is folded into the base, not judged.
+        self.assertNotIn("#1", self.report("strict", "heavy"))
+
+    def test_rival_carriers_are_both_resolved_not_silently_one(self):
+        out = self.report("lenient", "strict", "heavy")
+        self.assertIn("more than one resolution", out)
+        self.assertIn("depends on which resolution", out)
+
+    def test_each_resolution_gets_its_own_verdict(self):
+        out = self.report("lenient", "strict", "heavy")
+        self.assertIn("green", out)
+        self.assertIn("RED  check_load.py", out)
+
+    def test_a_refused_carrier_is_named_once_in_its_own_resolution(self):
+        # The rival is folded first to flip the conflict; it must not also
+        # appear again from the untrimmed carrier list behind it.
+        out = self.report("lenient", "strict", "heavy")
+        labels = [ln for ln in out.splitlines() if "under #" in ln]
+        self.assertTrue(labels)
+        for label in labels:
+            named = re.findall(r"#(\d+)", label)
+            self.assertEqual(len(named), len(set(named)), label)
+
+    def test_the_lenient_gate_alone_reddens_nobody(self):
+        # Not a false negative — with only the lenient authoring in the queue,
+        # green is the honest answer. It is the bug's symptom all the same: the
+        # report used to reach this same output whenever the fold happened to
+        # keep the lenient rival, which is why the rivalry has to be resolved
+        # both ways rather than confirmed by filename.
+        out = self.report("lenient", "heavy")
+        self.assertIn("check_load.py", out)
+        self.assertNotIn("RED", out)
+        self.assertNotIn("resolution", out)
+
+
+class AGateSetIsNotADifference(unittest.TestCase):
+    """`introduced` answers what a round *adds*; the report also needs what
+    the base *has*.
+
+    They coincide at zero, which is the whole point: when `main` carries no
+    gate, every gate in the union is introduced and `introduced(base, base)` is
+    empty — the same empty set for two opposite facts. Asking the difference
+    for the base's own set silently prints "none" for every queue.
+    """
+
+    def git(self, *args):
+        subprocess.run(("git",) + args, check=True, capture_output=True)
+
+    def setUp(self):
+        self.dir = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.dir)
+        self.addCleanup(os.chdir, os.getcwd())
+        os.chdir(self.dir)
+        self.git("init", "-q", "-b", "main")
+        self.git("config", "user.email", "t@example.com")
+        self.git("config", "user.name", "t")
+        Path("doc.md").write_text("# Doc\n")
+        self.git("add", "doc.md")
+        self.git("commit", "-qm", "base")
+        self.base = subprocess.run(["git", "rev-parse", "HEAD"], check=True,
+                                   capture_output=True, text=True).stdout.strip()
+        Path("scripts").mkdir()
+        Path("scripts/check_one.py").write_text("x = 1\n")
+        Path("scripts/test_check_one.py").write_text("x = 1\n")
+        Path("scripts/report.py").write_text("x = 1\n")
+        self.git("add", "scripts")
+        self.git("commit", "-qm", "gates")
+        self.head = subprocess.run(["git", "rev-parse", "HEAD"], check=True,
+                                   capture_output=True, text=True).stdout.strip()
+
+    def test_a_tree_with_no_gates_has_an_empty_set(self):
+        self.assertEqual(p.gates_in(self.base), set())
+
+    def test_it_names_the_gates_and_nothing_else_under_scripts(self):
+        self.assertEqual(p.gates_in(self.head), {"check_one.py"})
+
+    def test_the_difference_cannot_answer_for_the_base(self):
+        self.assertEqual(p.introduced(self.base, self.base), [])
+        self.assertEqual(p.introduced(self.base, self.head), ["check_one.py"])
+        self.assertEqual(p.gates_in(self.head), {"check_one.py"})
+
+
+class TheMergeBaseIsTheLanding(unittest.TestCase):
+    """Two heads that share a lineage past `main`, each editing it further.
+
+    The shape the queue produces constantly: a session branches off the last
+    session's head to keep its work, both stay open, and they diverge. Neither
+    contains the other, so both are in the plan — and their own merge base is
+    the tip they share, which already holds the file they now disagree about.
+    """
+
+    def git(self, *args):
+        subprocess.run(("git",) + args, check=True, capture_output=True)
+
+    def head(self, name):
+        oid = subprocess.run(["git", "rev-parse", "HEAD"], check=True,
+                             capture_output=True, text=True).stdout.strip()
+        self.git("update-ref", f"refs/remotes/origin/{name}", oid)
+
+    def setUp(self):
+        self.dir = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.dir)
+        self.addCleanup(os.chdir, os.getcwd())
+        os.chdir(self.dir)
+        self.git("init", "-q", "-b", "main")
+        self.git("config", "user.email", "t@example.com")
+        self.git("config", "user.name", "t")
+        Path("README.md").write_text("# Base\n")
+        self.git("add", "README.md")
+        self.git("commit", "-qm", "base")
+        self.head("main")
+
+        # `main` has no gate.py at all — both heads add one.
+        self.git("checkout", "-qb", "shared")
+        Path("gate.py").write_text("A\nB\nC\n")
+        self.git("add", "gate.py")
+        self.git("commit", "-qm", "the work both sessions share")
+
+        # `first` carries the shared gate.py and goes on to do its own thing
+        # elsewhere; `second` is the one that edits the gate further. From the
+        # shared tip that is a one-sided change. From `main` they are two
+        # branches adding the same new file with different contents.
+        self.git("checkout", "-qb", "first")
+        Path("notes.md").write_text("first\n")
+        self.git("add", "notes.md")
+        self.git("commit", "-qm", "first")
+        self.head("first")
+
+        self.git("checkout", "-q", "shared")
+        self.git("checkout", "-qb", "second")
+        Path("gate.py").write_text("A\nsecond\nC\n")
+        self.git("commit", "-qam", "second")
+        self.head("second")
+
+        # A third head off the same trunk that edits the same line `second`
+        # does. Shared lineage, and a disagreement its own base can see: the
+        # guard below has to keep this one.
+        self.git("checkout", "-q", "shared")
+        self.git("checkout", "-qb", "third")
+        Path("gate.py").write_text("A\nthird\nC\n")
+        self.git("commit", "-qam", "third")
+        self.head("third")
+        self.git("checkout", "-q", "main")
+
+    def pr(self):
+        return [(1, "first", "pr 1", {"gate.py"}),
+                (2, "second", "pr 2", {"gate.py"})]
+
+    def trio(self):
+        return self.pr() + [(3, "third", "pr 3", {"gate.py"})]
+
+    def test_git_calls_the_pair_clean_on_the_base_it_infers(self):
+        # Why the flag has to be explicit: with no `--merge-base`, git merges
+        # from `shared`, which already has gate.py, and there is nothing left
+        # to conflict over.
+        inferred = subprocess.run(
+            ["git", "merge-tree", "--write-tree", "origin/first",
+             "origin/second"], capture_output=True)
+        self.assertEqual(inferred.returncode, 0)
+
+    def test_the_pair_conflicts_on_the_base_it_will_land_against(self):
+        edges = p.conflicts("main", self.pr())
+        self.assertEqual(edges, {frozenset((1, 2)): ["gate.py"]})
+
+    def test_neither_head_is_dropped_as_contained(self):
+        # `stacked` is the other place a shared lineage is read, and it is
+        # right to keep both: each holds a commit the other does not.
+        self.assertEqual(p.stacked(self.pr()), {})
+
+    def test_the_wave_the_fold_refuses_is_not_a_wave(self):
+        # The consequence, end to end: seated together on the inferred base,
+        # the wave the operator is told to land in any order is one the fold
+        # cannot even assemble.
+        numbers = [n for n, _, _, _ in self.pr()]
+        seated = p.waves(numbers, {})
+        self.assertEqual(seated, [[1, 2]])
+        _, _, refused = p.union_tree("main", [(1, "first"), (2, "second")])
+        self.assertEqual(refused, [2])
+
+        self.assertEqual(p.waves(numbers, p.conflicts("main", self.pr())),
+                         [[1], [2]])
+
+    def refs(self):
+        return {n: ref for n, ref, _, _ in self.trio()}
+
+    def files(self):
+        return {n: paths for n, _, _, paths in self.trio()}
+
+    def test_equality_alone_calls_a_sibling_pair_a_rivalry(self):
+        # Why the guard exists, stated as the state without it. This fixture
+        # was written for the ordering question and never asked the rivalry
+        # one — and a shared trunk answers both halves of that signature by
+        # itself: the same file set on each side, and an add/add against a
+        # `main` that has none of it.
+        edges = p.conflicts("main", self.pr())
+        self.assertEqual(p.competing(self.files(), edges),
+                         {frozenset((1, 2))})
+
+    def test_a_pair_that_merges_at_its_own_base_is_kin(self):
+        edges = p.conflicts("main", self.pr())
+        self.assertEqual(sorted(p.siblings("main", self.refs(), edges)),
+                         [frozenset((1, 2))])
+
+    def test_the_trunk_named_is_the_commit_they_branch_from(self):
+        edges = p.conflicts("main", self.pr())
+        tip = p.siblings("main", self.refs(), edges)[frozenset((1, 2))]
+        self.assertEqual(
+            p.run("git", "log", "-1", "--format=%s", tip).strip(),
+            "the work both sessions share")
+
+    def test_kin_is_not_offered_as_a_close_decision(self):
+        edges = p.conflicts("main", self.pr())
+        kin = p.siblings("main", self.refs(), edges)
+        self.assertEqual(p.competing(self.files(), edges, kin), set())
+
+    def test_a_disagreement_its_own_base_can_see_is_still_a_rivalry(self):
+        # The guard's narrowness: #2 and #3 share the same trunk, so they are
+        # kin by lineage — and they rewrote the same line, which their own
+        # base is enough to discover. Closing one of those is the real
+        # instruction, and dropping every shared-lineage pair would lose it.
+        edges = p.conflicts("main", self.trio())
+        self.assertIn(frozenset((2, 3)), edges)
+        kin = p.siblings("main", self.refs(), edges)
+        self.assertNotIn(frozenset((2, 3)), kin)
+        self.assertIn(frozenset((2, 3)),
+                      p.competing(self.files(), edges, kin))
+
+    def test_the_ordering_edge_survives_the_guard(self):
+        # `conflicts` pins `main` because the fold does, and that stays true:
+        # kin only narrows the close instruction, never the waves.
+        edges = p.conflicts("main", self.pr())
+        self.assertIn(frozenset((1, 2)), edges)
+        self.assertEqual(p.waves([1, 2], edges), [[1], [2]])
+
+
+class ARewriteSharesNoCommit(unittest.TestCase):
+    """A head re-authored from `main` rather than extended from its draft.
+
+    `stacked` reads git history, so it catches supersession only in the shape
+    that kept it: the later head built on the earlier one. The queue also
+    produces the other shape — a session re-cuts the branch from `main` and
+    rewrites the same checker from scratch. Same file set, no shared commit,
+    and the two disagree line by line, which is indistinguishable from an
+    ordinary collision by every measure this report had.
+    """
+
+    def git(self, *args):
+        subprocess.run(("git",) + args, check=True, capture_output=True)
+
+    def head(self, name):
+        oid = subprocess.run(["git", "rev-parse", "HEAD"], check=True,
+                             capture_output=True, text=True).stdout.strip()
+        self.git("update-ref", f"refs/remotes/origin/{name}", oid)
+
+    def setUp(self):
+        self.dir = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.dir)
+        self.addCleanup(os.chdir, os.getcwd())
+        os.chdir(self.dir)
+        self.git("init", "-q", "-b", "main")
+        self.git("config", "user.email", "t@example.com")
+        self.git("config", "user.name", "t")
+        Path("README.md").write_text("# Base\n")
+        self.git("add", "README.md")
+        self.git("commit", "-qm", "base")
+        self.head("main")
+
+        # The draft: a gate plus the doc that describes it.
+        self.git("checkout", "-qb", "draft")
+        Path("gate.py").write_text("first attempt\n")
+        Path("doc.md").write_text("describes the first attempt\n")
+        self.git("add", "gate.py", "doc.md")
+        self.git("commit", "-qm", "the draft")
+        self.head("draft")
+
+        # The rewrite: cut from `main`, not from `draft`, touching the same
+        # two paths with different content.
+        self.git("checkout", "-q", "main")
+        self.git("checkout", "-qb", "rewrite")
+        Path("gate.py").write_text("second attempt, audited twice since\n")
+        Path("doc.md").write_text("describes the second attempt\n")
+        self.git("add", "gate.py", "doc.md")
+        self.git("commit", "-qm", "the rewrite")
+        self.head("rewrite")
+
+        # An unrelated PR that edits one of those two paths and nothing else:
+        # its file set is a strict subset, and it collides for real.
+        self.git("checkout", "-q", "main")
+        self.git("checkout", "-qb", "unrelated")
+        Path("gate.py").write_text("an unrelated change\n")
+        self.git("add", "gate.py")
+        self.git("commit", "-qm", "unrelated")
+        self.head("unrelated")
+        self.git("checkout", "-q", "main")
+
+    def prs(self):
+        return [(1, "draft", "pr 1", {"gate.py", "doc.md"}),
+                (2, "rewrite", "pr 2", {"gate.py", "doc.md"}),
+                (3, "unrelated", "pr 3", {"gate.py"})]
+
+    def files(self):
+        return {n: paths for n, _, _, paths in self.prs()}
+
+    def test_ancestry_does_not_see_the_rewrite(self):
+        # Why a second test is needed at all: the cheap check is blind here.
+        self.assertEqual(p.stacked(self.prs()), {})
+
+    def test_the_rewrite_and_its_draft_are_named_as_rivals(self):
+        edges = p.conflicts("main", self.prs())
+        self.assertIn(frozenset((1, 2)), edges)
+        self.assertEqual(p.competing(self.files(), edges),
+                         {frozenset((1, 2))})
+
+    def test_a_subset_is_not_a_rival(self):
+        # The guard that keeps the test narrow: #3 conflicts with both and its
+        # paths are nested inside theirs, but it is a different change.
+        edges = p.conflicts("main", self.prs())
+        self.assertIn(frozenset((1, 3)), edges)
+        self.assertNotIn(frozenset((1, 3)), p.competing(self.files(), edges))
+
+    def test_equal_file_sets_alone_are_not_enough(self):
+        # No conflict, no rivalry: two PRs can edit the same two files in
+        # different places and merge clean.
+        self.assertEqual(p.competing(self.files(), {}), set())
+
+    def test_two_heads_cut_from_main_have_no_trunk_to_share(self):
+        # The kin guard must not reach this shape: the pair's own merge base
+        # *is* `main`, so there is no tree where their disagreement disappears,
+        # and the rivalry it names is the real one.
+        refs = {n: ref for n, ref, _, _ in self.prs()}
+        edges = p.conflicts("main", self.prs())
+        kin = p.siblings("main", refs, edges)
+        self.assertEqual(kin, {})
+        self.assertEqual(p.competing(self.files(), edges, kin),
+                         {frozenset((1, 2))})
+
+
+class AnEditBothSidesAgreeOnIsNotAConflict(unittest.TestCase):
+    """Every PR in this queue bumps the same version manifest to the same
+    string, so the manifest is in nearly every pair's changed-file
+    intersection and in none of their conflicts: git takes an identical edit
+    from both sides without asking. The report's job is to name the file a
+    human has to open.
+    """
+
+    def git(self, *args):
+        subprocess.run(("git",) + args, check=True, capture_output=True)
+
+    def head(self, name):
+        oid = subprocess.run(["git", "rev-parse", "HEAD"], check=True,
+                             capture_output=True, text=True).stdout.strip()
+        self.git("update-ref", f"refs/remotes/origin/{name}", oid)
+
+    def setUp(self):
+        self.dir = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.dir)
+        self.addCleanup(os.chdir, os.getcwd())
+        os.chdir(self.dir)
+        self.git("init", "-q", "-b", "main")
+        self.git("config", "user.email", "t@example.com")
+        self.git("config", "user.name", "t")
+        Path("manifest.json").write_text('{"version": "0.6.0"}\n')
+        Path("role.md").write_text("intro\n\nrules\n\nend\n")
+        self.git("add", "manifest.json", "role.md")
+        self.git("commit", "-qm", "base")
+
+        for name, rules in (("first", "first's rule\n"), ("second", "second's rule\n")):
+            self.git("checkout", "-q", "main")
+            self.git("checkout", "-qb", name)
+            Path("manifest.json").write_text('{"version": "0.6.1"}\n')
+            Path("role.md").write_text(f"intro\n\n{rules}\nend\n")
+            self.git("commit", "-qam", name)
+            self.head(name)
+        self.git("checkout", "-q", "main")
+
+    def prs(self):
+        paths = {"manifest.json", "role.md"}
+        return [(1, "first", "pr 1", paths), (2, "second", "pr 2", paths)]
+
+    def test_only_the_file_the_merge_fails_in_is_named(self):
+        self.assertEqual(p.conflicts("main", self.prs()),
+                         {frozenset((1, 2)): ["role.md"]})
+
+    def test_the_agreed_edit_is_in_the_intersection_the_old_answer_used(self):
+        # The control: the manifest is genuinely in both diffs, which is why
+        # intersecting them printed it, and genuinely merges clean.
+        a, b = self.prs()
+        self.assertIn("manifest.json", a[3] & b[3])
+        merged = subprocess.run(
+            ["git", "merge-tree", "--write-tree", "--merge-base", "main",
+             "origin/first", "origin/second", "--", "manifest.json"],
+            capture_output=True, text=True)
+        self.assertNotIn("manifest.json", merged.stdout.split("\n\n")[0])
+
+    def test_relocations_only_searches_the_files_that_conflict(self):
+        # Narrowing the value narrows this too: a path both sides agree on has
+        # no hunk to relocate, so it is not a destination search worth running.
+        edges = p.conflicts("main", self.prs())
+        self.assertEqual(sorted(edges[frozenset((1, 2))]), ["role.md"])
+        self.assertEqual(p.relocations("main", self.prs(), edges), {})
+
+
+class TheTrimIsNotTheRegression(unittest.TestCase):
+    """The same control, on the blame half of the same sentence.
+
+    `clearing` already refuses to *credit* a blocked candidate for a gate the
+    trim turned green. The symmetric case is a gate the trim turned **red**: it
+    was green in the round, it is red in the tree the candidate was tested in,
+    and the candidate had nothing to do with either. The baseline for "what else
+    does this break" is therefore the trimmed round, not the round — the same
+    tree the credit half is already measured against.
+
+    Two gates, each wanting a file. The round provides one of them, so it is red
+    on the other. The candidate provides the missing file and conflicts with the
+    member that provided the first — so trimming its blocker out takes that file
+    with it, and the gate it satisfied goes red beside the one the candidate just
+    fixed.
+    """
+
+    NEEDS_X = Clearing.NEEDS
+    NEEDS_Z = ("import pathlib, sys\n"
+               "if not pathlib.Path('z.txt').exists():\n"
+               "    sys.exit('error: z.txt is missing')\n")
+
+    git = Clearing.git
+    branch = Clearing.branch
+
+    def setUp(self):
+        self.dir = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.dir)
+        self.addCleanup(os.chdir, os.getcwd())
+        os.chdir(self.dir)
+        self.git("init", "-q", "-b", "main")
+        self.git("config", "user.email", "t@example.com")
+        self.git("config", "user.name", "t")
+        Path("scripts").mkdir()
+        Path("scripts/check_needs_x.py").write_text(self.NEEDS_X)
+        Path("scripts/check_needs_z.py").write_text(self.NEEDS_Z)
+        Path("scripts/check_forbids_y.py").write_text(Clearing.FORBIDS)
+        Path("scripts/test_nothing.py").write_text(
+            "import unittest\n\n"
+            "class T(unittest.TestCase):\n"
+            "    def test_ok(self):\n        pass\n")
+        Path("role.md").write_text("# Role\n")
+        self.git("add", "-A")
+        self.git("commit", "-qm", "base")
+        self.git("update-ref", "refs/remotes/origin/main", "main")
+        self.base = self.git("rev-parse", "main").strip()
+        # #1 satisfies check_needs_z, and owns `shared.md`.
+        self.branch("provides-z", {"z.txt": "here\n", "shared.md": "z\n"})
+        # #2 is the rest of the round: it satisfies nothing.
+        self.branch("round", {"role.md": "# Role\n\nedited\n"})
+        # #3 satisfies check_needs_x, and collides with #1 on `shared.md`.
+        self.branch("provides-x", {"x.txt": "here\n", "shared.md": "x\n"})
+        self.landed = [(1, "provides-z"), (2, "round")]
+        self.refs = {1: "provides-z", 2: "round", 3: "provides-x"}
+        self.failing = ["check_needs_x.py"]
+
+    def report(self, edges_=None):
+        return "\n".join(p.clearing(self.base, self.landed, [3],
+                                    self.failing, edges_ or {}, self.refs))
+
+    def test_the_round_is_red_on_x_and_green_on_z(self):
+        results = p.run_checkers(p.union_tree(self.base, self.landed)[0])
+        self.assertNotEqual(results["check_needs_x.py"][0], 0)
+        self.assertEqual(results["check_needs_z.py"][0], 0)
+
+    def test_the_trim_is_what_turns_the_other_gate_red(self):
+        # The premise: without #1 the tree loses z.txt, and the candidate is
+        # standing in it when check_needs_z goes red.
+        trimmed = p.union_tree(self.base, [(2, "round"), (3, "provides-x")])[0]
+        results = p.run_checkers(trimmed)
+        self.assertEqual(results["check_needs_x.py"][0], 0)
+        self.assertNotEqual(results["check_needs_z.py"][0], 0)
+
+    def test_a_blocked_candidate_is_credited_for_what_it_clears(self):
+        self.assertIn("#3 clears check_needs_x.py", self.report(edges((1, 3))))
+
+    def test_a_gate_the_trim_turned_red_is_not_the_candidates_doing(self):
+        out = self.report(edges((1, 3)))
+        self.assertNotIn("check_needs_z.py red", out)
+        self.assertNotIn("trades", out)
+
+    def test_an_unblocked_candidate_is_still_judged_against_the_round(self):
+        # Control: no conflict means no trim, so the round is the baseline and a
+        # genuine green-to-red transition must still be reported.
+        self.branch("breaks-y", {"x.txt": "here\n", "y.txt": "here\n"})
+        self.refs[4] = "breaks-y"
+        out = "\n".join(p.clearing(self.base, self.landed, [4],
+                                   self.failing, {}, self.refs))
+        self.assertIn("#4 clears check_needs_x.py", out)
+        self.assertIn("check_forbids_y.py red", out)
+        self.assertIn("trades", out)
+
+
+class ARefWithNoPR(unittest.TestCase):
+    """The mirror of `unreportable`'s first case, and the silent one.
+
+    A PR with no ref is loud: `merge-tree` fails and the graph is visibly
+    invented. A ref with no PR produces no output anywhere — the queue the
+    report describes is well-formed, every wave is correct about it, and the
+    branch is simply not a member of the set that was collected.
+
+    One base, four branches off it: an open PR's head, a branch fully contained
+    in that head, a branch with a closed PR, and one nobody opened.
+    """
+
+    def git(self, *args):
+        subprocess.run(("git",) + args, check=True, capture_output=True)
+
+    def branch(self, name, subject, files):
+        self.git("checkout", "-q", "-b", name, "main")
+        for path, text in files.items():
+            Path(path).write_text(text)
+        self.git("add", "-A")
+        self.git("commit", "-qm", subject)
+        self.git("update-ref", f"refs/remotes/origin/{name}", name)
+        self.git("checkout", "-q", "main")
+        self.git("branch", "-qD", name)
+
+    def setUp(self):
+        self.dir = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.dir)
+        self.addCleanup(os.chdir, os.getcwd())
+        os.chdir(self.dir)
+        self.git("init", "-q", "-b", "main")
+        self.git("config", "user.email", "t@example.com")
+        self.git("config", "user.name", "t")
+        Path("doc.md").write_text("# Doc\n")
+        self.git("add", "doc.md")
+        self.git("commit", "-qm", "base")
+        self.git("update-ref", "refs/remotes/origin/main", "main")
+        self.branch("open-head", "the one with a PR", {"a.md": "a\n"})
+        self.branch("closed", "declined on purpose", {"b.md": "b\n"})
+        self.branch("forgotten", "fix: the one nobody opened", {"c.md": "c\n"})
+        # Contained: every commit of `open-head` plus nothing of its own.
+        self.git("update-ref", "refs/remotes/origin/stale",
+                 "refs/remotes/origin/open-head")
+        self.prs = [(1, "open-head", "pr 1", set(), set())]
+        self.ruled = {"open-head", "closed"}.__contains__
+
+    def report(self):
+        return p.unopened(self.prs, self.ruled)
+
+    def test_the_branch_nobody_opened_is_named_with_its_subjects(self):
+        self.assertEqual(self.report(),
+                         [("forgotten", ["fix: the one nobody opened"])])
+
+    def test_nothing_else_in_the_report_sees_it(self):
+        # The premise: it shares no PR number, so it is in no wave and no pair.
+        edges = p.conflicts("main", self.prs)
+        self.assertEqual(edges, {})
+        self.assertEqual(p.waves([n for n, *_ in self.prs], edges), [[1]])
+
+    def test_an_open_heads_own_ref_is_not_unopened(self):
+        self.assertNotIn("open-head", dict(self.report()))
+
+    def test_a_ref_with_no_commit_of_its_own_is_stale_not_pending(self):
+        # `stale` points at the open head: landing #1 lands all of it.
+        self.assertNotIn("stale", dict(self.report()))
+
+    def test_a_closed_pr_is_a_ruling_and_is_not_reported(self):
+        self.assertNotIn("closed", dict(self.report()))
+
+    def test_the_api_is_only_asked_about_what_reachability_kept(self):
+        # Four refs, two of them carrying a diff that exists nowhere else. The
+        # local test is what makes the exact `--head` query affordable.
+        asked = []
+        p.unopened(self.prs, lambda branch: asked.append(branch) or False)
+        self.assertEqual(asked, ["closed", "forgotten"])
+
+    def test_a_branch_merged_into_main_is_not_reported(self):
+        self.git("merge", "-q", "--no-ff", "-m", "land",
+                 "refs/remotes/origin/forgotten")
+        self.assertEqual(self.report(), [])
 
 
 if __name__ == "__main__":
