@@ -8,6 +8,19 @@ or let `--from linear:SKU-…` / `--from pr:<url>` assemble one for you to confi
 > Same discipline as spec-kit: assertions cite **requirement ids**, never the diff. Give every
 > requirement a stable id here; `plan` will assign `R1`, `R2`, … to any that lack one and write
 > them back, and runs / notes / reports reference those ids for the life of the feature.
+>
+> **Give the id yourself if you can.** An id you write here lives in the source: a regeneration
+> re-reads it, and a requirement you delete takes its id with it. An id `plan` mints lives only in
+> its copy of this brief — the file the next `plan` overwrites — so it is carried forward by
+> matching requirement text, and an unmatched one becomes a `BLOCKED` case for you to rule on
+> rather than a requirement quietly dropped.
+
+> **This list is the campaign's denominator.** `plan` builds `qa-plan.md` §1's coverage table with
+> one row per id below, and reports `<c> of <R> requirements asserted` against it. A requirement
+> missing from this list is not UNCOVERED — it is invisible, and no later step can recover it.
+> That is why an **assembled** brief (`--from linear:` / `--from pr:`) is confirmed with the
+> operator before `plan` runs: otherwise the same context writes both the yardstick and the work
+> it measures, and the ratio is self-certified. Confirm the list is *closed*, not just correct.
 
 ---
 
@@ -15,6 +28,10 @@ or let `--from linear:SKU-…` / `--from pr:<url>` assemble one for you to confi
 # <Feature> — QA feature brief
 
 _Source: <hand-written | linear:SKU-… | pr:owner/repo#42>. Assembled <YYYY-MM-DD>._
+_Slug derived from: `<the verbatim, un-normalized value — the branch, the SKU list, the PR URLs, or
+this brief's path>`. This is the campaign's identity; the directory name is only a lookup key, and
+normalization is many-to-one. `plan` reads this line before overwriting the brief and stops on a
+mismatch._
 
 _Under test: <the branch and head commit the campaign must run against, and the environment serving it>._
 A brief assembled from an unmerged PR is worthless if the stack is serving `main` — state the
@@ -30,7 +47,8 @@ implementation**: "an owner can renew a pending invitation", not "POST /invitati
 - **R2** …
 - **R3** …
 
-Mark the ones that touch **money / legal / data** — they become the blocker list.
+Mark the ones that touch **money / legal / data** — they become the blocker list, and an
+UNCOVERED one is a blocker even though no assertion can fail for it.
 
 ## What shipped
 
