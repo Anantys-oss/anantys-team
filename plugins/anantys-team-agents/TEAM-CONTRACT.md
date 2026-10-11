@@ -51,49 +51,7 @@ nobody looking for it.
 
 ---
 
-## What belongs here
-
-A rule belongs in this file when it binds **three or more roles** and is not
-specific to any of them. Below that threshold it stays inline, in the role that
-needs it.
-
-Amending a shared rule is then one edit to this file — not one edit per role, in
-N phrasings, each free to land at a different strength.
-
-**This is not enforced by CI, deliberately.** A gate whose only remedy is "edit this
-file" puts every concurrent change on the same few lines and turns a parallel queue
-into a serial one. The threshold is a review question: when a change would add the
-same rule to a third role, it belongs here instead.
-
----
-
-## What does not belong here
-
-**This file is loaded before every action of every role.** All seven role files open
-with *"the team contract binds you — read it before acting"*, so its length is a cost
-charged to every invocation — the same cost the skill-size convention caps a `SKILL.md`
-at, at ~200 lines, for the same reason. That cap is measured on `SKILL.md` alone, so this
-file was never counted: `ops` invokes at 231 + 502 lines against a ceiling of 200, and the
-checker reports 231. Making the measurement match the load is a change to
-`scripts/check_plugins.py`, which this branch does not own; it lands on
-`plugin-manifest-checks`, and until it does the bound below is a review question like the
-threshold above.
-
-That convention's test applies unchanged here: **who does the text bind?** Content that
-binds every role stays. Content addressed to whoever *maintains* this file — an argument
-for promoting a rule, a measurement that dates a citation, a conflict to resolve at
-landing — binds no role and lives in `docs/team-contract-candidates.md`, which nothing
-loads.
-
-The distinction is not cosmetic, because a role cannot act on non-binding text by
-choosing not to. This file carried 459 such lines against 43 binding ones: eleven
-candidate rules, each one a finding written in the imperative (*"make the work durable,
-then ask"*), several stating the opposite of the role file they describe, under a
-heading that says *"a candidate does not bind"* — and, at the end, instructions for a
-human resolving a rebase. A disclaimer in the middle of a file is not a boundary; the
-file a role is told to read is.
-
-**So: nothing enters this file that a role is not required to do.** Where a candidate and
-a role file disagree, the role file governs — and a role blocked by that disagreement has
-found the argument for promoting the candidate, which is a note for the operator, not a
-side to pick.
+Nothing is in this file that a role is not required to do. Everything addressed to
+whoever *edits* it — what is admitted here, what is not, and where a candidate rule goes
+instead — is in [`docs/team-contract-maintenance.md`](../../docs/team-contract-maintenance.md),
+which no role loads.
