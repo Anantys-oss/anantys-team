@@ -1,0 +1,25 @@
+# Worst-case one-action loads that were already over ROLE_MAX_LINES when this
+# ceiling was pointed at the assembled tree. One `<path>: <lines>` per line.
+#
+# See `declared_load()` in check_plugins.py for why these are declared instead of
+# fixed here. The short version: all seven roles are over, 206 to 922 against 200,
+# and the smallest offender is over by six lines. TEAM-CONTRACT.md is 99 of those
+# lines, every role must link it, and its clauses are held in place by
+# `check_contract_clauses` — so the ceiling leaves 101 lines for a role's own prose
+# and nothing in this tree fits. A gate no member of its population can satisfy
+# makes every change touching a role file wait on a rewrite of all seven.
+#
+# A number here is a bound, not a mute. Growth past it is still an error. A role
+# measured *under* its number warns, so the change that trims it is told to lower
+# the line rather than finding the gate red for having improved.
+#
+# To lower a number: run `python3 scripts/check_plugins.py`, take the total it
+# reports for the role, and put that here in the same change.
+
+plugins/anantys-team-agents/skills/anantys.debug/SKILL.md: 273
+plugins/anantys-team-agents/skills/anantys.design/SKILL.md: 374
+plugins/anantys-team-agents/skills/anantys.ops/SKILL.md: 490
+plugins/anantys-team-agents/skills/anantys.qa/SKILL.md: 922
+plugins/anantys-team-agents/skills/anantys.review/SKILL.md: 327
+plugins/anantys-team-agents/agents/anantys.code-auditor.md: 206
+plugins/anantys-team-agents/agents/anantys.spec-tester.md: 250
