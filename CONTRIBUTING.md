@@ -9,10 +9,28 @@ reads the version from the plugin's own `plugin.json` for every operation that n
 verified against `plugin validate`, `plugin install`, `plugin details` and `plugin update`
 (a bump applied only to `plugin.json` is detected and applied as `0.6.0 -> 0.7.0`).
 
+With the field removed, `plugin install` still caches the plugin under `0.6.0` — the key
+comes from `plugin.json` alone.
+
+The converse holds too, and it is the reason the field has to go: a bump applied only to
+`marketplace.json` is **not** detected. `plugin update` answers `already at the latest
+version` and the user keeps the old tree. So the second copy cannot ship anything — it can
+only advertise a version nobody receives.
+
 A second copy is not a safety net, it is a desync waiting to happen — and it made
 `marketplace.json` the repository's most-churned file.
 
 ## 2. Bump the version at release, not in the change
+
+The `plugin.json` version is not a label on the release. It is the **delivery gate**: the
+CLI caches an installed plugin under `plugins/cache/<marketplace>/<plugin>/<version>/`, so
+the version string *is* the cache directory name. Merge content without bumping it and
+`plugin update` reports `already at the latest version` — the change is on `main` and on
+GitHub, and no installed user will ever see it.
+
+`main` is at `0.6.0` and carries no tags. Every change merged into it at `0.6.0` is
+invisible to anyone who has already installed. Cutting a release is therefore not
+bookkeeping; it is the only act that ships.
 
 A pull request that changes a role's prose does not know what it will ship as. It only
 knows what the version was when it branched.
@@ -24,6 +42,23 @@ information and silently stops being true after the first merge.
 
 Bump once, on `main`, when cutting a release, and tag it. The repository currently has no
 tags, which is why there is no floor to compare a branch's version against.
+
+Both claims above are reproducible against a throwaway config dir, with no account:
+
+```bash
+export CLAUDE_CONFIG_DIR=$(mktemp -d)
+claude plugin marketplace add ./                    # a local path works; bare `.` is rejected
+claude plugin install anantys-team-agents@anantys-oss
+# edit a SKILL.md, commit, leave the version alone:
+claude plugin marketplace update anantys-oss && claude plugin update anantys-team-agents@anantys-oss
+#   -> "already at the latest version (0.6.0)"; the cached tree still holds the old text
+# now bump plugin.json only, and repeat:
+#   -> "updated from 0.6.0 to 0.6.1"; a new cache dir appears, carrying the edit
+```
+
+This conflicts, deliberately, with the open `check_version_bump.py` gate, which demands a
+bump on every content pull request. The gate's premise is sound — nothing ships unbumped —
+but it enforces it at the wrong commit. Gate the release, not the change.
 
 ## 3. A pull request is product or tooling, not both
 
