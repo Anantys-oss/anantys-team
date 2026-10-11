@@ -495,10 +495,10 @@ whole number on its own; show a non-zero value below 1% as `<1%` (never `0%`) an
 ## Rules
 
 - **A file bundled with this skill is named `${CLAUDE_SKILL_DIR}/<path>`, never bare.** The
-  placeholder is substituted with this skill's own directory when the skill loads; a bare
-  `templates/x.md` resolves against the session's working directory — the operator's repo — and
-  does not exist there. Applies to anything under `templates/`, and to any companion a future
-  split adds.
+  placeholder is substituted with this skill's own directory when the skill loads. A companion
+  named *without* it is a relative path, and resolves against the session's working directory —
+  the operator's repo — where it does not exist. Applies to anything under `templates/`, and to
+  any companion a future split adds.
 - **Environment details live in `.anantys/qa.md`, never in this skill and never in `qa-plan.md`.**
   A plan that hardcodes a hostname stops working for the next project — and for the next dev stack.
 - **Never reset — or write destructively to — a `shared` environment** (staging, a preview, prod).
