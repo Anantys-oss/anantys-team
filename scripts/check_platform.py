@@ -40,10 +40,15 @@ that silently stops applying:
      shape-checks a list that was thrown away and leaves the live one
      unexamined.
   2. **Tool identifiers must be well-shaped.** An MCP tool is
-     `mcp__server__tool`; a single underscore anywhere in that name makes it a
-     tool that does not exist, the skill loads without it, and the prose that
-     depends on it ("capture the console error") becomes unexecutable at the
-     one moment it is needed. The grant list is read across the indented lines
+     `mcp__server__tool`; a single underscore *between* those separators makes
+     it a tool that does not exist, the skill loads without it, and the prose
+     that depends on it ("capture the console error") becomes unexecutable at
+     the one moment it is needed. The server segment itself may hold
+     underscores: a server declared in `plugin.json` is exposed as
+     `mcp__plugin_<plugin>_<server>__<tool>`, measured on CLI 2.1.278, and the
+     loader's own rule is `^mcp__[\w-]+(?:__(?:[\w.-]+|\*))?$`. A narrower
+     server class here cannot see a plugin-declared server at all, so every
+     grant to one reads as malformed while the session resolves it fine. The grant list is read across the indented lines
      YAML lets it wrap onto, because a check that only reads the key's own line
      goes quiet on every wrapped form — and quiet is the thing being checked for.
 
@@ -73,8 +78,9 @@ SKILL_KEYS = frozenset(
 )
 AGENT_KEYS = frozenset({"name", "description", "tools", "model", "color"})
 
-# `Read`, `Bash(git:*)`, `mcp__claude-in-chrome__navigate` — and nothing else.
-TOOL_SHAPE = re.compile(r"^(?:mcp__[a-z0-9-]+__[a-z0-9_]+|[A-Z][A-Za-z]*(?:\([^)]*\))?)$")
+# `Read`, `Bash(git:*)`, `mcp__claude-in-chrome__navigate`,
+# `mcp__plugin_anantys-team-agents_claude-in-chrome__navigate` — and nothing else.
+TOOL_SHAPE = re.compile(r"^(?:mcp__[a-z0-9_-]+__[a-z0-9_]+|[A-Z][A-Za-z]*(?:\([^)]*\))?)$")
 
 errors: list[str] = []
 warnings: list[str] = []

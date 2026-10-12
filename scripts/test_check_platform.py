@@ -47,6 +47,16 @@ class CheckPlatform(unittest.TestCase):
         self.assertEqual(len(found), 1)
         self.assertIn("mcp_chrome_nav", found[0])
 
+    def test_plugin_scoped_mcp_server_is_well_formed(self) -> None:
+        # A server declared in plugin.json is exposed as
+        # `mcp__plugin_<plugin>_<server>__<tool>`. Measured on CLI 2.1.278: the
+        # session lists that name and the grant resolves against it. A server
+        # class that excludes `_` rejects every such grant.
+        scoped = "mcp__plugin_anantys-team-agents_claude-in-chrome__navigate"
+        self.assertEqual(
+            self.check(GOOD_SKILL.replace("mcp__claude-in-chrome__navigate", scoped)), []
+        )
+
     def test_scoped_bash_grant_is_well_formed(self) -> None:
         self.assertEqual(self.check(GOOD_SKILL.replace("Bash(git:*)", "Bash(mkdir:*)")), [])
 
