@@ -1,6 +1,6 @@
 ---
 name: anantys.qa
-description: Run a browser-driven QA campaign against a completed feature. Derives an executable test plan from a spec-kit tasks.md, a freeform feature brief (--brief), a set of tracker issues (--from linear:SKU-…), or one or more GitHub pull requests (--from pr:<url>), executes it in a real browser — against a local dev stack or a deployed environment (staging / a preview), selected with --env — recording PASS/FAIL/BLOCKED per assertion, accumulates operator adjudications so a defect is never re-filed twice, and emits a copy-pasteable fix brief for the dev agent. Environment specifics live in a project-local .anantys/qa.md, never in the skill. Use to QA a finished feature — however it was built — before release.
+description: Run a browser-driven QA campaign against a finished feature — however it was built. Derives an executable test plan from a spec-kit tasks.md, a hand-written feature brief, tracker issues, or GitHub pull requests, walks it in a real browser against a local dev stack or a deployed environment (staging, a preview), records PASS/FAIL/BLOCKED per assertion, and remembers operator rulings so a non-defect is never re-filed. Use to independently QA a completed feature before release.
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep, Task, TaskCreate, TaskUpdate, TaskList, AskUserQuestion
 ---
 
