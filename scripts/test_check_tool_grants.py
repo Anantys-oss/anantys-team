@@ -170,6 +170,70 @@ class NamingIsNotRunning(unittest.TestCase):
         self.assertIn("`git reset --hard`", errors[0])
 
 
+class DeniedButGranted(unittest.TestCase):
+    """The one direction that is invisible until two branches are composed.
+
+    `NamingIsNotRunning` stops the gate from reading a justified absence as a
+    request. It never checks that the absence is real. On a single branch it
+    always is — the author wrote both halves. The live instance needs two:
+    `durable-before-destructive` drops `Bash(git:*)` and writes the sentence
+    below; `not-found-is-not-absent` grants `git rev-parse`, `git log` and
+    `git ls-files` and runs them. The superset resolution of their one
+    conflicting frontmatter line keeps both, and the claim becomes false.
+    """
+
+    CLAIM = "`allowed-tools` grants no `git` — this role never needs it."
+
+    def test_a_true_denial_is_still_silent(self):
+        errors, _ = role(["Bash(mkdir:*)", "Bash(ls:*)"], self.CLAIM)
+        self.assertEqual(errors, [])
+
+    def test_a_denied_family_that_the_frontmatter_grants_is_an_error(self):
+        errors, _ = role(["Bash(mkdir:*)", "Bash(git log:*)"], self.CLAIM)
+        self.assertEqual(len(errors), 1)
+        self.assertIn("prose says `git` is withheld", errors[0])
+
+    def test_a_denied_tool_name_that_the_frontmatter_grants_is_an_error(self):
+        errors, _ = role(
+            ["Read", "Write"], "This role is granted no `Write` — it only reads."
+        )
+        self.assertIn("prose says `Write` is withheld", errors[0])
+
+    def test_a_denial_naming_arguments_is_judged_by_the_prefix(self):
+        errors, _ = role(
+            ["Bash(git log:*)"], "`allowed-tools` grants no `git log --oneline`."
+        )
+        self.assertIn("`git log --oneline`", errors[0])
+
+    def test_a_denial_the_grants_do_not_cover_stays_silent(self):
+        """`git push` is denied and really is ungranted — the claim is true."""
+        errors, _ = role(["Bash(git log:*)"], "`allowed-tools` grants no `git push`.")
+        self.assertEqual(errors, [])
+
+    def test_a_runtime_negation_is_not_a_claim_about_the_grant(self):
+        """Live on `browser-capability-contract`, which this check first failed."""
+        errors, _ = role(
+            ["mcp__x__tabs_context_mcp"],
+            "If a browser is not available (`tabs_context_mcp` returns nothing "
+            "usable), STOP and tell the user.",
+        )
+        self.assertEqual(errors, [])
+
+    def test_grant_vocabulary_must_be_in_the_same_block(self):
+        errors, _ = role(
+            ["Bash(git log:*)"],
+            "The `allowed-tools` list is the hard gate.\nDo not run `git` by hand.",
+        )
+        self.assertEqual(errors, [])
+
+    def test_a_fenced_denial_is_left_to_the_invocation_check(self):
+        errors, _ = role(
+            ["Bash(git log:*)"],
+            "`allowed-tools` grants no:\n\n```bash\ngit log --oneline\n```\n",
+        )
+        self.assertNotIn("is withheld", " ".join(errors))
+
+
 class MentionIsNotSpelling(unittest.TestCase):
     """What counts as referencing a grant. Both cases here were live in this tree."""
 

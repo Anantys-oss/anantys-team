@@ -9,7 +9,10 @@ directions, and each direction fails differently:
   * a tool granted but never referenced -> an unaudited capability sitting on a
     role that has no use for it;
   * a grant that reads as a narrowing but bounds nothing -> the audit records a
-    restriction the runtime does not impose. See `UNBOUNDED`.
+    restriction the runtime does not impose. See `UNBOUNDED`;
+  * prose that states a grant is *absent* while the frontmatter holds it -> the
+    role reads two contradictory accounts of its own authority, and only the
+    frontmatter is enforced. See `denied_but_granted`.
 
 The second direction is only as good as what counts as a reference. Matching the
 grant name as a case-folded substring makes any grant whose name is also an
@@ -35,6 +38,20 @@ more authority and no findings. A gate may not forbid the grant most roles here
 genuinely need, so `main` prices it instead: one per-tree warning naming the
 roles it cannot speak about. What it does forbid is a prefix sitting *beside*
 bare `Bash`, where the audit records a restriction the same frontmatter voids.
+
+The fourth direction is the only one that is invisible on a single branch. Every
+other check reads one file against its own frontmatter, so a change that passes
+alone passes in the tree. A denial and the grant it denies can arrive from two
+*different* changes: `durable-before-destructive` drops `Bash(git:*)` from `ops`
+and writes "`allowed-tools` grants no `git`"; `not-found-is-not-absent` replaces
+the same grant with `Bash(git rev-parse:*)`, `Bash(git log:*)`,
+`Bash(git ls-files:*)` and instructs the role to run them. Both are internally
+consistent. They edit one frontmatter line, so git reports one conflict, and the
+superset resolution — the only one that keeps both changes' prose runnable —
+leaves the file asserting it holds no git twenty lines above a sentence that
+runs git. `bash_commands` used to *drop* a withheld span for exactly the right
+reason and then never ask whether the withholding was true, which is how a false
+claim became silence rather than an error.
 
 Errors that predate this gate are declared in `tool-grants-baseline.txt` rather
 than fixed here — see `baseline()` for why the gate may not fix its own subject.
@@ -85,9 +102,27 @@ WITHHELD = re.compile(
     re.I,
 )
 
+# A denial is only about the capability list when the surrounding block says so.
+# `WITHHELD` alone reads any negated clause, and most negated clauses in these
+# roles are about the world at runtime, not about the frontmatter: `ops` says a
+# browser may be "not available (`mcp__claude-in-chrome__tabs_context_mcp`
+# returns nothing usable)" while legitimately granting that very tool. Requiring
+# grant vocabulary in the same block separates "this tool is not mine to call"
+# from "this tool may fail when I call it". See `denied_but_granted`.
+GRANT_VOCAB = re.compile(
+    r"\b(?:allowed-tools|tools:|grants?|granted|withholds?|withheld)\b", re.I
+)
+
 MCP_IN_PROSE = re.compile(r"`([a-z_]+)`|mcp__[a-z-]+__([a-z_]+)")
 BASH_FENCE = re.compile(r"```(?:bash|sh|shell)\n(.*?)```", re.S)
 INLINE_CODE = re.compile(r"`([a-z][\w./-]*(?: [^`\n]*)?)`")
+
+# Any code span, including a capitalised one. `INLINE_CODE` requires a lowercase
+# head because it hunts commands, and `Write`, `Task` and `Bash` are not that —
+# but they are the grants whose denial matters most, so `denied_but_granted`
+# needs a pattern that reaches them. Safe only there: that check compares the
+# span against the grant list, so a backticked noun matches nothing.
+ANY_CODE = re.compile(r"`([^`\n]+)`")
 FRONTMATTER = re.compile(r"\A---\n(.*?)\n---\n(.*)\Z", re.S)
 REFERENCE_LINK = re.compile(r"`(reference/[\w.-]+\.md)`")
 
@@ -199,6 +234,47 @@ def permitted(command, prefixes):
     return any(command == p or command.startswith(p + " ") for p in prefixes)
 
 
+def denied_but_granted(body, grants, bash_grants):
+    """Spans the prose says are withheld, that this frontmatter in fact grants.
+
+    `bash_commands` drops a withheld span because prose documenting a narrowing
+    is not prose asking for a tool. That is correct and incomplete: it never
+    checks whether the narrowing is real. The claim and the grant it describes
+    can come from two changes that each pass alone, and the merge keeps both.
+
+    A one-word span denies a *family*: "grants no `git`" is false the moment any
+    granted prefix heads with `git`, even though no prefix equals it — which is
+    why `permitted` is the wrong test there and only used for a span that names
+    arguments. A tool name is matched exactly against the grant list.
+
+    Two bounds keep this from reading ordinary prose. `WITHHELD` must reach the
+    span, as elsewhere; and the block it sits in must use `GRANT_VOCAB`, because
+    a negation in these roles is usually about the world and not the frontmatter.
+    The block is the markdown line, so a bullet long enough to say "granted"
+    about one tool and "not" about another is readable as a false positive —
+    which is the direction to err in for a gate that is otherwise silent.
+
+    What this deliberately does not read: fenced lines. A runbook line is what
+    the role runs, and `bash_commands` already requires a grant for it — a
+    denial written as a fence would be reported by that check instead.
+    """
+    heads = {p.split()[0] for p in bash_grants}
+    denied = set()
+    for m in ANY_CODE.finditer(body):
+        before = body[: m.start()]
+        if not WITHHELD.search(before):
+            continue
+        if not GRANT_VOCAB.search(before[before.rfind("\n") + 1 :]):
+            continue
+        span = m.group(1).strip()
+        word, _, rest = span.partition(" ")
+        if span in grants or (rest and permitted(span, bash_grants)):
+            denied.add(span)
+        elif not rest and word in heads:
+            denied.add(word)
+    return denied
+
+
 def check(path, grants, body, known_mcp, agents=()):
     errors, warnings = [], []
     lowered = body.lower()
@@ -249,6 +325,16 @@ def check(path, grants, body, known_mcp, agents=()):
             if not permitted(cmd, bash_grants):
                 held = f"only {sorted(bash_grants)} are" if bash_grants else "no Bash grant is"
                 errors.append(f"prose runs `{cmd}` but {held} granted")
+
+    # An error, by this repo's rule that severity follows remedy locality: both
+    # remedies — delete the claim, or drop the grant — are inside this one file's
+    # diff, with nothing to wait on. That it takes two branches to *produce* is a
+    # fact about where the gate runs, not about where the fix lives.
+    for span in sorted(denied_but_granted(body, grants, bash_grants)):
+        errors.append(
+            f"prose says `{span}` is withheld, but this frontmatter grants it — "
+            f"only the frontmatter is enforced; fix the claim or drop the grant"
+        )
 
     # Dispatching an agent needs `Task`, and the prose names the agent, never the
     # tool — so this direction is invisible to the mention check below. It is the
