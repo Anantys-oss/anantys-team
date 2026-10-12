@@ -1,0 +1,107 @@
+#!/usr/bin/env python3
+"""Run every gate in this tree against every other head, and print the cells.
+
+CI answers one question per push: does *this* head pass the gates *it* carries. In a
+queue where each gate arrived on its own branch, that cross-product is nearly empty —
+a checker pointed only at the work it was written from can only confirm that work. The
+cell that matters is the one no push ever runs: this branch's gates against a sibling's
+content.
+
+Filling it found two defects in `check_plugins` that every green CI run had missed: a
+skill-name rule asserting a string the runtime does not expose, and an unguarded
+`entry[field]` that raised `KeyError` out of `main` on a sibling that legitimately drops
+the field. Neither was reachable from this branch's own tree.
+
+    python3 scripts/gate_matrix.py                        # every origin/koan/* head
+    python3 scripts/gate_matrix.py origin/koan/a-head ...  # just these
+
+The gates are overlaid onto each head, so what is measured is the head's *content*
+against this branch's checkers — not whatever checkers the head happens to carry.
+"""
+
+from __future__ import annotations
+
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+#: Overlaid onto each head. `.github` comes too: a gate may read the workflow that runs it.
+OVERLAY = ("scripts", ".github")
+
+
+def git(*args: str, cwd: Path | None = None) -> str:
+    done = subprocess.run(
+        ("git", *args), cwd=cwd or ROOT, capture_output=True, text=True, check=False
+    )
+    return done.stdout.strip() if done.returncode == 0 else ""
+
+
+def gates() -> list[str]:
+    return sorted(p.stem for p in (ROOT / "scripts").glob("check_*.py"))
+
+
+def heads() -> list[str]:
+    refs = git("for-each-ref", "--format=%(refname:short)", "refs/remotes/origin/koan/*")
+    return [r for r in refs.splitlines() if r]
+
+
+def run(tree: Path, head: str, names: list[str]) -> dict[str, int]:
+    """Exit code per gate for one head's content. Empty when the head will not check out."""
+    for name in OVERLAY:  # a head that tracks these would conflict with the checkout
+        subprocess.run(("rm", "-rf", str(tree / name)), check=False)
+    if subprocess.run(
+        ("git", "checkout", "--detach", head, "--quiet"), cwd=tree, capture_output=True
+    ).returncode:
+        return {}
+    git("checkout", "--", ".", cwd=tree)
+    for name in OVERLAY:  # the head's own copies lose to ours, on purpose
+        subprocess.run(("rm", "-rf", str(tree / name)), check=False)
+        subprocess.run(("cp", "-R", str(ROOT / name), str(tree / name)), check=False)
+    # `check=False` and the returncode read together: a gate is allowed to fail, and a
+    # gate that raises is a finding of its own, so a traceback must not stop the sweep.
+    return {
+        gate: subprocess.run(
+            (sys.executable, str(tree / "scripts" / f"{gate}.py"), "."),
+            cwd=tree,
+            capture_output=True,
+            check=False,
+        ).returncode
+        for gate in names
+    }
+
+
+def table(rows: dict[str, dict[str, int]], names: list[str]) -> str:
+    short = [n.removeprefix("check_") for n in names]
+    width = max(len(h) for h in rows) if rows else 0
+    out = [" " * width + "  " + " ".join(f"{s[:9]:>9}" for s in short)]
+    for head, cells in rows.items():
+        if not cells:
+            out.append(f"{head:<{width}}  {'will not check out':>9}")
+            continue
+        marks = " ".join(f"{('ok' if cells[n] == 0 else f'FAIL {cells[n]}'):>9}" for n in names)
+        out.append(f"{head:<{width}}  {marks}")
+    failing = sum(1 for cells in rows.values() if any(cells.values()))
+    out.append(f"\n{len(rows)} head(s) x {len(names)} gate(s) — {failing} head(s) with a failing gate")
+    return "\n".join(out)
+
+
+def main(argv: list[str]) -> int:
+    names, refs = gates(), argv or heads()
+    if not refs:
+        print("no heads to sweep", file=sys.stderr)
+        return 1
+    with tempfile.TemporaryDirectory() as tmp:
+        tree = Path(tmp) / "head"
+        git("worktree", "add", "--detach", str(tree), "HEAD")
+        try:
+            rows = {ref: run(tree, ref, names) for ref in refs}
+        finally:
+            git("worktree", "remove", "--force", str(tree))
+    print(table(rows, names))
+    return 0  # a reported cell is the output; failing cells are not this tool's verdict
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
