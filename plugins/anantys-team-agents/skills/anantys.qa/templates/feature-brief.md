@@ -43,8 +43,12 @@ PR / change, enough to know which requirement it serves and where in the UI it l
 ## Not shipped / known gaps
 
 Anything a requirement implies that is NOT in yet — a backend endpoint a UI calls, a deferred
-follow-up. These are `BLOCKED`-by-construction cases, **not FAILs**: say so here so a run does not
-file the missing half as a defect.
+follow-up. These are `BLOCKED` by construction, **not FAILs**: say so here so a run does not
+file the missing half as a defect. Mark each with whether a fix or a deploy clears it — the ones no
+fix reaches become `BLOCKED (out of reach)` and leave every `retest` subset, so name the step that
+would clear them instead.
 
 - <e.g. the cost-tasks endpoint is not deployed → its tab renders an empty state, which is EXPECTED>
+  — clears on deploy
+- <e.g. the signup flow's CAPTCHA> — out of reach: <the human step that clears it>
 ```

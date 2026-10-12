@@ -12,7 +12,13 @@ Three properties make this useful rather than ceremonial:
 
 1. **Assertion-level results.** Most features fail in exactly one place while looking fine everywhere else. Record PASS/FAIL/BLOCKED **per assertion**, never one verdict per scenario.
 2. **Adjudication memory.** Half of what a first run reports as a defect turns out to be intended behaviour, a known env drift, or a deliberate product decision. Every such ruling is written back into the plan so no future run re-diagnoses it from scratch. This is the single highest-value artifact the campaign produces.
-3. **No inferred passes.** A case you could not reach is `BLOCKED`. Never `PASS`.
+3. **No inferred passes.** A case you could not reach is `BLOCKED`. Never `PASS`. One word, two
+   states a fix pass treats oppositely: a case that is blocked *today* — the screen would not load,
+   a backend half is not deployed yet — is exactly what `retest` exists to re-walk, while a case
+   **no fix on this environment can clear** (a CAPTCHA, an emailed code, a real card, a true mobile
+   viewport, anything unsafe on production) is re-walked forever for nothing. The second kind is
+   recorded `BLOCKED (out of reach)` and `retest` leaves it out of the subset — a qualifier on the
+   same status, never a sixth one.
 
 ## Actions
 
@@ -158,9 +164,11 @@ Resolve the source (see "Locating the feature"), then read it for the two roles 
 - **`--brief` / `--from linear:` / `--from pr:`:** read the copied brief at `.anantys/qa/<slug>/brief.md`. Its
   **Requirements** section is the requirements role (the ids assertions cite); its **What shipped**
   section is the `tasks.md` role; and its **Not shipped / known gaps** section is load-bearing —
-  each item there is a case that is `BLOCKED`-by-construction (a backend half not deployed, a step a
+  each item there is a case that is `BLOCKED` by construction (a backend half not deployed, a step a
   browser cannot reach), **not a FAIL**. Route every such item into the plan's §4 (Known gaps) and
   mark the assertions it covers `BLOCKED` with that reason, exactly as an adjudication would —
+  qualified `BLOCKED (out of reach)` only for the items no fix clears (the step a browser cannot
+  reach), never for the ones a fix or a deploy does (the undeployed half, an open stacked PR) —
   skipping it makes the plan FAIL the very gaps it was told to expect, which is the case this whole
   section exists to prevent. There is no Polish phase to drop. If a requirement carries no stable
   id, assign one (`R1`, `R2`, …) and write it back into the **copy** (never the operator's original)
@@ -177,8 +185,10 @@ Then transform into scenarios (identical for every source):
 - **Prioritise the money/legal/data paths.** Anything touching payment, consent, or overwriting
   existing user data goes in the blocker list.
 - **Mark what a browser agent cannot do** — CAPTCHA, emailed codes, real payment credentials,
-  true mobile viewports. These are `BLOCKED` by construction and need a named human step. Say so
-  in the plan rather than letting a run discover it.
+  true mobile viewports. These are `BLOCKED (out of reach)` and need a named human step. Say so
+  in the plan rather than letting a run discover it, and name the step beside each — it is the only
+  thing that ever clears them, so a `retest` that re-attempts them instead asks the operator for the
+  same manual step on every pass, with no fix pending.
 
 Write `qa-plan.md` following `templates/qa-plan.md`. Every assertion gets a stable id
 (`A1`, `B5`, …) — ids are referenced by runs, notes and reports forever, so **never renumber
@@ -238,8 +248,10 @@ legacy file included — is driven by the operator's connected browser.
 **Production is a `shared` env with `Production: yes`**, and gets two extra guards:
 
 - **Never run on production:** any scenario that charges a real card, records a real consent, or
-  sends a notification (email, SMS, push) to a real person. Those assertions are `BLOCKED` on
-  production **by construction** — reason "unsafe on production" — never walked.
+  sends a notification (email, SMS, push) to a real person. Those assertions are
+  `BLOCKED (out of reach)` on production — reason "unsafe on production" — never walked, and so
+  never in a production `retest` subset either: "never walked" has to hold on the second pass as
+  well as the first, and the route to a result for them is another environment, not a fix.
 - The pre-write confirmation below is mandatory (it applies to every `shared` env).
 
 Select one with `--env <name>` on any action that reads or writes results — `run`, `retest`,
@@ -396,11 +408,12 @@ A full re-run after a fix pass is expensive and mostly re-confirms green. Instea
 
 1. Take from `qa-plan.md` — its status suffix is the authoritative record and the only place a
    `note` ruling lands — every assertion whose status **on the selected environment** is FAIL,
-   BLOCKED, or `PASS (unstable)`, **never one struck through as REMOVED**; `qa-runs.md` supplies
-   that result's evidence, never the selection. The run log knows nothing of the strike-through and
-   keeps the dropped assertion's last FAIL forever, so a subset chosen there re-walks behaviour the
-   product deliberately dropped and files a DEFECT that is outside the table's N. A result recorded
-   on another environment neither adds nor removes a case.
+   BLOCKED, or `PASS (unstable)`, and **neither** one struck through as REMOVED **nor** one
+   qualified `BLOCKED (out of reach)`; `qa-runs.md` supplies that result's evidence, never the
+   selection. The run log knows nothing of the strike-through and keeps the dropped assertion's last
+   FAIL forever, so a subset chosen there re-walks behaviour the product deliberately dropped and
+   files a DEFECT that is outside the table's N. A result recorded on another environment neither
+   adds nor removes a case.
 2. Add the **regression-risk set** around each fix — the assertions the fix could plausibly have
    broken, especially the ones an *over-fix* would break. A guard added to stop a wrong behaviour
    very often also suppresses the right one; assert the right one explicitly.
@@ -411,7 +424,11 @@ A full re-run after a fix pass is expensive and mostly re-confirms green. Instea
 A subset containing only `PASS (unstable)` rows is a retest worth running: there is no fix to
 confirm, the point is the second trial the first run did not give them. Say that is what it is.
 
-State the subset before running it, and say plainly what you are **not** re-testing.
+State the subset before running it, and say plainly what you are **not** re-testing. The
+`BLOCKED (out of reach)` ids are part of that statement, each with the human step or the other
+environment that is the only thing which clears it — a fix pass cannot, so they are the one excluded
+class that leaves a coverage hole the operator has to decide about rather than wait out. Only the
+operator reopens one: naming its id on the `retest` call, after they have performed that step.
 
 ### A green retest is a fix only when something names the change
 
@@ -530,7 +547,11 @@ Close with the release verdict: the blocker list, its status, and — explicitly
 that were never observed, plus the ones recorded `PASS (unstable)` on this environment and not yet
 adjudicated. Those two groups answer different questions and both belong here: one was never
 observed, the other was observed twice and disagreed. **Passing every blocker is not the same as
-having tested everything**; say which gaps a green list is hiding.
+having tested everything**; say which gaps a green list is hiding. Split the never-observed group by
+whether a retest will ever reach it: the plain `BLOCKED` ones are waiting on the fix pass this brief
+is asking for, the `BLOCKED (out of reach)` ones are not and will still be open after it — those are
+a decision for the operator (perform the named step, test on another environment, or ship without
+them), and a brief that lists them together asks a dev agent to fix what no fix reaches.
 
 Tell the operator the file is ready to paste into a dev session. Do not open issues or PRs.
 
@@ -539,7 +560,8 @@ Tell the operator the file is ready to paste into a dev session. Do not open iss
 For the selected environment (`--env <name>`, else the most recent run's — say which), read
 `qa-plan.md` + `qa-runs.md` and report, without running anything: the progress table
 (PASS / DEFECT / BLOCKED / Not run), the blocker list with each blocker's status, the open
-defects, the never-observed gaps, and the un-adjudicated `PASS (unstable)` assertions. One short
+defects, the never-observed gaps — the `BLOCKED (out of reach)` ones named apart, since no fix pass
+will shorten that list — and the un-adjudicated `PASS (unstable)` assertions. One short
 table, then the single sentence that answers "can this ship?" — which cannot be an unqualified yes
 while an unstable PASS is open: name it there, and say a retest or a `note` is what closes it.
 
@@ -569,7 +591,9 @@ they are computed from `qa-plan.md`, never estimated.
 ```
 
 **DEFECT** counts the assertions whose status on this environment is FAIL; a PASS-with-note counts
-as PASS. **Done** = has a result on this environment (PASS, DEFECT or BLOCKED). The identities hold for the
+as PASS. A `BLOCKED (out of reach)` counts as BLOCKED — an untested case is untested however it got
+that way, and a qualifier that lightened the column would hide exactly the gap this skill refuses to
+round off. **Done** = has a result on this environment (PASS, DEFECT or BLOCKED). The identities hold for the
 **counts** — Done = PASS + DEFECT + BLOCKED, Done + Not run = N — never for the rounded
 percentages, so never adjust a count to make the percentages add up. Round each percentage to a
 whole number on its own; show a non-zero value below 1% as `<1%` (never `0%`) and a value above
@@ -605,5 +629,8 @@ assertion genuinely passed. The line is what stops a green table from being the 
 - **Assertion ids are permanent.** Never renumber. Runs, notes and reports reference them for the
   life of the feature.
 - **BLOCKED is a real result.** Report it as loudly as a FAIL — an unreachable case is untested,
-  and a green blocker list that quietly contains one is worse than a red one.
+  and a green blocker list that quietly contains one is worse than a red one. Qualify the ones no
+  fix on this environment reaches as `BLOCKED (out of reach)`: it is what keeps `retest` from
+  re-walking them on every pass, and what tells the operator which part of the gap is theirs to
+  close rather than the dev agent's.
 - Report what you actually observed. Never a PASS you inferred.

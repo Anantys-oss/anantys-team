@@ -58,10 +58,21 @@ environment that has results — who writes and refreshes each: SKILL.md, "Progr
       condition> is a real A2 failure.*
 - [ ] ~~A3 <dropped behaviour>~~ — **REMOVED from the product** (<date>, operator, env:
       `all`). Do not report its absence as a defect.
+- [ ] A4 <observable outcome> (FR-0zz). — `local`: BLOCKED (out of reach) · `staging`: not run
+      ⛔ *Out of reach on `local`: <why no fix clears it> — <the named human step, or the
+      environment where it can be observed>.*
 
-The per-environment suffix (`` `<env>`: PASS | FAIL | BLOCKED | not run ``) is the authoritative
-result, required on every assertion that has run on any environment; a run rewrites only its own
-environment's entry. The checkbox is checked only when **every** declared environment is PASS.
+The per-environment suffix (`` `<env>`: PASS | FAIL | BLOCKED | BLOCKED (out of reach) | not
+run ``) is the authoritative result, required on every assertion that has run on any environment; a
+run rewrites only its own environment's entry. The checkbox is checked only when **every** declared
+environment is PASS.
+
+`BLOCKED (out of reach)` is a plain BLOCKED everywhere a result is counted — the progress table's
+BLOCKED column, `Done`, the release verdict's untested list. The qualifier says one further thing
+and only that: **no fix on this environment can clear it**, so `retest` leaves it out of the subset
+(SKILL.md, `retest`) and the operator, not the dev agent, owns closing it. Record the step that
+would. An item a fix or a deploy *does* clear — an undeployed backend half, an open stacked PR — is
+a plain BLOCKED and belongs in the subset.
 
 ### B — <journey name>
 
@@ -81,6 +92,7 @@ Everything else is a defect to file, not a blocker.
 ## 4. Known gaps — never observed, only inferred. Never record these as PASS
 
 - **<assertion / path>** — <why an agent cannot reach it, and the exact human step needed>
+  — `out of reach` (no fix clears it) | `pending` (a fix or a deploy does)
 
 ## 5. Report format
 
