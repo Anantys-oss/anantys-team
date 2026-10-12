@@ -1,7 +1,7 @@
 ---
 name: anantys.ops
 description: Browser-driven web/SEO ops reviewer — pilot a real browser across live pages and SaaS dashboards (Search Console, Analytics, SERP) to collect data and produce an actionable, quantified optimization report with trend deltas. Use for recurring acquisition/SEO audits.
-allowed-tools: mcp__claude-in-chrome__tabs_context_mcp, mcp__claude-in-chrome__tabs_create_mcp, mcp__claude-in-chrome__navigate, mcp__claude-in-chrome__computer, mcp__claude-in-chrome__read_page, mcp__claude-in-chrome__find, mcp__claude-in-chrome__get_page_text, mcp__claude-in-chrome__javascript_tool, mcp__claude-in-chrome__form_input, mcp__claude-in-chrome__update_plan, Read, Write, Glob, Bash(mkdir:*), Bash(git:*), Bash(ls:*)
+allowed-tools: mcp__claude-in-chrome__tabs_context_mcp, mcp__claude-in-chrome__tabs_create_mcp, mcp__claude-in-chrome__list_connected_browsers, mcp__claude-in-chrome__select_browser, mcp__claude-in-chrome__navigate, mcp__claude-in-chrome__computer, mcp__claude-in-chrome__read_page, mcp__claude-in-chrome__find, mcp__claude-in-chrome__get_page_text, mcp__claude-in-chrome__javascript_tool, mcp__claude-in-chrome__form_input, AskUserQuestion, Read, Write, Glob, Bash(mkdir:*), Bash(git:*), Bash(ls:*)
 ---
 
 ## Mission
@@ -26,7 +26,7 @@ The user should provide (ask for anything missing — do NOT guess or hardcode):
 - **Traffic goal** (e.g. "from ~40 to 100 daily organic visitors").
 - **Workspace path** for outputs (default `./seo/` — see "Outputs").
 
-If a browser is not available (`tabs_context_mcp` returns nothing usable), STOP and tell the user this skill needs a connected browser. If a Google service shows a login screen, inform the user and wait — never fabricate dashboard numbers.
+If `tabs_context_mcp` returns nothing usable, check the two states that look like "no browser" and are not: the Chrome tools may be **deferred** in this session — load them with one `ToolSearch` call before concluding they are missing — and several browsers may be connected with none selected, which `list_connected_browsers` + `select_browser` resolves. Only when no browser is connected at all, STOP and tell the user this skill needs a connected browser. If a Google service shows a login screen, inform the user and wait — never fabricate dashboard numbers.
 
 ## Phase 0: Historical Context
 
@@ -41,8 +41,8 @@ If no prior data exists, note this is the first audit and skip comparisons. When
 ## Pre-flight
 
 1. Call `tabs_context_mcp`; create a fresh tab with `tabs_create_mcp`.
-2. Present a plan via `update_plan`: the domains you'll visit, and the approach (hub audit → top pages deep-dive → Search Console → Analytics → SERP → report).
-3. Wait for user approval before proceeding.
+2. State the plan in your reply: the domains you'll visit, and the approach (hub audit → top pages deep-dive → Search Console → Analytics → SERP → report).
+3. **Get explicit approval with `AskUserQuestion` before navigating anywhere.** This audit drives a browser into the user's logged-in Google properties, so the approval is a real gate, not a formality — do not continue on silence.
 
 ## Phase 1: Hub / Landing Page Audit
 
