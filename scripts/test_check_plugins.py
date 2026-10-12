@@ -533,5 +533,146 @@ class DelistingATreeIsNotRemovingIt(DeletingTheContractIsNotAnAbsentContract):
         self.assertEqual(cp.errors, [])
 
 
+class TheExposedNameIsNotTheDirectoryName(DeletingTheContractIsNotAnAbsentContract):
+    """A skill's identity is its *sanitized* directory name, and a dot is not legal in it.
+
+    The gate compared the frontmatter `name:` against `skill_dir.name` raw, so it
+    demanded that a directory called `anantys.qa` declare `name: anantys.qa` — a
+    string the runtime never produces. Probing the session's own `system`/`init`
+    event (CLI 2.1.278) returned `anantys-qa`: every character outside
+    `[A-Za-z0-9_-]` becomes `-`, and the frontmatter is ignored outright.
+
+    That inverted the gate against the truth. The only head that had set the
+    frontmatter to the name the runtime exposes was the one this reddened.
+    """
+
+    def name_errors(self) -> list[str]:
+        """Only this rule's findings. The bare fixture also trips README and contract."""
+        self.held(None)
+        self.run_main()
+        return [e for e in cp.errors if "frontmatter name" in e]
+
+    def skill(self, directory: str, declared: str) -> list[str]:
+        d = cp.ROOT / "plugins/p/skills" / directory
+        d.mkdir(parents=True)
+        (d / "SKILL.md").write_text(f"---\nname: {declared}\ndescription: a role\n---\n")
+        return self.name_errors()
+
+    def test_a_dotted_directory_wants_the_hyphenated_name_the_runtime_exposes(self) -> None:
+        self.assertEqual(self.skill("anantys.qa", "anantys-qa"), [])
+
+    def test_declaring_the_raw_directory_name_is_the_error(self) -> None:
+        # The previous rule demanded exactly this string.
+        error, = self.skill("anantys.qa", "anantys.qa")
+        self.assertIn("`anantys.qa` != `anantys-qa`", error)
+
+    def test_every_illegal_character_collapses_to_one_hyphen_each(self) -> None:
+        self.assertEqual(self.skill("a.b c+d", "a-b-c-d"), [])
+
+    def test_case_and_underscore_survive_sanitizing(self) -> None:
+        # Measured: `ProbeCaps` and `probe_under` came back untouched.
+        self.assertEqual(self.skill("Probe_Caps", "Probe_Caps"), [])
+
+    def test_an_agent_keeps_its_filename_and_is_not_sanitized(self) -> None:
+        # The mirror image: an agent's `name:` *is* its identity, so the gate's
+        # filename convention stays as it was and keeps the dot.
+        (cp.ROOT / "plugins/p/agents/p.auditor.md").write_text(
+            "---\nname: p.auditor\ndescription: d\ntools: [\"Read\"]\nmodel: opus\n---\n"
+        )
+        self.assertEqual(self.name_errors(), [])
+
+    def inherited(self, directory: str, declared: str) -> tuple[list[str], list[str]]:
+        """Pretend the baseline already held `declared`, so the head only inherited it."""
+        d = cp.ROOT / "plugins/p/skills" / directory
+        d.mkdir(parents=True)
+        body = f"---\nname: {declared}\ndescription: a role\n---\n"
+        (d / "SKILL.md").write_text(body)
+        cp.at = lambda commit, path: body if path == d / "SKILL.md" else None
+        self.run_main()
+        return (
+            [e for e in cp.errors if "frontmatter name" in e],
+            [w for w in cp.warnings if "frontmatter name" in w],
+        )
+
+    def test_a_name_unchanged_since_the_baseline_warns_rather_than_blocking(self) -> None:
+        # Every head in the queue inherits main's spelling. Reddening them would make
+        # each one wait on a sibling that edits a file it does not touch.
+        found, warned = self.inherited("anantys.qa", "anantys.qa")
+        self.assertEqual(found, [])
+        warning, = warned
+        self.assertIn("not this branch's to fix", warning)
+
+    def test_a_name_this_branch_wrote_is_still_an_error(self) -> None:
+        d = cp.ROOT / "plugins/p/skills/anantys.qa"
+        d.mkdir(parents=True)
+        (d / "SKILL.md").write_text("---\nname: something-else\ndescription: a role\n---\n")
+        cp.at = lambda commit, path: "---\nname: anantys.qa\ndescription: a role\n---\n"
+        self.run_main()
+        error, = [e for e in cp.errors if "frontmatter name" in e]
+        self.assertIn("`something-else` != `anantys-qa`", error)
+
+    def test_a_baseline_that_cannot_be_read_does_not_downgrade_the_error(self) -> None:
+        # `merge_base` returning None is not a pass: an unattributable name is an error.
+        cp.merge_base = lambda: None
+        error, = self.skill("anantys.qa", "anantys.qa")
+        self.assertIn("`anantys.qa` != `anantys-qa`", error)
+
+    def readme_errors(self, prose: str) -> list[str]:
+        d = cp.ROOT / "plugins/p/skills/a.role"
+        d.mkdir(parents=True)
+        (d / "SKILL.md").write_text("---\nname: a-role\ndescription: a role\n---\n")
+        (cp.ROOT / "README.md").write_text(prose)
+        self.held(None)
+        self.run_main()
+        return [e for e in cp.errors if "README.md" in e]
+
+    def test_readme_prose_may_use_the_name_a_user_types(self) -> None:
+        self.assertEqual(self.readme_errors("The a-role skill reviews things.\n"), [])
+
+    def test_readme_prose_may_still_use_the_directory_spelling(self) -> None:
+        self.assertEqual(self.readme_errors("The a.role skill reviews things.\n"), [])
+
+    def test_a_role_in_no_spelling_at_all_is_still_the_error(self) -> None:
+        error, = self.readme_errors("This README describes nothing.\n")
+        self.assertIn("`a-role` or `a.role`", error)
+
+    def test_sanitizing_an_agent_filename_would_have_been_the_error(self) -> None:
+        (cp.ROOT / "plugins/p/agents/p.auditor.md").write_text(
+            "---\nname: p-auditor\ndescription: d\ntools: [\"Read\"]\nmodel: opus\n---\n"
+        )
+        error, = self.name_errors()
+        self.assertIn("`p-auditor` != `p.auditor`", error)
+
+
+class AnOmittedCatalogFieldIsNotDrift(DeletingTheContractIsNotAnAbsentContract):
+    """Only a field the entry carries can be stale.
+
+    The drift loop subscripted `entry[field]` for name, version and description.
+    An entry that omits one raised `KeyError` out of `main` — a traceback, where a
+    gate owes a finding or silence. `claude plugin install` and `update` read the
+    version from plugin.json, so a catalog that drops its copy is declining to keep
+    a second one, not disagreeing with the first.
+    """
+
+    def drift_errors(self, **fields: object) -> list[str]:
+        (cp.ROOT / ".claude-plugin/marketplace.json").write_text(
+            json.dumps({"plugins": [dict(source="plugins/p", **fields)]})
+        )
+        self.held(None)
+        self.run_main()  # the crash this covers came out of main, not a return code
+        return [e for e in cp.errors if "drift" in e]
+
+    def test_an_entry_without_a_version_is_silent_rather_than_crashing(self) -> None:
+        self.assertEqual(self.drift_errors(name="p", description="a plugin"), [])
+
+    def test_an_entry_that_keeps_a_stale_version_is_still_drift(self) -> None:
+        error, = self.drift_errors(name="p", version="0.9.9", description="a plugin")
+        self.assertIn("version drift", error)
+
+    def test_dropping_a_field_does_not_hide_drift_in_the_ones_kept(self) -> None:
+        error, = self.drift_errors(name="p", description="drifted")
+        self.assertIn("description drift", error)
+
+
 if __name__ == "__main__":
     unittest.main()

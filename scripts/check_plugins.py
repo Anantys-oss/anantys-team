@@ -408,12 +408,57 @@ def check_contract_clauses(contract: Path) -> None:
         )
 
 
+def exposed_skill_name(skill_dir: Path) -> str:
+    """The identity the runtime exposes for a skill, which is not its directory name.
+
+    Probed on CLI 2.1.278 by installing a plugin and reading the session's own
+    `system`/`init` event: every character outside ``[A-Za-z0-9_-]`` becomes ``-``
+    and nothing else changes — ``probe.dotdir`` and ``probe.two.dots`` came back as
+    ``probe-dotdir`` and ``probe-two-dots``, ``probe space`` and ``probe+plus`` as
+    ``probe-space`` and ``probe-plus``, while ``ProbeCaps`` and ``probe_under``
+    came back untouched (no case folding, underscore is legal). The frontmatter
+    ``name:`` was ignored outright: a skill declaring a name unrelated to its
+    directory was still exposed under the sanitized directory name.
+
+    Agents are the mirror image and deliberately keep `agent.stem` as their
+    expected name below: the same probe exposed a dotted *agent* file under its
+    frontmatter ``name:``, ignoring the filename. So for a skill the directory is
+    the identity and `name:` is decorative, and for an agent `name:` is the
+    identity and the filename is decorative. Asserting the same shape for both is
+    what made this gate demand a skill name the runtime never produces.
+    """
+    return re.sub(r"[^A-Za-z0-9_-]", "-", skill_dir.name)
+
+
+def declared_name(text: str | None) -> str | None:
+    """The frontmatter `name:` in raw file text, reporting nothing about the text.
+
+    `frontmatter` is for a file under review and appends findings about its shape.
+    The baseline's copy is not under review, so reading it must stay silent.
+    """
+    if not text or not text.startswith("---\n"):
+        return None
+    found = re.search(r"^name:[ \t]*(\S+)", text[4:].split("\n---", 1)[0], re.MULTILINE)
+    return found.group(1) if found else None
+
+
 def require(path: Path, fm: dict[str, str], keys: tuple[str, ...], expected_name: str) -> None:
     for key in keys:
         if not fm.get(key):
             errors.append(f"{rel(path)}: frontmatter is missing `{key}`")
-    if fm.get("name", expected_name) != expected_name:
-        errors.append(f"{rel(path)}: frontmatter name `{fm['name']}` != `{expected_name}`")
+    declared = fm.get("name", expected_name)
+    if declared == expected_name:
+        return
+    finding = f"{rel(path)}: frontmatter name `{declared}` != `{expected_name}`"
+    # Severity is remedy locality, the same line `check_version_bump` and
+    # `check_contract_clauses` draw. A name this branch wrote is fixable inside its own
+    # diff, so it is an error. A name it merely inherited is fixable only in a change
+    # that edits a file this branch does not touch — reddening it would make every head
+    # in the queue wait on one of its siblings, which is an order they do not have.
+    if BASE is not None and declared_name(at(BASE, path)) == declared:
+        warnings.append(f"{finding} — unchanged since the baseline, so not this branch's to fix")
+    else:
+        errors.append(finding)
 
 
 def check_unlisted(marketplace: dict) -> None:
@@ -455,8 +500,13 @@ def main() -> int:
         manifest = json.loads(manifest_path.read_text())
 
         # The catalog is a copy of the manifest; a stale copy installs the wrong version.
+        # Only a field the entry actually carries can be stale. `claude plugin install`
+        # and `update` read the version from plugin.json — a catalog that omits it is
+        # declining to keep a second copy, not drifting from the first. Subscripting
+        # unconditionally turned that choice into a KeyError traceback, which is a
+        # crash where a gate owes either a finding or silence.
         for field in ("name", "version", "description"):
-            if entry[field] != manifest[field]:
+            if field in entry and entry[field] != manifest[field]:
                 errors.append(
                     f"{field} drift: marketplace.json has {entry[field]!r}, "
                     f"{rel(manifest_path)} has {manifest[field]!r}"
@@ -485,7 +535,7 @@ def main() -> int:
             if not skill.exists():
                 errors.append(f"{rel(skill_dir)}: no SKILL.md")
                 continue
-            require(skill, frontmatter(skill), ("name", "description"), skill_dir.name)
+            require(skill, frontmatter(skill), ("name", "description"), exposed_skill_name(skill_dir))
             if contract:
                 check_contract(skill, contract)
             check_companions(skill)
@@ -514,9 +564,19 @@ def main() -> int:
         # measurement accepted "appears". Fenced blocks are not read; drop them first.
         raw_readme = (ROOT / "README.md").read_text(encoding="utf-8")
         readme = FENCED.sub("", raw_readme)
-        for name in [d.name for d in skills] + [a.stem for a in agents]:
-            if name not in readme:
-                errors.append(f"README.md does not describe `{name}` outside a code block")
+        # A skill has two true spellings here — its directory and the sanitized name the
+        # runtime exposes (see `exposed_skill_name`) — and this rule is about whether the
+        # role is described at all, not about which one the prose picks. Demanding the
+        # directory spelling reddened the one head whose README had been rewritten to the
+        # string a user actually types. Which spelling belongs in prose is a separate
+        # question, and not this rule's to answer.
+        spellings = [{d.name, exposed_skill_name(d)} for d in skills] + [{a.stem} for a in agents]
+        for names in spellings:
+            if not any(name in readme for name in names):
+                errors.append(
+                    "README.md does not describe "
+                    f"{' or '.join(f'`{n}`' for n in sorted(names))} outside a code block"
+                )
 
         # One fenced block is not like the others. The install snippet is the only text
         # in this repo a user *executes*, and both names in it are names this check
