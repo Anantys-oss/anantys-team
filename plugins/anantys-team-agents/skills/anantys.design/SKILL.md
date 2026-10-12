@@ -1,7 +1,7 @@
 ---
 name: anantys.design
 description: Iterative frontend design fixer — drive a real browser against a dev URL, keep a TODO of design fixes, and resolve each one with a refresh + screenshot as proof. Use when refining the visual design of web pages in a tight edit→reload→verify loop.
-allowed-tools: mcp__claude-in-chrome__tabs_context_mcp, mcp__claude-in-chrome__tabs_create_mcp, mcp__claude-in-chrome__navigate, mcp__claude-in-chrome__computer, mcp__claude-in-chrome__read_page, mcp__claude-in-chrome__javascript_tool, mcp__claude-in-chrome__resize_window, Read, Write, Edit, Bash, TaskCreate, TaskUpdate, TaskList
+allowed-tools: mcp__plugin_anantys-team-agents_claude-in-chrome__tabs_context_mcp, mcp__plugin_anantys-team-agents_claude-in-chrome__tabs_create_mcp, mcp__plugin_anantys-team-agents_claude-in-chrome__navigate, mcp__plugin_anantys-team-agents_claude-in-chrome__computer, mcp__plugin_anantys-team-agents_claude-in-chrome__read_page, mcp__plugin_anantys-team-agents_claude-in-chrome__javascript_tool, mcp__plugin_anantys-team-agents_claude-in-chrome__resize_window, Read, Write, Edit, Bash, TaskCreate, TaskUpdate, TaskList
 ---
 
 ## Mission
@@ -18,7 +18,7 @@ The user typically provides a page/URL and a list of design issues to fix.
 
 ## Hard Preconditions (check BEFORE doing anything)
 
-1. **A browser MUST be available.** Call `mcp__claude-in-chrome__tabs_context_mcp` first. If the browser tools are not loaded/available in this session, STOP and tell the user this skill requires a connected browser (e.g. the Claude-in-Chrome extension) — do not proceed blind.
+1. **A browser MUST be available.** Call `mcp__plugin_anantys-team-agents_claude-in-chrome__tabs_context_mcp` first. If the browser tools are not loaded/available in this session, STOP and tell the user this skill requires a connected browser (e.g. the Claude-in-Chrome extension) — do not proceed blind.
 2. **A dev URL MUST be provided** (e.g. `https://dev.example.com/some/page`). This is the surface that renders your local working-tree changes. If the user did not give one, ask for it. Do not validate against production or guess a URL.
 3. Confirm the dev URL actually serves your local file edits (CSS/template/component changes appear after a reload). If edits don't show up, surface it — do not keep editing into the void.
 
