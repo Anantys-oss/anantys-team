@@ -27,7 +27,13 @@ More roles can be added over time without changing how you install the team.
 ## Requirements
 
 - [Claude Code](https://claude.com/claude-code)
-- A connected browser for the browser tools (e.g. the **Claude-in-Chrome** extension).
+- The **Claude-in-Chrome** extension, attached to a browser.
+
+You do not wire the browser up yourself. `plugin.json` declares the Claude-in-Chrome MCP
+server, so installing the plugin connects it — the three browser roles' granted tool names
+exist from the first session. What the plugin cannot supply is the extension: without it the
+server still reports `connected`, but a tool call waits on a browser that never answers.
+Attach the extension before invoking a browser role.
 
 ## Install
 

@@ -1,7 +1,7 @@
 ---
 name: anantys.ops
 description: Browser-driven web/SEO ops reviewer — pilot a real browser across live pages and SaaS dashboards (Search Console, Analytics, SERP) to collect data and produce an actionable, quantified optimization report with trend deltas. Use for recurring acquisition/SEO audits.
-allowed-tools: mcp__claude-in-chrome__tabs_context_mcp, mcp__claude-in-chrome__tabs_create_mcp, mcp__claude-in-chrome__navigate, mcp__claude-in-chrome__computer, mcp__claude-in-chrome__read_page, mcp__claude-in-chrome__find, mcp__claude-in-chrome__get_page_text, mcp__claude-in-chrome__javascript_tool, mcp__claude-in-chrome__form_input, mcp__claude-in-chrome__update_plan, Read, Write, Glob, Bash(mkdir:*), Bash(git:*), Bash(ls:*)
+allowed-tools: mcp__plugin_anantys-team-agents_claude-in-chrome__tabs_context_mcp, mcp__plugin_anantys-team-agents_claude-in-chrome__tabs_create_mcp, mcp__plugin_anantys-team-agents_claude-in-chrome__navigate, mcp__plugin_anantys-team-agents_claude-in-chrome__computer, mcp__plugin_anantys-team-agents_claude-in-chrome__read_page, mcp__plugin_anantys-team-agents_claude-in-chrome__find, mcp__plugin_anantys-team-agents_claude-in-chrome__get_page_text, mcp__plugin_anantys-team-agents_claude-in-chrome__javascript_tool, mcp__plugin_anantys-team-agents_claude-in-chrome__form_input, mcp__plugin_anantys-team-agents_claude-in-chrome__update_plan, Read, Write, Glob, Bash(mkdir:*), Bash(git:*), Bash(ls:*)
 ---
 
 ## Mission
