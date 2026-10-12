@@ -56,6 +56,13 @@ strictly worse than the stale-floor case, and it was the quieter of the two. So
 an absent tag is reported on the same terms: a warning naming the one action —
 tag what is already shipped — that lets siblings share a version again.
 
+That action has a name on this platform, and the tag it writes has a shape:
+`claude plugin tag <plugin-dir>` creates `{name}--v{version}` after checking
+that `plugin.json` and the enclosing marketplace entry agree. A check that
+recognises only a bare `v0.6.0` therefore cannot see a release cut the official
+way — the warning above would survive the very action it asks for — so the
+release baseline is read per plugin, in the platform's own form.
+
 The two manifests are excluded from the content set so that a lone bump cannot
 justify itself. That reason is about one key — `version` — and excluding the
 files wholesale extended it to every other key in them. `description` is shipped
@@ -100,10 +107,27 @@ def resolve_base(argv: list[str]) -> str | None:
     return None
 
 
-def released_tag() -> str | None:
-    """Newest MAJOR.MINOR.PATCH tag (optionally `v`-prefixed), or None if none exist."""
-    tags = git("tag", "--list", "--sort=-v:refname").splitlines()
-    return next((t for t in tags if re.fullmatch(r"v?\d+\.\d+\.\d+", t)), None)
+def released_tag(plugin: str) -> str | None:
+    """Newest release tag for `plugin`, or None if none exist.
+
+    `claude plugin tag` is the command that cuts a release, and it names its tag
+    `{plugin}--v{version}` — so that is the form a repo released through the
+    platform actually carries. A bare `v?MAJOR.MINOR.PATCH` is accepted too, as
+    the repo-wide form a single-plugin repo may have tagged by hand. Recognising
+    only the bare form puts a platform-released repo permanently in the
+    merge-base fallback: the release happened, and the floor never moved.
+
+    The platform form is per plugin, which is the only reading that can be right
+    for a marketplace of two — one plugin's release says nothing about what
+    users have installed of the other.
+
+    Two forms in one repo cannot be ordered by `--sort=-v:refname`, which sorts
+    the prefix before the version, so the newest is picked by parsed version.
+    """
+    pattern = re.compile(rf"(?:{re.escape(plugin)}--)?v?(\d+\.\d+\.\d+)")
+    matches = [m for t in git("tag", "--list").splitlines() if (m := pattern.fullmatch(t))]
+    newest = max(matches, key=lambda m: tuple(int(p) for p in m[1].split(".")), default=None)
+    return newest and newest[0]
 
 
 def json_at(ref: str, path: str) -> dict | None:
@@ -142,11 +166,6 @@ def main(argv: list[str]) -> int:
     errors: list[str] = []
     unreleased: list[str] = []
 
-    tag = released_tag()
-    shipped_ref = tag
-    if shipped_ref is None:
-        shipped_ref = base
-        print("no release tag — measuring the version against the merge-base")
     marketplace = json.loads((ROOT / MARKETPLACE).read_text())
     base_catalog = json_at(base, MARKETPLACE)
 
@@ -168,6 +187,14 @@ def main(argv: list[str]) -> int:
             continue
         touched.sort()
 
+        # Per plugin, because the platform's tag name is: a release of one says
+        # nothing about what users have installed of another.
+        tag = released_tag(entry["name"])
+        shipped_ref = tag
+        if shipped_ref is None:
+            shipped_ref = base
+            print(f"{entry['name']}: no release tag — measuring the version against the merge-base")
+
         try:
             shipped = json.loads(git("show", f"{shipped_ref}:{manifest}"))["version"]
         except (subprocess.CalledProcessError, KeyError):
@@ -181,8 +208,9 @@ def main(argv: list[str]) -> int:
                 "the release baseline this check is built on is inert. That floor moves on "
                 "every merge, so each branch behind the one that lands owes a version above "
                 f"it — one distinct value per wave, re-typed in {manifest} and "
-                f"{MARKETPLACE} after every merge. Tag what is already shipped and siblings "
-                "may name the same next version again."
+                f"{MARKETPLACE} after every merge. Tag what is already shipped "
+                f"(`claude plugin tag {source} --push`) and siblings may name the same next "
+                "version again."
             )
 
         if tag is not None:

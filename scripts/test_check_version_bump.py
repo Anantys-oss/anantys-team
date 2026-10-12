@@ -310,6 +310,47 @@ class VersionBumpCase(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn("v0.10.0", result.stderr)
 
+    def test_the_platform_tag_format_is_a_release_baseline(self) -> None:
+        """`claude plugin tag` writes `{name}--v{version}` — the gate has to see it.
+
+        A release cut the official way must move the floor. Recognising only a
+        bare `v0.1.0` would leave this repo in merge-base mode, still asking for
+        the tag it already has.
+        """
+        self.sh("git", "tag", "-d", "v0.1.0")
+        self.sh("git", "tag", "demo--v0.1.0")
+        self.branch()
+        self.write(f"{PLUGIN}/skills/demo/SKILL.md", "---\nname: demo\n---\n\nrewritten\n")
+        self.commit("edit skill, no bump")
+        result = self.check()
+        self.assertEqual(result.returncode, 1)
+        self.assertNotIn("no release tag", result.stdout)
+        self.assertIn("may name the same one", result.stderr)
+
+    def test_another_plugins_release_tag_is_not_this_ones_floor(self) -> None:
+        """The platform form names a plugin, so one plugin's release is only its own."""
+        self.sh("git", "tag", "-d", "v0.1.0")
+        self.sh("git", "tag", "fresh--v9.9.9")
+        self.branch()
+        self.write(f"{PLUGIN}/skills/demo/SKILL.md", "---\nname: demo\n---\n\nrewritten\n")
+        self.commit("edit skill")
+        result = self.check()
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("no release tag", result.stdout)
+
+    def test_newest_wins_across_both_tag_forms(self) -> None:
+        """Mixed forms cannot be ordered by refname — `demo--v…` sorts before `v…`."""
+        self.write_plugin("0.2.0")
+        self.commit("ship 0.2.0")
+        self.sh("git", "tag", "demo--v0.2.0")
+        self.branch()
+        self.write(f"{PLUGIN}/skills/demo/SKILL.md", "---\nname: demo\n---\n\nrewritten\n")
+        self.write_plugin("0.2.0")  # ahead of v0.1.0, level with demo--v0.2.0
+        self.commit("edit skill + name the version the last release already shipped")
+        result = self.check()
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("demo--v0.2.0", result.stderr)
+
     # --- the manifest exclusion covers `version`, not the whole file ---------
 
     def test_description_rewrite_is_content(self) -> None:
