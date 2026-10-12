@@ -2,6 +2,8 @@
 name: anantys.debug
 description: Debug by observing the running app, not by guessing — a tight reproduce → inspect runtime (browser console, network, logs) → fix → re-prove loop. The proof is the observed behavior, never a plausible-looking diff. Use to diagnose and fix a bug where you can exercise the app live (a "Ralf loop"). Mutates source files in your working tree — never commits, pushes, or opens a PR. For visual refinement rather than a functional defect, use anantys.design.
 allowed-tools: mcp__claude-in-chrome__tabs_context_mcp, mcp__claude-in-chrome__tabs_create_mcp, mcp__claude-in-chrome__navigate, mcp__claude-in-chrome__computer, mcp__claude-in-chrome__read_page, mcp__claude-in-chrome__javascript_tool, mcp__claude-in-chrome__read_console_messages, Read, Write, Edit, Bash, Glob, Grep, TaskCreate, TaskUpdate, TaskList
+description: Debug by observing the running app, not by guessing — a tight reproduce → inspect runtime (browser console, network, logs) → fix → re-prove loop. The proof is the observed behavior, never a plausible-looking diff. Use to diagnose and fix a bug where you can exercise the app live (a "Ralf loop").
+allowed-tools: mcp__plugin_anantys-team-agents_claude-in-chrome__tabs_context_mcp, mcp__plugin_anantys-team-agents_claude-in-chrome__tabs_create_mcp, mcp__plugin_anantys-team-agents_claude-in-chrome__navigate, mcp__plugin_anantys-team-agents_claude-in-chrome__computer, mcp__plugin_anantys-team-agents_claude-in-chrome__read_page, mcp__plugin_anantys-team-agents_claude-in-chrome__javascript_tool, mcp__plugin_anantys-team-agents_claude-in-chrome__read_console_messages, Read, Write, Edit, Bash, Glob, Grep, TaskCreate, TaskUpdate, TaskList
 ---
 
 ## Mission
@@ -12,7 +14,7 @@ This is a **Ralf loop** — the model's limit is rarely the model; it's the feed
 
 ## Hard preconditions
 
-1. **A way to exercise the app live.** For web bugs, call `mcp__claude-in-chrome__tabs_context_mcp` first; if the browser tools aren't available, STOP and say so. For non-browser bugs, confirm you can run the failing path (a command, a test, a request) and read its output/logs.
+1. **A way to exercise the app live.** For web bugs, call `mcp__plugin_anantys-team-agents_claude-in-chrome__tabs_context_mcp` first; if the browser tools aren't available, STOP and say so. For non-browser bugs, confirm you can run the failing path (a command, a test, a request) and read its output/logs.
 2. **A concrete repro.** Get the exact steps, URL, input, or failing test from the user. If you can't reproduce it, say so and gather more signal — never "fix" a bug you haven't seen fail.
 3. **A recorded baseline of the working tree.** Run `git status --porcelain` and keep the result. Everything dirty at that moment belongs to the human, not to you: you never revert it, never stage it, never describe it as part of your fix. If the tree is already dirty, say which files are pre-existing before you touch anything — after your first edit, nothing can tell the two apart.
 
