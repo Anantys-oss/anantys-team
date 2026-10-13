@@ -110,6 +110,9 @@ Environment: `<name>` (`local` | `shared`). Subject: <account/fixture id>. Build
 <branch/commit the env was serving, from its build-identity check — omit only when the plan has no
 **Under test:** line>. Path walked: <one line>.
 
+Fix under test: <the `--fixed` ref and the files it changed — a `retest` only; write `not named —
+regression set inferred from the failing assertions only` when it was run without `--fixed`>.
+
 | ID | Result | Evidence |
 |----|--------|----------|
 | A1 | ✅ | <observation> |
