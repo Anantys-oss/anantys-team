@@ -283,7 +283,10 @@ deployed to staging but not the local stack, or the reverse):
 - The per-assertion status in `qa-plan.md` is recorded **per environment** (`local: FAIL ·
   staging: PASS`) — the suffix is the authoritative record, required on every assertion that has
   run anywhere; the checkbox is checked only when every declared environment is PASS. A run
-  updates only the selected environment's status, never another's.
+  updates only the selected environment's status, never another's. **A qualifier rides on the
+  suffix** (`PASS (unstable)`, `BLOCKED (out of reach)`): every qualifier this skill gates an
+  action on is written there, because the plan is the only file a `note` ruling lands in, so a
+  qualifier recorded anywhere else can never be closed.
 - `retest`, `status` and `report` read only the results recorded for the selected environment and
   say which environment they describe. `status` and `report` also name every other environment
   that has results, so a defect recorded elsewhere is never silently out of view.
@@ -472,10 +475,16 @@ then PASS inside one scenario. Record it rather than discard it:
   section, naming what was retried and what the earlier observation showed. Silently re-driving a
   step until the assertion goes green is the one move that destroys this evidence — a retry that
   changes the answer *is* the observation.
-- It **joins the retest subset** (step 1). That is the only channel by which a shaky green gets a
-  second trial, and it needs no new status in `qa-plan.md`: the assertion did pass, so its
-  per-environment suffix stays PASS, and step 1 reads `qa-runs.md`, not the plan. Instability is a
-  property of the observation, and the run log is what records observations.
+- **The qualifier is carried into the plan's suffix too**, not left in the run log: `` `local`:
+  PASS (unstable) ``. It is not a new status — it counts as PASS everywhere a count is taken — but
+  it has to live where the selection and the rulings live. `retest` selects from the plan (step 1),
+  and an adjudication lands only in the plan; a qualifier held only in `qa-runs.md` would be
+  invisible to the first and unclosable by the second, so the operator's ruling would clear nothing
+  and every later `retest` would re-select the assertion forever. That is the REMOVED bug on the
+  green side.
+- It **joins the retest subset** (step 1) — the only channel by which a shaky green gets a second
+  trial. The run section keeps what the run log is for: the *evidence*, naming what was retried and
+  what the earlier observation showed.
 - A PASS still unstable after a second run is the operator's to rule on with `note`, exactly like a
   FAIL that would not reproduce. What they must not have to do is notice it themselves from a
   progress table reading 100% green.
@@ -515,6 +524,11 @@ An annotation with **no** `env:` (written before environments existed) is scoped
 environment only — except a **REMOVED** strike-through, which is a product decision and reads as
 `env: all`. Scoping it to the default env would re-file the dropped behaviour as a defect on every
 other environment.
+
+A ruling on a **qualified** status drops the qualifier and keeps the annotation as the reason:
+`PASS (unstable)` becomes `PASS`, `BLOCKED (out of reach)` stays BLOCKED but is no longer out of
+reach once the operator has performed the named step. The qualifier is what the selection and the
+warning lines read, so a ruling that leaves it in place closes nothing.
 
 Two rules make these annotations durable:
 
@@ -599,11 +613,9 @@ percentages, so never adjust a count to make the percentages add up. Round each 
 whole number on its own; show a non-zero value below 1% as `<1%` (never `0%`) and a value above
 99% but short of 100% as `>99%` (never `100%`).
 
-A `PASS (unstable)` counts as PASS here too, so the table alone cannot show one — the counts are
-read from `qa-plan.md` and instability is recorded in `qa-runs.md` (see "A PASS is a single
-observation too"). When the selected environment's run log holds any un-adjudicated one, follow the
-table with exactly one line naming them, which is the only thing in this section read from the run
-log:
+A `PASS (unstable)` counts as PASS here too, so the table alone cannot show one (see "A PASS is a
+single observation too"). When the selected environment carries any un-adjudicated one, follow the
+table with exactly one line naming them — read, like every count above it, from `qa-plan.md`:
 
 ```markdown
 ⚠️ Unstable: A7, A12 — passed on a retry, verified neither way. `retest` or `note` closes them.

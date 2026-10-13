@@ -61,11 +61,12 @@ environment that has results — who writes and refreshes each: SKILL.md, "Progr
 - [ ] A4 <observable outcome> (FR-0zz). — `local`: BLOCKED (out of reach) · `staging`: not run
       ⛔ *Out of reach on `local`: <why no fix clears it> — <the named human step, or the
       environment where it can be observed>.*
+- [ ] A7 <observable outcome> (FR-0ww). — `local`: PASS (unstable) · `staging`: not run
 
-The per-environment suffix (`` `<env>`: PASS | FAIL | BLOCKED | BLOCKED (out of reach) | not
-run ``) is the authoritative result, required on every assertion that has run on any environment; a
-run rewrites only its own environment's entry. The checkbox is checked only when **every** declared
-environment is PASS.
+The per-environment suffix (`` `<env>`: PASS | PASS (unstable) | FAIL | BLOCKED | BLOCKED (out of
+reach) | not run ``) is the authoritative result, required on every assertion that has run on any
+environment; a run rewrites only its own environment's entry. The checkbox is checked only when
+**every** declared environment is PASS.
 
 `BLOCKED (out of reach)` is a plain BLOCKED everywhere a result is counted — the progress table's
 BLOCKED column, `Done`, the release verdict's untested list. The qualifier says one further thing
@@ -147,9 +148,10 @@ did not reproduce on the same build, which is not a fix. It keeps its FAIL suffi
 see SKILL.md, "A green retest is a fix only when something names the change".
 
 `PASS (unstable)` is the same asymmetry on the green side: an assertion that needed more than one
-observation to go green. Its `qa-plan.md` suffix is plain `PASS` — it did pass — and this row is the
-only record that it disagreed with itself, which is why `retest` selects its subset from here rather
-than from the plan. See SKILL.md, "A PASS is a single observation too".
+observation to go green. It counts as PASS everywhere a result is counted, and like every other
+qualifier it is carried into the plan's suffix — that is where `retest` selects from and the only
+file an adjudication lands in. This row holds the evidence the suffix cannot: what was retried, and
+what the earlier observation showed. See SKILL.md, "A PASS is a single observation too".
 
 The line under the header is written `⏳ in progress` when the section is opened and replaced with
 `✅ complete` by step 5 once the walk has ended and steps 6–7 have run. **`⏳ in progress` on
