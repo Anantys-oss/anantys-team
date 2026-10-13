@@ -70,7 +70,7 @@ Give one clear recommendation with a one-line rationale:
 - **Merge** — solid; merge into base locally, hand the push to the user.
 - **Close** — superseded/obsolete; close the PR, leave both branches standing.
 - **Skip** — keep the branch for now, decide later.
-- **Audit** — needs deeper review/testing before deciding.
+- **Audit** — not decidable on what you have; name the deeper look you need, then run it (below).
 
 Then **wait for the user's decision.** Do not act on Merge/Close until they confirm.
 
@@ -98,6 +98,13 @@ nothing you have done is durable until they do.
   makes afterwards, never a flag bundled into the close.
 
 - **Skip:** return to base, leave the branch untouched.
+
+- **Audit:** stay on the branch — the audit reads the checked-out tree. Dispatch the
+  `anantys.code-auditor` agent over the branch's own range (`<merge-base>...HEAD`), and run the
+  tests you skipped in Step D. If Step D already dispatched the auditor, do not dispatch it again:
+  the open question is whatever its findings left unresolved, so name that and answer it. Report
+  what came back, then **re-recommend — Merge, Close, or Skip only.** Audit is not a verdict you
+  may return twice; a second one means you are not going to resolve it here, which is a Skip.
 
 **Never delete a branch — local or remote.** Not with `--delete-branch`, not with `git branch -D`.
 On the Merge path the merge commit lives only in an unpushed local base, so deleting both copies
