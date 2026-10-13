@@ -412,6 +412,9 @@ operator's go before any write.
   or to `all`** before filing it. If it is already ruled intended or a known drift there, record it
   as PASS-with-note and move on. A ruling scoped to another environment never passes a FAIL here —
   file it, and mention the other env's ruling in the evidence so the operator can extend it.
+- **A ruling the operator gives you mid-walk lands in the plan.** Write it into `qa-plan.md` in
+  `note`'s form, scoped to **this** environment, then record the assertion PASS-with-note. A ruling
+  left in the run section suppresses nothing — the check above reads only the plan.
 
 ## `retest` — the second pass after a fix
 
@@ -491,11 +494,9 @@ then PASS inside one scenario. Record it rather than discard it:
   changes the answer *is* the observation.
 - **The qualifier is carried into the plan's suffix too**, not left in the run log: `` `local`:
   PASS (unstable) ``. It is not a new status — it counts as PASS everywhere a count is taken — but
-  it has to live where the selection and the rulings live. `retest` selects from the plan (step 1),
-  and an adjudication lands only in the plan; a qualifier held only in `qa-runs.md` would be
-  invisible to the first and unclosable by the second, so the operator's ruling would clear nothing
-  and every later `retest` would re-select the assertion forever. That is the REMOVED bug on the
-  green side.
+  `retest` selects from the plan (step 1) and a ruling lands there, so a qualifier held only in
+  `qa-runs.md` is invisible to the first and unclosable by the second. That is the REMOVED bug on
+  the green side.
 - It **joins the retest subset** (step 1) — the only channel by which a shaky green gets a second
   trial. The run section keeps what the run log is for: the *evidence*, naming what was retried and
   what the earlier observation showed.

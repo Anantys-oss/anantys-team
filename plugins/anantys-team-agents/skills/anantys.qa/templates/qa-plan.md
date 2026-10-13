@@ -153,6 +153,13 @@ A FAIL that came back PASS with nothing to put in **What changed** does not belo
 did not reproduce on the same build, which is not a fix. It keeps its FAIL suffix and stays open —
 see SKILL.md, "A green retest is a fix only when something names the change".
 
+**A `NOT A DEFECT` row is an echo of an annotation that is already in `qa-plan.md`, never the
+record of the ruling.** The adjudication check reads the plan and nothing else, so a ruling that
+exists only here suppresses nothing: the next run re-files the defect the operator closed, and the
+row that says `do not re-file` is the only thing that ever read it. Whoever received the ruling
+writes the annotation first — `note` when the operator invoked it, the run itself when they said it
+mid-walk (SKILL.md, Judging rules) — and this row then points at a suppression that exists.
+
 `PASS (unstable)` is the same asymmetry on the green side: an assertion that needed more than one
 observation to go green. It counts as PASS everywhere a result is counted, and like every other
 qualifier it is carried into the plan's suffix — that is where `retest` selects from and the only
