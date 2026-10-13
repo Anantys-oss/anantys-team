@@ -26,12 +26,14 @@ scenario. A case you could not run is `BLOCKED`.
 Phases covered: <n> of <m> from `tasks.md`. **Excluded: Phase <k> (Polish)** — optional hardening,
 not user-observable.
 
-**Progress — `<env>` · <N> assertions** (the default environment's from `plan`, plus one per
-environment that has results — who writes and refreshes each: SKILL.md, "Progress table")
+**Progress — `<env>` · <N> assertions** (one per declared environment, written by `plan` and
+refreshed per SKILL.md, "Progress table". A fresh plan is not all Not run: each environment's
+construction blocks are already `BLOCKED`, so the counts differ between environments. Below, `<b>`
+is this environment's count of them — `0` for an environment that blocks nothing.)
 
 | ✅ Done | 🟢 PASS | 🔴 DEFECT | 🟠 BLOCKED | ⚪ Not run |
 |---|---|---|---|---|
-| 0% (0) | 0% (0) | 0% (0) | 0% (0) | 100% (<N>) |
+| …% (<b>) | 0% (0) | 0% (0) | …% (<b>) | …% (<N − b>) |
 
 ---
 
@@ -58,10 +60,16 @@ environment that has results — who writes and refreshes each: SKILL.md, "Progr
       condition> is a real A2 failure.*
 - [ ] ~~A3 <dropped behaviour>~~ — **REMOVED from the product** (<date>, operator, env:
       `all`). Do not report its absence as a defect.
+- [ ] A4 <observable outcome> (FR-0zz). — `local`: not run · `production`: BLOCKED
+      ⛔ *Blocked by construction (env: `production`): <why no run there can reach it — charges a
+      real card, needs an emailed code, no sandbox instrument>. Human step: <the step that would
+      clear it, or "none — verify on `<other env>`">.*
 
 The per-environment suffix (`` `<env>`: PASS | FAIL | BLOCKED | not run ``) is the authoritative
-result, required on every assertion that has run on any environment; a run rewrites only its own
-environment's entry. The checkbox is checked only when **every** declared environment is PASS.
+result, required on every assertion that has run on any environment or is blocked by construction on
+one; a run rewrites only its own environment's entry. The checkbox is checked when **every**
+environment that can run the assertion is PASS — an environment that blocks it by construction is
+not one of them, or the case stays unchecked forever.
 
 ### B — <journey name>
 
@@ -78,9 +86,21 @@ Everything else is a defect to file, not a blocker.
 
 ⚠️ Passing every blocker is not the same as having tested everything. See §4.
 
+⚠️ A blocker that §4 blocks by construction on an environment **cannot go green there**. On a
+`Production: yes` environment that is most of this list by design — money, consent and notification
+are exactly what is unsafe there — so a production campaign clears a release verdict for no one.
+`report` names which environment can.
+
 ## 4. Known gaps — never observed, only inferred. Never record these as PASS
 
-- **<assertion / path>** — <why an agent cannot reach it, and the exact human step needed>
+Every construction block (SKILL.md, "Construction blocks") is listed here with the environments it
+applies to, written by `plan` — not discovered by a run.
+
+| Assertion(s) | Blocked on | Why no run there can reach it | Human step that would clear it |
+|---|---|---|---|
+| <ids> | `all` | <CAPTCHA, emailed code, true mobile viewport> | <the exact step> |
+| <ids> | `production` | unsafe on production — <charges / consent / notifies> | none — verify on `<env>` |
+| <ids> | `local` | <no sandbox instrument / no record exhibiting it> | <provision it> |
 
 ## 5. Report format
 

@@ -160,7 +160,8 @@ Resolve the source (see "Locating the feature"), then read it for the two roles 
   section is the `tasks.md` role; and its **Not shipped / known gaps** section is load-bearing —
   each item there is a case that is `BLOCKED`-by-construction (a backend half not deployed, a step a
   browser cannot reach), **not a FAIL**. Route every such item into the plan's §4 (Known gaps) and
-  mark the assertions it covers `BLOCKED` with that reason, exactly as an adjudication would —
+  mark the assertions it covers `BLOCKED` with that reason, as a construction block scoped
+  `env: all` (see "Construction blocks") —
   skipping it makes the plan FAIL the very gaps it was told to expect, which is the case this whole
   section exists to prevent. There is no Polish phase to drop. If a requirement carries no stable
   id, assign one (`R1`, `R2`, …) and write it back into the **copy** (never the operator's original)
@@ -176,9 +177,44 @@ Then transform into scenarios (identical for every source):
   can only confirm what the model already did.
 - **Prioritise the money/legal/data paths.** Anything touching payment, consent, or overwriting
   existing user data goes in the blocker list.
-- **Mark what a browser agent cannot do** — CAPTCHA, emailed codes, real payment credentials,
-  true mobile viewports. These are `BLOCKED` by construction and need a named human step. Say so
-  in the plan rather than letting a run discover it.
+- **Mark what no run can reach** — CAPTCHA, emailed codes, real payment credentials, true mobile
+  viewports, anything unsafe on production. These are `BLOCKED` by construction; decide them here,
+  per environment, rather than letting a run discover them (see "Construction blocks").
+
+### Construction blocks — decided by `plan`, per environment
+
+An assertion that no run on an environment can ever reach is `BLOCKED` **by construction** there.
+That is a property of the assertion and the environment, both of which are known now — so decide it
+here, not mid-walk, and record it as an **environment-scoped annotation**, the same shape an
+adjudication takes, so every later action already reads it:
+
+```markdown
+- [ ] D2 The card is charged for the selected period (FR-031).
+      ⛔ *Blocked by construction (env: `production`): charges a real card. Human step: none —
+      verify on `staging` instead.*
+```
+
+Read the environment list from `.anantys/qa.md` and scope each block to the environments it is
+actually true of. Three sources, three different scopes:
+
+- **No run can reach it anywhere** — CAPTCHA, an emailed code, a true mobile viewport: `env: all`,
+  with the named human step.
+- **One environment lacks the instrument** — no payment sandbox card in a `local` block, no real
+  record exhibiting the behaviour in a `shared` one: that environment only.
+- **Unsafe there** — on every environment with `Production: yes`, an assertion that charges a real
+  card, records a real consent, or notifies a real person (email, SMS, push): that environment,
+  reason `unsafe on production`. These are the production guards (see Environments). Deciding them
+  here is what lets `run` ask the operator to approve a scenario list that is already correct —
+  classified mid-walk, the approval is given before the exclusions exist.
+
+List each block in §4 with its human step, and count it `BLOCKED` in that environment's progress
+table from the start — a plan that reports those assertions `Not run` promises coverage it has
+already ruled out. A legacy contract declaring no environments has one scope, `local`
+(see Environments).
+
+A construction block is cleared by **re-running `plan`** after the contract changed — a sandbox card
+was provisioned, a stacked PR deployed — never by a `retest`: the point of the block is that walking
+it again changes nothing. The operator can add one at any time with `note` (see `note`).
 
 Write `qa-plan.md` following `templates/qa-plan.md`. Every assertion gets a stable id
 (`A1`, `B5`, …) — ids are referenced by runs, notes and reports forever, so **never renumber
@@ -239,7 +275,8 @@ legacy file included — is driven by the operator's connected browser.
 
 - **Never run on production:** any scenario that charges a real card, records a real consent, or
   sends a notification (email, SMS, push) to a real person. Those assertions are `BLOCKED` on
-  production **by construction** — reason "unsafe on production" — never walked.
+  production **by construction** — reason "unsafe on production" — never walked. `plan` writes them
+  into the plan scoped to that environment (see "Construction blocks"); `run` reads them.
 - The pre-write confirmation below is mandatory (it applies to every `shared` env).
 
 Select one with `--env <name>` on any action that reads or writes results — `run`, `retest`,
@@ -270,8 +307,9 @@ deployed to staging but not the local stack, or the reverse):
 - Every `qa-runs.md` run header names its environment (`templates/qa-plan.md`).
 - The per-assertion status in `qa-plan.md` is recorded **per environment** (`local: FAIL ·
   staging: PASS`) — the suffix is the authoritative record, required on every assertion that has
-  run anywhere; the checkbox is checked only when every declared environment is PASS. A run
-  updates only the selected environment's status, never another's.
+  run anywhere; the checkbox is checked when every environment **that can run it** is PASS — one
+  that blocks it by construction is not one of them, or an assertion unsafe on production stays
+  unchecked forever. A run updates only the selected environment's status, never another's.
 - `retest`, `status` and `report` read only the results recorded for the selected environment and
   say which environment they describe. `status` and `report` also name every other environment
   that has results, so a defect recorded elsewhere is never silently out of view.
@@ -343,15 +381,20 @@ operator's go before any write.
 
    **On a `shared` env, confirm the target before anything is written:** echo the environment name,
    its base URL, the build it serves, whether it is production, and the scenarios that will create
-   data there — then wait for the operator's explicit go. No go, no run.
+   data there — the construction-blocked assertions excluded, so the list the operator approves is
+   the list you will actually walk — plus those exclusions and their reasons. Then wait for the
+   operator's explicit go. No go, no run.
 2. **Reset — `local` only.** On a `local` environment, apply its reset procedure and confirm it took
    effect (a stale auth cookie or leftover cache silently invalidates every assertion that follows) —
    verify by observing the app, not by trusting the command's exit code. On a **`shared`**
    environment there is **NO reset**: never reset staging / preview / prod — reuse the operator's
    session and create any needed test data additively (see Environments).
 3. **Walk the scenarios in order**, in a real browser driven as the environment's `Driven by:`
-   line says (see Environments). On production, skip the unsafe scenario classes and record them
-   `BLOCKED`. Per scenario: establish the precondition,
+   line says (see Environments). **Skip every assertion the plan marks blocked by construction on
+   this environment** and record it `BLOCKED` with the plan's reason — do not classify one yourself
+   mid-walk. If you judge an assertion unsafe or unreachable here and the plan carries no block for
+   it, that is a gap in the plan: **stop, do not walk it**, and tell the operator to re-run `plan`.
+   Per scenario: establish the precondition,
    perform the steps, then evaluate each assertion **individually**. In **interactive** mode the
    first *new* DEFECT ends the walk: finish that assertion's evidence, do steps 5–6, then hand off
    (see Run mode).
@@ -386,6 +429,10 @@ A full re-run after a fix pass is expensive and mostly re-confirms green. Instea
 
 1. Take from `qa-runs.md` every assertion whose latest result **on the selected environment** is
    FAIL or BLOCKED — a result recorded on another environment neither adds nor removes a case.
+   **Exclude the ones the plan blocks by construction** on this environment: a CAPTCHA, a real card,
+   an unsafe-on-production write cannot be cleared by walking them again, so re-asking the operator
+   for that human step every pass is pure cost. List them once as still blocked, with their reason
+   and the step that would clear them (see "Construction blocks").
 2. Add the **regression-risk set** around each fix — the assertions the fix could plausibly have
    broken, especially the ones an *over-fix* would break. A guard added to stop a wrong behaviour
    very often also suppresses the right one; assert the right one explicitly.
@@ -428,6 +475,11 @@ Two rules make these annotations durable:
 An assertion the product deliberately dropped is struck through and marked REMOVED — keep the line,
 so its absence is never re-reported as a defect.
 
+A ruling that an assertion must **not be walked** on an environment is a **construction block**, not
+an adjudication: write it in that form (`⛔`, scope, reason, human step) and add it to §4, so `run`
+skips it and `retest` stops re-asking. Removing one is `plan`'s job, not `note`'s — it depends on
+the environment contract, which `plan` re-reads.
+
 After any ruling, refresh **every** progress table in `qa-plan.md` — a REMOVED assertion leaves N
 for all environments (see "Progress table").
 
@@ -448,6 +500,11 @@ Close with the release verdict: the blocker list, its status, and — explicitly
 that were never observed. **Passing every blocker is not the same as having tested everything**;
 say which gaps a green list is hiding.
 
+**Name the blockers this environment blocks by construction**, and say that the list cannot go green
+here. On a `Production: yes` environment that is most of §3 by design — money, consent and
+notification are exactly what is unsafe there — so a production campaign clears a release verdict
+for no one. Say which environment can.
+
 Tell the operator the file is ready to paste into a dev session. Do not open issues or PRs.
 
 ## `status`
@@ -455,8 +512,10 @@ Tell the operator the file is ready to paste into a dev session. Do not open iss
 For the selected environment (`--env <name>`, else the most recent run's — say which), read
 `qa-plan.md` + `qa-runs.md` and report, without running anything: the progress table
 (PASS / DEFECT / BLOCKED / Not run), the blocker list with each blocker's status, the open
-defects, and the never-observed gaps. One short table, then the single sentence that answers
-"can this ship?".
+defects, and the never-observed gaps. **Split BLOCKED in two**: blocked by construction — settled,
+no retest clears it, name the human step — and blocked by circumstance, which a retest may clear.
+Reporting one number for both tells the operator to wait for something that will never happen.
+One short table, then the single sentence that answers "can this ship?".
 
 ---
 
@@ -465,8 +524,9 @@ defects, and the never-observed gaps. One short table, then the single sentence 
 Every action but `init` ends its reply with this table, and `qa-plan.md` keeps the same tables
 under its header. Which tables, and who writes them:
 
-- `plan` writes the **default** environment's table (all Not run), and keeps any existing ones —
-  recomputed, since a regeneration can change N.
+- `plan` writes **one table per declared environment** — it knows them all, and their starting
+  counts differ: each environment's construction blocks are `BLOCKED` from the start, everything
+  else is Not run. Existing tables are kept, recomputed, since a regeneration can change N.
 - `run` / `retest` add or refresh the **selected** environment's table.
 - `note` refreshes **every** table: a REMOVED assertion changes N for all of them. `note --env all`
   prints them all; `note --env <name>` prints that environment's.
@@ -484,7 +544,8 @@ they are computed from `qa-plan.md`, never estimated.
 ```
 
 **DEFECT** counts the assertions whose status on this environment is FAIL; a PASS-with-note counts
-as PASS. **Done** = has a result on this environment (PASS, DEFECT or BLOCKED). The identities hold for the
+as PASS. **Done** = has a result on this environment (PASS, DEFECT or BLOCKED) — a construction
+block is `BLOCKED`, hence Done, from `plan` onward: it is settled, not pending. The identities hold for the
 **counts** — Done = PASS + DEFECT + BLOCKED, Done + Not run = N — never for the rounded
 percentages, so never adjust a count to make the percentages add up. Round each percentage to a
 whole number on its own; show a non-zero value below 1% as `<1%` (never `0%`) and a value above
@@ -508,6 +569,10 @@ whole number on its own; show a non-zero value below 1% as `<1%` (never `0%`) an
   life of the feature.
 - **Append runs, never overwrite them.** The history is what stops a fixed defect from being
   re-diagnosed six weeks later.
+- **A construction block is decided by `plan`, not during the walk.** Which assertions an
+  environment can never run is knowable before the browser opens; deciding it mid-walk means the
+  operator approved a scenario list that was still wrong, and the plan promised coverage it had
+  already ruled out.
 - **BLOCKED is a real result.** Report it as loudly as a FAIL — an unreachable case is untested,
   and a green blocker list that quietly contains one is worse than a red one.
 - Report what you actually observed. Never a PASS you inferred.
