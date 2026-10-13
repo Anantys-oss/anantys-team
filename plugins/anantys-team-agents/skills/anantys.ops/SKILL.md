@@ -134,7 +134,9 @@ So fix the window once, here, before any dashboard is read:
 
 1. **Compute the elapsed days `E`** — today minus the `Last audit:` date in `current.md` (or
    the latest journal entry). No prior audit: `E` is undefined, take the default and skip the
-   comparisons Phase 0 already told you to skip.
+   comparisons Phase 0 already told you to skip. That date is the last session that **read a
+   dashboard**, not the last one that ran — see the login-wall rule in Rules, which is what
+   keeps the two the same thing.
 2. **Set every dashboard to the same `E`-day range ending today**, whenever the service can
    express it. Consecutive audits then tile the timeline — adjacent, equal, no overlap, no
    hole — and the delta means what the report says it means.
@@ -333,6 +335,16 @@ column produces a rebuild lossier than the loss it repairs, and it looks complet
 - **Be specific** — never "improve content"; say exactly what to add/change.
 - **Quantify everything** with real numbers from the dashboards; include trend deltas when prior audits exist.
 - **Prioritize by impact** toward the stated traffic goal — compute the gap (e.g. "+60 daily visitors needed — where do they come from?").
-- **A login wall ends one phase, not the audit — and never the file.** Phases 2 and 3 say *tell the user and wait*, and this list does not override them. "Proceed with what's available" means the phases that need no session (1, 1b, 4) and nothing downstream of a dashboard you did not read: no metric, no delta, no Phase 4b score, no `current.md` KPI row. Never invent metrics — and a number carried forward from the last audit is invented too, because nothing this session observed it. Name the phase that did not run, and take the `current.next.md` path above.
+- **A login wall ends one phase, not the audit — and never the file.** Phases 2 and 3 say *tell the user and wait*, and this list does not override them. "Proceed with what's available" means the phases that need no session (1, 1b, 4) and nothing downstream of a dashboard you did not read: no metric, no delta, no Phase 4b score, no `current.md` KPI row, **and no new `Last audit:`**. Never invent metrics — and a number carried forward from the last audit is invented too, because nothing this session observed it. Name the phase that did not run, and take the `current.next.md` path above.
+
+  That date is the one field a walled run can still write by accident. Phase 0 read `current.md`
+  and parsed it, so the first branch above applies and the overwrite is sanctioned — every row
+  carries forward correctly, and the header gets stamped with `today`. But `Last audit:` is not
+  a record of when this skill ran; Phase 1c **subtracts** it to size the next window. Stamp it
+  from a session that reached no dashboard and the following audit tiles against a
+  non-measurement, short by exactly the interval this one failed to cover. So the blank KPI row
+  is the visible loss and the cheap one — the operator can see it and re-run. Leave
+  `Last audit:` pointing at the last session that actually read a dashboard; it moves when
+  numbers do.
 - Take screenshots at each phase to document the audit trail — but a screenshot of a signed-in dashboard is the one artifact that leaks without being quoted. It carries the URL bar, the account chip and every other tab. Keep them in the conversation as evidence; **never write an image file into the workspace**, and transcribe the numbers you need into the report rather than embedding the frame they came from.
 - If the user provided extra queries/focus areas in $ARGUMENTS, fold them into the relevant phases.
