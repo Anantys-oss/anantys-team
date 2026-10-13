@@ -424,9 +424,8 @@ A full re-run after a fix pass is expensive and mostly re-confirms green. Instea
    selection. The run log knows nothing of the strike-through and keeps the dropped assertion's last
    FAIL forever, so a subset chosen there re-walks behaviour the product deliberately dropped and
    files a DEFECT that is outside the table's N. A result recorded on another environment neither
-   adds nor removes a case. Take, with them, every assertion that has **no result at all** on this
-   environment — `not run` is unresolved in the plainest sense, and after a complete walk there are
-   none, so the whole economy of this action is untouched where it was designed.
+   adds nor removes a case. Take, with them, every assertion with **no result at all** here: `not
+   run` is unresolved too, and a complete walk leaves none.
 2. Add the **regression-risk set** around each fix — the assertions the fix could plausibly have
    broken, especially the ones an *over-fix* would break. A guard added to stop a wrong behaviour
    very often also suppresses the right one; assert the right one explicitly.
@@ -468,9 +467,6 @@ assertion did not **reproduce**, which is not the same as fixed:
   neither way, and FAIL is the side a release verdict must be wrong on.
 - The way out is the operator's: they rule on it with `note` — a known environment race, a harness
   timing artifact — and it becomes PASS-with-note like every other adjudication.
-
-Intermittent is the most expensive class of defect to find and the cheapest to lose. Closing one on
-the single run that went green is how it reaches production with a green report behind it.
 
 ### A PASS is a single observation too
 
@@ -515,10 +511,6 @@ reads it. **So an unstable PASS is carried, by id, on every surface that answers
 the progress table, `status` and `qa-report.md`'s release verdict (each says how below), and it makes
 a `retest` due even when nothing failed. Not as a status and not as a column: a `PASS (unstable)` is
 a PASS whose evidence disagrees with itself, which is a sentence the counts cannot hold.
-
-An assertion that answers differently on the same build has been verified neither way — and that
-sentence does not stop being true when the run that disagreed with itself was the first one, nor
-when it is the only one the campaign recorded.
 
 ### A PASS belongs to the build it was observed on
 
