@@ -49,7 +49,32 @@ The user names the branch to review (a branch name, a PR number/URL, or "the cur
 git checkout <branch>          # MANDATORY — be on the branch locally
 git merge <base> --no-edit
 ```
-Confirm you are on the branch (`git branch --show-current`) before assessing. If conflicts arise, resolve them (the **base wins** on conflicts — the branch adapts to the base, not the reverse), then commit the resolution. If conflicts are non-trivial, surface them to the user rather than guessing.
+Confirm you are on the branch (`git branch --show-current`) before assessing. Resolve any conflict
+hunk by hunk: **the base's change stands, and the branch's intent survives it** — the resolution is
+a union of the two, not a choice of side. Then commit it. A hunk where the two genuinely contradict
+is a **finding for Step D**, not a preflight decision you take alone: surface it.
+
+**Never resolve with `-X ours` / `-X theirs`**, or any other blanket "take one side". A strategy
+option does not resolve a conflict, it deletes one — and it does so silently: git auto-merges,
+exits 0, writes no markers, and names nothing. Measured in this repo: merging one sibling head into
+`koan/retest-knows-what-was-fixed` with `-X theirs` dropped the four lines carrying that branch's
+entire thesis and reverted its `plugin.json` from `0.7.0` to the base's `0.6.1` — leaving a content
+change with no version bump, which the branch's own CI gate rejects. No conflict was reported, so
+the review that followed would have assessed a branch that no longer made its own case.
+
+**So prove the merge took nothing.** Record the tip before merging, and read what the merge did to
+the branch's own tree:
+
+```bash
+pre=$(git rev-parse HEAD)      # before the merge
+git merge <base> --no-edit
+git diff $pre HEAD             # what the merge changed about this branch
+```
+
+A deletion there is either the base's own (fine — that is the change the branch is adapting to) or
+a line **this branch added**, which means the resolution removed branch work. Account for every one
+of the second kind in the report, or drop it deliberately and say which and why. The manifest
+version is the routine case: the base's bump is not the branch's, and taking it reverts one.
 
 **This merge is local-only.** You do not push, so the branch now diverges from `origin/<branch>` and the PR on GitHub still shows the old, conflicting head. Say so explicitly and hand the user the one command that closes the gap, theirs to run:
 
@@ -126,7 +151,7 @@ without having read anything that supports it.
 ### Step D — Assess (this is the value you add)
 Go beyond "it compiles." Check, and report concisely:
 - **What it does** — 1-2 sentences.
-- **Correctness & scope** — does the diff actually do what the PR claims? Anything out of scope / unrelated?
+- **Correctness & scope** — does the diff actually do what the PR claims? Anything out of scope / unrelated? If Step A's merge removed branch work, judge the claim against what *survived*, report the removal, and recommend **Audit** rather than ruling on a branch you partly deleted.
 - **Tests** — is the new behavior tested? Run the relevant tests if quick; report results honestly. Remember *who wrote them*: a green suite authored by the same agent that authored the code is a **change detector** — it asserts what the code does, not what it should do, so it cannot fail. When the PR claims to implement a spec/ticket and the change is sensitive, say so in the verdict and recommend **Audit**, naming the run the human should authorize: `anantys.spec-tester` on **that spec, not the diff** (fresh context). You do not dispatch it yourself — it writes test files, and you required a clean working tree you must hand back unchanged. An undisputed change detector is a finding, not a pass.
 - **Conventions & safety** — matches the codebase's patterns? Any security/data-integrity/migration concern?
 - **Blind spots** — for a large or sensitive change, dispatch the `anantys.code-auditor` agent (fresh context) to surface what the agent *omitted* (implicit contracts, edge cases), and fold its findings in.
@@ -223,7 +248,9 @@ later `git branch -d` can't, and it is the one step in this whole skill that can
 - **A Merge verdict names the base it was computed against** — report `git rev-parse <base>` with it. If the base moved after you said it, the verdict expired; re-run Step C2 before anyone acts on it.
 - **A Close verdict names what superseded it** — the PR or commit, and what of this branch it leaves undone. No name, no Close: recommend **Skip** (Step C3).
 - **Summarize the diff** — a readable table + assessment beats a wall of raw diff.
-- **Base wins on conflicts** — the branch adapts to the base.
+- **A conflict is resolved as a union, never by side** — the base's change stands and the branch's
+  intent survives it. `-X ours` / `-X theirs` are banned: they delete one side with no conflict, no
+  marker and no record. Prove the merge took nothing (`git diff $pre HEAD`, Step A).
 - **Show PR info before the verdict** — context first.
 - **Wait for the user** before merging or closing. The recommendation is yours; the decision is theirs.
 - **Never push** — stop at the local merge and hand the push command to the user.
