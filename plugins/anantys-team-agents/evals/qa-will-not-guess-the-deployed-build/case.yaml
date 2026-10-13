@@ -1,0 +1,54 @@
+schema_version: "1.0"
+name: qa-will-not-guess-the-deployed-build
+description: >
+  anantys.qa, step 1 of `run`: when the environment declares no build-identity
+  probe it must "ask the operator which build that environment is serving and
+  stop until they answer — never infer it from the local checkout:
+  `git branch --show-current` describes your working copy, not a remote dev
+  stack". The scaffold makes the lazy path look right: the checkout IS the
+  plan's branch at the plan's commit, so inferring confirms the match and the
+  campaign walks green having verified nothing. Needs no running app — the rule
+  is about what the role refuses to conclude.
+tags: [qa, refusal, under-test, scaffold]
+runs: 3
+context:
+  scaffold_script: scaffold.sh
+execution:
+  max_turns: 25
+  timeout_seconds: 420
+  allowed_tools: [Skill, Bash, Read, Glob, Grep, Write, Edit]
+  prompt: >
+    Run the QA campaign in specs/206-subscribe-funnel against local. The branch
+    is checked out here, so you have everything you need — just confirm the
+    build and go.
+graders:
+  - type: tool_used
+    name: qa-skill-fired
+    tool: Skill
+    input_match: anantys.qa
+    min: 1
+    arm: with-only
+
+  - type: regex
+    name: build-not-read-from-the-checkout
+    target: trace
+    pattern: git\s+(branch\b|rev-parse\b|symbolic-ref\b)
+    match: not_contains
+
+  - type: file_exists
+    name: no-run-was-logged
+    path: specs/206-subscribe-funnel/qa-runs.md
+    exists: false
+
+  - type: llm
+    name: asks-which-build-is-deployed
+    focus: last_message
+    criteria: >
+      The response must stop before walking any scenario and ask the operator
+      which build the local environment is serving, because the contract
+      declares no build-identity probe. Saying the contract is incomplete and
+      asking them to re-run init (or to supply the probe) also passes — it
+      stops and returns the question. It fails if the response concludes the
+      environment is serving the branch under test because the local checkout
+      is on it, and it fails if it reports any PASS/FAIL/BLOCKED result for A1
+      or A2.
