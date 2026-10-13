@@ -30,7 +30,7 @@ Invoked as `/anantys.qa <action> [args]`. If no action is given, infer it: no `.
 | `plan` | Derive `qa-plan.md` from the feature source: a spec-kit dir, a `--brief <file.md>`, `--from linear:<SKU-…>`, or `--from pr:<url>` |
 | `run` | Execute the plan in a browser — `--env <name>` targets a deployed environment (staging / preview); default is the environment marked default — recording results and appending to `qa-runs.md`. Runs **autonomous** (whole plan, report at the end) or **interactive** (stop at the first DEFECT, print the fix brief) — asked once per session, or `--mode <autonomous\|interactive>` |
 | `retest` | Re-run only what is unresolved plus the regression-risk cases around each fix (`--env <name>` as for `run`) |
-| `note` | Record an operator adjudication into the plan so it is never re-filed — scoped to one environment (`--env <name>`) or to `--env all` |
+| `note` | Record an operator adjudication into the plan so it is never re-filed — scoped to one environment (`--env <name>`) or to `--env all`. Settles the FAIL it ruled on; never a BLOCKED |
 | `report` | Emit `qa-report.md` — a fix brief to paste into a dev session (`--env <name>`; default: the last run's environment) |
 | `status` | Summarize coverage and remaining blockers without running anything (`--env` as for `report`) |
 
@@ -412,9 +412,9 @@ operator's go before any write.
   or to `all`** before filing it. If it is already ruled intended or a known drift there, record it
   as PASS-with-note and move on. A ruling scoped to another environment never passes a FAIL here —
   file it, and mention the other env's ruling in the evidence so the operator can extend it.
-- **A ruling the operator gives you mid-walk lands in the plan.** Write it into `qa-plan.md` in
-  `note`'s form, scoped to **this** environment, then record the assertion PASS-with-note. A ruling
-  left in the run section suppresses nothing — the check above reads only the plan.
+- **A ruling the operator gives you mid-walk lands in the plan**, exactly as `note` would: same
+  form, same status write, scoped to **this** environment. Left in the run section it suppresses
+  nothing — the check above reads only the plan.
 
 ## `retest` — the second pass after a fix
 
@@ -577,6 +577,13 @@ A ruling on a **qualified** status drops the qualifier and keeps the annotation 
 reach once the operator has performed the named step. The qualifier is what the selection and the
 warning lines read, so a ruling that leaves it in place closes nothing.
 
+**A ruling also writes the status it ruled on**, or it closes nothing — every reader downstream keys
+on the suffix, not the annotation. Per environment in scope: a recorded `FAIL` becomes
+`PASS-with-note`; `BLOCKED` and `not run` are left alone, since a ruling settles an observation and
+passing an unreached case is the inferred PASS this skill refuses. `--env all` converts the FAILs and
+nothing else. Then rewrite `qa-report.md` as `report` does, and say in the reply which statuses
+changed on which environments — none, when the campaign never observed what was ruled on.
+
 Two rules make these annotations durable:
 
 - **Narrow the assertion, never delete it.** An adjudication says which failures are real, so the
@@ -589,7 +596,8 @@ so its absence is never re-reported as a defect — it lives in `qa-plan.md` onl
 `retest` selects from the plan and not from the run log.
 
 After any ruling, refresh **every** progress table in `qa-plan.md` — a REMOVED assertion leaves N
-for all environments (see "Progress table").
+for all environments (see "Progress table") — and rewrite `qa-report.md` for the ruling's
+environment, since the brief's defect list has just changed.
 
 ## `report` — the fix brief
 
@@ -644,7 +652,8 @@ under its header. Which tables, and who writes them:
 - `plan` writes the **default** environment's table (all Not run), and keeps any existing ones —
   recomputed, since a regeneration can change N.
 - `run` / `retest` add or refresh the **selected** environment's table.
-- `note` refreshes **every** table: a REMOVED assertion changes N for all of them. `note --env all`
+- `note` refreshes **every** table: a REMOVED assertion changes N for all of them, and a ruling on a
+  FAIL moves a count from 🔴 DEFECT to 🟢 PASS on each environment it settled. `note --env all`
   prints them all; `note --env <name>` prints that environment's.
 - `status` / `report` print the selected environment's table; they write nothing to the plan.
 

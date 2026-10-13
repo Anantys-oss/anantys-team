@@ -53,7 +53,7 @@ environment that has results — who writes and refreshes each: SKILL.md, "Progr
 **Assert**
 
 - [ ] A1 <observable outcome> (FR-0xx). — `local`: PASS · `staging`: not run
-- [ ] A2 <observable outcome> (FR-0yy). — `local`: FAIL · `staging`: not run
+- [ ] A2 <observable outcome> (FR-0yy). — `local`: PASS-with-note · `staging`: not run
       ⚠️ *Adjudicated <date> (operator, env: `<name>` | `all`): <ruling + reason>. Only <narrowed
       condition> is a real A2 failure.*
 - [ ] ~~A3 <dropped behaviour>~~ — **REMOVED from the product** (<date>, operator, env:
@@ -63,10 +63,17 @@ environment that has results — who writes and refreshes each: SKILL.md, "Progr
       environment where it can be observed>.*
 - [ ] A7 <observable outcome> (FR-0ww). — `local`: PASS (unstable) · `staging`: not run
 
-The per-environment suffix (`` `<env>`: PASS | PASS (unstable) | FAIL | BLOCKED | BLOCKED (out of
-reach) | not run ``) is the authoritative result, required on every assertion that has run on any
-environment; a run rewrites only its own environment's entry. The checkbox is checked only when
-**every** declared environment is PASS.
+The per-environment suffix (`` `<env>`: PASS | PASS-with-note | PASS (unstable) | FAIL | BLOCKED |
+BLOCKED (out of reach) | not run ``) is the authoritative result, required on every assertion that
+has run on any environment; a run rewrites only its own environment's entry. The checkbox is
+checked only when **every** declared environment is PASS.
+
+`PASS-with-note` is the suffix of an adjudicated FAIL: the observation stands, the operator ruled it
+not a defect, and the annotation above says under what narrowed condition a real failure still
+counts. It counts as PASS everywhere a result is counted, and the ruling writes it (SKILL.md,
+`note`). An annotated assertion still suffixed `FAIL` on the ruling's environment is a ruling that
+never landed — the table calls it a DEFECT and `qa-report.md` hands it to a dev agent. Never written
+from a `BLOCKED` or a `not run`: there is no observation to settle.
 
 `BLOCKED (out of reach)` is a plain BLOCKED everywhere a result is counted — the progress table's
 BLOCKED column, `Done`, the release verdict's untested list. The qualifier says one further thing
@@ -155,10 +162,10 @@ see SKILL.md, "A green retest is a fix only when something names the change".
 
 **A `NOT A DEFECT` row is an echo of an annotation that is already in `qa-plan.md`, never the
 record of the ruling.** The adjudication check reads the plan and nothing else, so a ruling that
-exists only here suppresses nothing: the next run re-files the defect the operator closed, and the
-row that says `do not re-file` is the only thing that ever read it. Whoever received the ruling
-writes the annotation first — `note` when the operator invoked it, the run itself when they said it
-mid-walk (SKILL.md, Judging rules) — and this row then points at a suppression that exists.
+exists only here suppresses nothing: the next run re-files the defect the operator closed. Whoever
+received the ruling writes the annotation first — `note`, or the run itself for a mid-walk ruling —
+**and sets that environment's suffix to `PASS-with-note`**, so the FAIL the next run would re-file
+is no longer recorded. This row then points at a suppression that exists.
 
 `PASS (unstable)` is the same asymmetry on the green side: an assertion that needed more than one
 observation to go green. It counts as PASS everywhere a result is counted, and like every other
