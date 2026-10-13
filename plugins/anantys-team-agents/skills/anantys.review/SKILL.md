@@ -1,6 +1,6 @@
 ---
 name: anantys.review
-description: Cleanly review a single agent-pushed PR branch and help decide its fate. Brings the branch up to date with its base, shows only the branch's own changes as a digestible summary (never a wall of diff), assesses value and risk, and recommends Merge / Close / Skip / Audit — then waits for the human to decide. Use to review an autonomous-agent PR before merging.
+description: Cleanly review a single agent-pushed PR branch and help decide its fate. Brings your local copy of the branch up to date with its base, shows only the branch's own changes as a digestible summary (never a wall of diff), assesses value and risk, and recommends Merge / Close / Skip / Audit — then waits for the human to decide. Use to review an autonomous-agent PR before merging.
 allowed-tools: Bash, Read, Glob, Grep, Task, TaskCreate, TaskUpdate, TaskList
 ---
 
@@ -202,10 +202,14 @@ nothing you have done is durable until they do.
   of the decision that was just made.
 
 - **Close:** `gh pr close <n> --comment "<reason>"`. Closing is reversible; the branches are the
-  only copy of the work, so leave them standing. Deleting them is a separate decision the user
-  makes afterwards, never a flag bundled into the close.
+  only copy of the work, so leave them standing — the local one included: after Step A it holds a
+  commit `origin/<branch>` does not, so the two are no longer interchangeable. Deleting either is a
+  separate decision the user makes afterwards, never a flag bundled into the close.
 
-- **Skip:** return to base, leave the branch untouched.
+- **Skip:** return to base. Say what you are leaving behind rather than that you left it alone:
+  Step A committed a merge onto `<branch>`, so it is **not** as you found it, and your local copy is
+  the only one that has it. Report its sha and hand over `git push origin <branch>`. A Skip that
+  reports "untouched" hides a resolution the next reviewer will be made to redo.
 
 **Never delete a branch — local or remote.** Not with `--delete-branch`, not with `git branch -D`.
 On the Merge path the merge commit lives only in an unpushed local base, so deleting both copies
