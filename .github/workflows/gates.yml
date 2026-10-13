@@ -19,3 +19,9 @@ jobs:
       - run: python3 -m unittest discover -s scripts
       - run: python3 scripts/check_ci_coverage.py
       - run: python3 scripts/check_delegation_grants.py
+      # No `claude` on this runner, so every declared MCP server comes back
+      # unprobed: the gate charges the server half of each grant and says, per
+      # server, that the tool half went unverified. Installing the CLI here would
+      # buy that half back — `platform.yml` is the workflow that installs it, and
+      # the one place that decision belongs.
+      - run: python3 scripts/check_mcp_grants.py
