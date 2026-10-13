@@ -311,7 +311,9 @@ question and overrides the remembered answer for that call. Never pick a mode yo
 - **Interactive** — stop at the **first new DEFECT** and hand off: close the run (steps 5–6 below),
   write `qa-report.md` exactly as `report` does with the stopping defect listed first, and **print
   that defect's fix brief in full in your reply**, so the operator can paste it into a dev session
-  straight from the console. Then stop and wait; the next step is a fix and a `retest`.
+  straight from the console. Then stop and wait; the next step is a fix and a `retest`, which
+  confirms it **and resumes the walk from here** (`retest` step 1) — otherwise the plan is reachable
+  only by re-walking it from the top every cycle.
   A **new** DEFECT is one that was not already an open defect on this environment before the run.
   A known defect that still fails is recorded, stays in `qa-report.md`, and does not stop the walk —
   otherwise a `retest` would halt on the first unfixed case before reaching its regression-risk set.
@@ -422,7 +424,9 @@ A full re-run after a fix pass is expensive and mostly re-confirms green. Instea
    selection. The run log knows nothing of the strike-through and keeps the dropped assertion's last
    FAIL forever, so a subset chosen there re-walks behaviour the product deliberately dropped and
    files a DEFECT that is outside the table's N. A result recorded on another environment neither
-   adds nor removes a case.
+   adds nor removes a case. Take, with them, every assertion that has **no result at all** on this
+   environment — `not run` is unresolved in the plainest sense, and after a complete walk there are
+   none, so the whole economy of this action is untouched where it was designed.
 2. Add the **regression-risk set** around each fix — the assertions the fix could plausibly have
    broken, especially the ones an *over-fix* would break. A guard added to stop a wrong behaviour
    very often also suppresses the right one; assert the right one explicitly.
@@ -432,6 +436,14 @@ A full re-run after a fix pass is expensive and mostly re-confirms green. Instea
 
 A subset containing only `PASS (unstable)` rows is a retest worth running: there is no fix to
 confirm, the point is the second trial the first run did not give them. Say that is what it is.
+
+**`retest` is also how an interactive walk resumes** — the reason step 1 takes the never-walked
+ones. An interactive `run` stops at the first new DEFECT and prescribes a fix and a `retest`, so a
+subset chosen from *results* alone confirms that fix and stops again: the tail is left to a fresh
+`run`, which on a `local` env resets and re-walks from scenario one every cycle — the cost
+interactive mode exists to avoid. Walk the never-run ones **in plan order, after** the
+fix-confirmation set, each scenario's precondition established as `run` step 3 requires — first
+walks, not re-checks. Say which they are. Stopping again at a new DEFECT is the loop working.
 
 State the subset before running it, and say plainly what you are **not** re-testing. The
 `BLOCKED (out of reach)` ids are part of that statement, each with the human step or the other
