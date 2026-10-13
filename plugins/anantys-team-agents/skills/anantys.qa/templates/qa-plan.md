@@ -88,7 +88,9 @@ a plain BLOCKED and belongs in the subset.
 
 Everything else is a defect to file, not a blocker.
 
-⚠️ Passing every blocker is not the same as having tested everything. See §4.
+⚠️ Passing every blocker is not the same as having tested everything. See §4 — and a blocker's PASS
+is a statement about the build it was observed on, which after a fix pass is rarely the one now
+being served (SKILL.md, "A PASS belongs to the build it was observed on").
 
 ## 4. Known gaps — never observed, only inferred. Never record these as PASS
 
@@ -123,8 +125,12 @@ short still leaves what it observed.
 ⏳ in progress | ✅ complete
 
 Environment: `<name>` (`local` | `shared`). Subject: <account/fixture id>. Build observed:
-<branch/commit the env was serving, from its build-identity check — omit only when the plan has no
-**Under test:** line>. Path walked: <one line>.
+<branch/commit the env was serving, from its build-identity check — omit only when the environment
+declares no such check *and* the plan has no **Under test:** line>. Path walked: <one line>.
+
+`Build observed:` is what dates every result in the table below. A later reader compares it to the
+build now served to tell which of this campaign's PASSes are still statements about live code; a
+section that omits it leaves its rows undatable forever.
 
 | ID | Result | Evidence |
 |----|--------|----------|

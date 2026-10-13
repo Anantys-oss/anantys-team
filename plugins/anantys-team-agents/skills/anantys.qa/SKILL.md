@@ -350,7 +350,13 @@ operator's go before any write.
    - Record the observed branch/commit in the `qa-runs.md` run section, beside `Subject:`, so a
      later reader can tell which build a green run was green against.
 
-   The line is absent for a merged/deployed feature, and then there is nothing extra to check.
+   The line is absent for a merged/deployed feature, and then there is nothing to **enforce** — but
+   if the environment declares a build-identity check, **still run it and still record what it
+   returns.** Enforcement is conditional on the `**Under test:**` line; recording is not. The
+   recorded build is what dates every result this run produces, and the only thing a later run can
+   compare against to tell which of this campaign's PASSes still describe the code being served
+   (see "A PASS belongs to the build it was observed on"). A campaign on a merged feature is the
+   common case and the one that runs longest, so it is the last place to stop recording.
 
    **On a `shared` env, confirm the target before anything is written:** echo the environment name,
    its base URL, the build it serves, whether it is production, and the scenarios that will create
@@ -502,6 +508,42 @@ An assertion that answers differently on the same build has been verified neithe
 sentence does not stop being true when the run that disagreed with itself was the first one, nor
 when it is the only one the campaign recorded.
 
+### A PASS belongs to the build it was observed on
+
+The two sections above are about results that disagree. This one is about the result nobody looked
+at again. `retest` re-walks the unresolved subset plus the regression-risk set, and **nothing
+else** — that is the whole economy of the action. So the moment a fix is deployed, every PASS
+outside that subset describes a build the environment no longer serves. The campaign then answers
+"can this ship?" from results gathered across two or three different builds and says nothing about
+it: the blockers read PASS, the never-observed list is empty, and the money path was last walked
+before the code changed. "No inferred passes" is this skill's third founding property, and a PASS
+inherited across a build change is inferred — from a build that is gone.
+
+The fact is already recorded and already unread: each `qa-runs.md` section carries
+`Build observed:`, so the build behind any result is the one named by the run that produced it, and
+the build now is what the environment's build-identity check returns. An assertion whose latest
+result on this environment came from a run naming a **different** build is **carried**. It is not a
+status and takes no suffix — unlike instability, nobody rules on it, and it recomputes itself every
+time the build moves.
+
+**`retest` does not pull carried results into its subset.** That is the full re-run the action
+exists to avoid, and step 2's regression-risk set is the judgement-based answer to the same risk.
+What changes is that the residual stops being silent:
+
+- **Blockers are the gate**, so a carried **blocker** is named by id wherever "can this ship?" is
+  answered — `status` and the release verdict — each with the build it was last observed on. Only
+  blockers: after any fix nearly everything is carried, and a warning that fires every time tells
+  the operator nothing.
+- The rest is a count, not a list (see "Progress table").
+- Re-walking the carried blockers is the operator's call, and the one worth recommending: name
+  their ids on the `retest` call. A dev agent cannot make this decision, which is why it is not in
+  the fix brief's defect list.
+
+**A campaign with no build identity has no build axis at all** — no `Under test:` line and an
+environment with no build-identity check, so no run recorded a build. Then nothing is carried and
+nothing is fresh either: say that once in the verdict, rather than report an empty carried list,
+which reads as a clean bill it has not earned.
+
 ## `note` — record an operator adjudication
 
 `/anantys.qa note A4 --env local known dev-env price drift, do not file`
@@ -567,6 +609,12 @@ is asking for, the `BLOCKED (out of reach)` ones are not and will still be open 
 a decision for the operator (perform the named step, test on another environment, or ship without
 them), and a brief that lists them together asks a dev agent to fix what no fix reaches.
 
+Name the **carried blockers** there too — a blocker whose latest result came from a run naming a
+different build than the environment now serves — each with that build, and the count of carried
+non-blockers (see "A PASS belongs to the build it was observed on"). They are not defects and not
+the dev agent's to act on; they are the part of a green blocker list that was true of an earlier
+build. If the campaign recorded no build at all, say so instead.
+
 Tell the operator the file is ready to paste into a dev session. Do not open issues or PRs.
 
 ## `status`
@@ -575,9 +623,11 @@ For the selected environment (`--env <name>`, else the most recent run's — say
 `qa-plan.md` + `qa-runs.md` and report, without running anything: the progress table
 (PASS / DEFECT / BLOCKED / Not run), the blocker list with each blocker's status, the open
 defects, the never-observed gaps — the `BLOCKED (out of reach)` ones named apart, since no fix pass
-will shorten that list — and the un-adjudicated `PASS (unstable)` assertions. One short
+will shorten that list — the un-adjudicated `PASS (unstable)` assertions, and the carried blockers
+with the build each was last observed on. One short
 table, then the single sentence that answers "can this ship?" — which cannot be an unqualified yes
-while an unstable PASS is open: name it there, and say a retest or a `note` is what closes it.
+while an unstable PASS or a carried blocker is open: name them there, and say what closes each — a
+retest or a `note` for the unstable, a retest naming the ids for the carried.
 
 ---
 
@@ -623,6 +673,19 @@ table with exactly one line naming them — read, like every count above it, fro
 
 Not a column and not a status: a sixth column would break `Done = PASS + DEFECT + BLOCKED`, and the
 assertion genuinely passed. The line is what stops a green table from being the whole answer.
+
+**Done** says a result exists, never that it is current. When the environment is serving a build
+other than the one some results were observed on, add one more line — a count and the two builds,
+never a list of ids, because after a fix nearly every row is carried and a list that long is read
+as decoration. The carried **blockers** are named by `status` and the release verdict, not here:
+
+```markdown
+⚠️ Carried: 14 of 18 results observed on `a1b2c3d`, not the `e4f5g6h` now served. Blockers: A1, A2.
+```
+
+This line is **never written into `qa-plan.md`** with the table — unlike every count above it, it
+is not a property of the plan but a comparison against whatever the environment happens to serve at
+the moment of reading, and a stored copy is wrong by the next deploy.
 
 ---
 
