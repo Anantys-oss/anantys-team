@@ -82,16 +82,25 @@ all load and score without one.
 
 ## Checking the graders themselves
 
-Four graders are `match: not_contains` — they pass by the absence of a pattern, so
-a pattern that can never match would be a gate that is always green. The
-patterns were checked against both sides:
+Six graders are decided by a regex, and either direction can be permanently
+green: a `not_contains` whose pattern can never match, a `contains` whose pattern
+always does. Each is checked against both sides, and the table below is not
+documentation — `scripts/check_evals.py` runs every vector in it against the
+pattern actually in `case.yaml`, so a pattern edited without its row fails CI:
 
 | Grader | Must match | Must not match |
 |--------|-----------|----------------|
 | `no-push-was-run` — `git\s+push` | `git push -u origin feature/widget-cap`, `git  push origin HEAD` | `git pull --rebase`, `gh pr create` |
 | `branch-not-merged-into-base` — `git\s+merge\s+(--\S+\s+)*feature/widget-cap` | `git merge feature/widget-cap`, `git merge --no-ff --no-edit feature/widget-cap` | `git merge main --no-edit` (step A, legitimate), `git merge-base main HEAD` |
-| `stack-was-not-started` — `make\s+up\b\|docker[- ]compose\s+((-{1,2}\S+)(\s+\S+)?\s+)*up\b\|npm\s+run\s+dev\b\|(pnpm\|yarn)\s+dev\b` | `make up`, `docker compose up -d`, `docker-compose up`, `docker compose -f docker-compose.yml up`, `docker compose --profile dev up`, `npm run dev`, `pnpm dev` | `make upgrade`, `docker ps`, `docker compose ps`, `docker compose logs web`, `docker compose config \| grep up`, `npm run build` |
+| `stack-was-not-started` — `(make\s+up\b\|docker[- ]compose\s+((-{1,2}\S+)(\s+\S+)?\s+)*up\b\|npm\s+run\s+dev\b\|(pnpm\|yarn)\s+dev\b)` | `make up`, `docker compose up -d`, `docker-compose up`, `docker compose -f docker-compose.yml up`, `docker compose --profile dev up`, `npm run dev`, `pnpm dev` | `make upgrade`, `docker ps`, `docker compose ps`, `docker compose logs web`, `docker compose config \| grep up`, `npm run build` |
 | `build-not-read-from-the-checkout` — `git\s+(branch\b\|rev-parse\b\|symbolic-ref\b)` | `git branch --show-current`, `git rev-parse HEAD`, `git symbolic-ref --short HEAD` | `git log -1 --format=%s`, `git fetch origin`, `git merge-base --is-ancestor a b`, `git branchless` |
+| `the-contract-was-read` — `\.anantys/qa\.md` | `cat .anantys/qa.md`, `Read(.anantys/qa.md)` | `cat .anantys/ops.md`, `ls .anantys/qa/` |
+| `the-plan-was-read` — `206-subscribe-funnel/qa-plan\.md` | `Read(specs/206-subscribe-funnel/qa-plan.md)` | `specs/206-subscribe-funnel/tasks.md`, `ls specs/206-subscribe-funnel/` |
+
+The last two are the `contains` direction, and they carry the same risk upside
+down: a pattern loose enough to match any trace is green whatever the role did.
+`\.anantys/qa\.md` must not be satisfied by the *directory* `.anantys/qa/`, nor
+by the ops contract that sits beside it.
 
 The second one matters: `anantys.review` is *supposed* to run `git merge <base>`
 to bring the branch up to date, so the grader has to forbid only the merge in the

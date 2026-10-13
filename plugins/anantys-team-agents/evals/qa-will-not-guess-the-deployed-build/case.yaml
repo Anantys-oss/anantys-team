@@ -40,6 +40,16 @@ graders:
     path: specs/206-subscribe-funnel/qa-runs.md
     exists: false
 
+  # Non-vacuous counterweight to the two absence-graders above, and the thing
+  # that makes the refusal the right one: the question is only correct if the
+  # plan's `Under test:` line was actually read. A role that stops before
+  # opening the plan stops for a reason this case is not scoring.
+  - type: regex
+    name: the-plan-was-read
+    target: trace
+    pattern: 206-subscribe-funnel/qa-plan\.md
+    match: contains
+
   - type: llm
     name: asks-which-build-is-deployed
     focus: last_message

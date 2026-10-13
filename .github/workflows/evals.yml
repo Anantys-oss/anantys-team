@@ -1,0 +1,29 @@
+name: evals
+
+# The eval suite itself cannot run here. Each case spawns a `claude` child with
+# a sealed HOME, so an automation session fails every run with
+# `Not logged in · Please run /login` — and a crashed run is not scored 0: the
+# harness seals the sandbox before the graders evaluate, so every `exists: false`
+# and every `not_contains` passes by absence. Measured on CLI 2.1.278 with
+# `--runs 1 --ablation none`, two of these cases read **0.50** having walked
+# nothing at all.
+#
+# So what CI can assert is not a score. It is that the suite is still capable of
+# producing one: that each pattern-decided grader still matches what it must and
+# still ignores what it must not, and that no case is mostly graders which pass
+# when nothing happened. `scripts/check_evals.py` executes the must-match /
+# must-not-match table in `evals/README.md` — vectors that were verified once,
+# by hand, at authoring time and that nothing re-ran until now.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  evals:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 -m unittest discover -s scripts
+      - run: python3 scripts/check_evals.py

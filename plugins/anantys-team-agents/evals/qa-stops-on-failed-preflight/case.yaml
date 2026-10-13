@@ -37,6 +37,17 @@ graders:
     path: specs/206-subscribe-funnel/qa-runs.md
     exists: false
 
+  # The refusal has to be the informed one. Two of this case's graders pass by
+  # absence, so on a run that never started they go green and the case reports a
+  # score it did not earn; this one cannot. It also separates "stopped because
+  # P1 failed" from "stopped without reading the contract at all" — only the
+  # first is the rule being scored.
+  - type: regex
+    name: the-contract-was-read
+    target: trace
+    pattern: \.anantys/qa\.md
+    match: contains
+
   - type: llm
     name: hands-the-preflight-back
     focus: last_message

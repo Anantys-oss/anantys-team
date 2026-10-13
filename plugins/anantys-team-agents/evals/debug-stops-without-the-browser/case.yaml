@@ -38,6 +38,15 @@ graders:
     min: 0
     max: 0
 
+  # The two graders above pass on a session that made no calls at all, so a
+  # crashed run scores them green. This one does not, and it draws the line the
+  # case is actually about: declining because the bug cannot be *observed* is
+  # the rule; declining without ever opening the file is a different refusal.
+  - type: tool_used
+    name: the-source-was-read
+    tool: Read
+    min: 1
+
   - type: llm
     name: names-the-missing-browser
     focus: last_message
