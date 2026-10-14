@@ -55,7 +55,12 @@ Go beyond "it compiles." Check, and report concisely:
 - **Correctness & scope** — does the diff actually do what the PR claims? Anything out of scope / unrelated?
 - **Tests** — is the new behavior tested? Run the relevant tests if quick; report results honestly.
 - **Conventions & safety** — matches the codebase's patterns? Any security/data-integrity/migration concern?
-- **Blind spots** — for a large or sensitive change, dispatch the `anantys.code-auditor` agent (fresh context) to surface what the agent *omitted* (implicit contracts, edge cases), and fold its findings in.
+- **Blind spots** — for a large or sensitive change, dispatch the code auditor (fresh context) to
+  surface what the agent *omitted* (implicit contracts, edge cases), and fold its findings in. The
+  agent type is `anantys-team-agents:anantys.code-auditor` when the team is installed as a plugin,
+  and `anantys.code-auditor` when the file sits loose in `.claude/agents/` — unlike a skill, an
+  agent keeps its dots, so the only difference is the prefix. Dispatch the installed name first; if
+  the tool rejects it as unknown, use the bare one rather than inventing a third spelling.
 
 ### Step E — Recommend, then STOP
 Give one clear recommendation with a one-line rationale:
