@@ -76,7 +76,7 @@ Record all findings.
 
 A hub/index is rarely the page that earns clicks — the individual content pages it links to are. Cross-reference the hub's links with Search Console top-pages data (Phase 2 or prior audit) to pick the **top 5-10 pages by clicks/impressions**.
 
-For each, navigate + screenshot + extract via JS: title (+length), meta description (+length), H1/H2/H3, structured data, canonical, word count (`document.body.innerText.split(/\s+/).length`), internal links, FAQ presence, OG image. Then evaluate: does the title match the target query and beat competitors? Is the meta description click-worthy (numbers/freshness)? Content depth, rich-snippet readiness, internal linking. Record per-page findings in a table — these pages have the highest CTR leverage.
+For each, navigate + screenshot + extract via JS: title (+length), meta description (+length), H1/H2/H3, structured data, canonical, word count **over the content region, not the whole body** (`(document.querySelector('main,article')||document.body).innerText.trim().split(/\s+/).filter(Boolean).length` — nav/footer chrome adds a per-site constant to every page, and an untrimmed `split` counts the surrounding newlines as words), internal links, FAQ presence, OG image. Then evaluate: does the title match the target query and beat competitors? Is the meta description click-worthy (numbers/freshness)? Content depth, rich-snippet readiness, internal linking. Record per-page findings in a table — these pages have the highest CTR leverage.
 
 ## Phase 1c: Fix the measurement window
 
