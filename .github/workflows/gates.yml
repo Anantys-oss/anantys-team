@@ -1,0 +1,21 @@
+name: gates
+
+# The gates, and the gate over the gates. `check_ci_coverage.py` asserts that
+# every `scripts/check_*.py` is named by a pull-request-triggered workflow, so a
+# future gate may keep its own file or join this one — what it may not do is ship
+# a checker nothing runs, which is exactly how `check_delegation_grants.py`
+# arrived here with green tests and no coverage of this repo.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  gates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 -m unittest discover -s scripts
+      - run: python3 scripts/check_ci_coverage.py
+      - run: python3 scripts/check_delegation_grants.py
