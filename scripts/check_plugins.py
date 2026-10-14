@@ -26,6 +26,10 @@ ALWAYS_ON_MAX = 1_000
 #: campaign rather than once per session, so the ceiling is loose — it bounds the
 #: preamble a role spends before doing any work. Six roles measure 820-2.1k;
 #: `anantys.qa` measures 8.6k and is the only one this number is about.
+#: Loose per branch, not per queue: that 8.6k is 72% of the ceiling already spent,
+#: twelve open heads append to the same file, and two of them pass alone and are
+#: 14.7k together. Which one gets the error is decided by merge order, so the fold
+#: has to be priced in this column too — see `docs/landing-the-queue.md`.
 ON_INVOKE_MAX = 12_000
 #: `Always-on:   ~716 tok   added to every session`
 #: A cost under the loader's reporting floor prints as `< 20` rather than `~N`, so
