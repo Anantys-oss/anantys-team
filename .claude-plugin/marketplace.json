@@ -10,10 +10,7 @@
       "version": "0.6.1",
       "description": "Turn Claude into a specialized mini-team of roles: 5 skills (/anantys.design, /anantys.ops, /anantys.debug, /anantys.review, /anantys.qa) and 2 review agents (anantys.code-auditor, anantys.spec-tester). Vendor-neutral, project-agnostic.",
       "category": "development",
-      "source": "./plugins/anantys-team-agents",
-      "author": {
-        "name": "Anantys-OSS"
-      }
+      "source": "./plugins/anantys-team-agents"
     }
   ]
 }
