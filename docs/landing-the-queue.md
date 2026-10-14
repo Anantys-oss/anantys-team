@@ -115,6 +115,59 @@ P=$PWD/plugins/anantys-team-agents
 claude --plugin-dir "$P" plugin details anantys-team-agents
 ```
 
+## A resolution count is not a resolution size, and one head holds most of it
+
+Every one of the 48 open heads merges into `main` **clean** — 48 of 48, no
+exceptions. The queue does not contend with what shipped; it contends with itself.
+So the only number that ranks heads is how many *siblings* each one conflicts with.
+Measured over all 1,128 pairs:
+
+| head | conflicting siblings | what the conflict is in |
+|---|---|---|
+| `the-product-without-the-scaffolding` (#63) | **36** | content — every skill, both agents, the README |
+| `the-command-name-is-not-the-skill-name` (#72) | 34 | the manifest `description` line |
+| `retest-knows-what-was-fixed` (#73) | 33 | the manifest version scalar |
+| `one-version-one-home` (#66) | 33 | the manifest version scalar |
+| `the-whole-queue-lands` (#60) | 16 | `scripts/` |
+| `qa-skill-progressive-disclosure` (#5) | 13 | relocated `anantys.qa` prose |
+| 5 heads | 0 | — |
+
+The section above named the three manifest heads as carrying "the whole manifest
+conflict surface". They do — and a manifest conflict is one line. #63 outranks all
+of them, and its edges are not the manifest: it makes the same `0.6.0` → `0.6.1`
+bump 44 other heads make, and **35 of its 36 conflicts involve a content file**,
+one is manifest-only. The contended paths are the product itself —
+`anantys.qa/SKILL.md` in 15 of them, `README.md` in 12, `anantys.ops/SKILL.md` in
+12, `review`/`design`/`debug` in 10 each.
+
+Fold the other 47 onto `main` in ascending PR order and 22 merge with no hands (a
+lower bound, per the next section). Then merge #63: one merge, **13 files, 33
+conflict hunks** — the two agents, all five skills, all four templates,
+`TEAM-CONTRACT.md` and the README. That is what "11 resolutions" buys you when the
+count is the only thing counted.
+
+This is PR #5's trade-off at eight times the size, and unlike #5 the restructuring
+is not work those heads would have to do anyway. So decide #63 before pricing any
+order: land it first and 36 heads rebase their prose into relocated files, land it
+last and one human re-does the relocation by hand, or close it and the 22 product
+heads land on `main`, where they are already clean. Ordering the other 47 is noise
+beside that one choice.
+
+```bash
+# conflict degree per head, over all pairs
+f=$(mktemp); gh pr list --state open --limit 60 \
+  --json number,headRefName --jq '.[] | "\(.number) \(.headRefName)"' > "$f"
+while read -r na ra; do deg=0
+  while read -r nb rb; do [ "$na" = "$nb" ] && continue
+    git merge-tree --write-tree "origin/$ra" "origin/$rb" >/dev/null 2>&1 || deg=$((deg+1))
+  done < "$f"; echo "$deg $na $ra"
+done < "$f" | sort -rn
+```
+
+Read that loop before reusing it: `while read` is deliberate. `for a in $refs`
+does not split on newlines under zsh — it iterates **once**, over the whole list,
+and reports a degree for a ref that does not exist.
+
 ## Where this was measured wrong before
 
 Earlier passes priced pairwise conflicts with `--merge-base main` pinned for every
