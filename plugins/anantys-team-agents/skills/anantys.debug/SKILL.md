@@ -26,7 +26,7 @@ Hold the line in one place: **an observed signal is evidence about behaviour; it
 
 ## Hard preconditions
 
-1. **A way to exercise the app live.** For web bugs, call `mcp__claude-in-chrome__tabs_context_mcp` first; if the browser tools aren't available, STOP and say so. The `allowed-tools` list above is the hard gate: a browser MCP whose tools are not listed there is unreachable from this skill even when it is connected. This team targets **Claude-in-Chrome** by default; to drive a different browser MCP (Playwright, chrome-devtools, …), add its equivalent tools — tab context, navigate, click/type, read page, console — to `allowed-tools` first. For non-browser bugs, confirm you can run the failing path (a command, a test, a request) and read its output/logs.
+1. **A way to exercise the app live.** For web bugs, call `mcp__claude-in-chrome__tabs_context_mcp` first; if the browser tools aren't available, STOP and say so. The `allowed-tools` list above is the hard gate: a browser MCP whose tools are not listed there is unreachable from this skill even when it is connected. This team targets **Claude-in-Chrome** by default; to drive a different browser MCP (Playwright, chrome-devtools, …), add its equivalent tools — tab context, navigate, click/type, read page, console — to `allowed-tools` first. For non-browser bugs, confirm you can run the failing path (a command, a test, a request) and read its output/logs. **The loop needs the other direction too: how an edit reaches the process you are exercising, and what shows it arrived.** A build, a compile, a server or worker restart, a container recreate, a service worker or an HTTP cache can each sit between your editor and the running code. Establish that step and its observable completion here — step 4 spends it on every iteration, and a loop that cannot see its own edit land has no way to tell a wrong hypothesis from an untested one.
 2. **A concrete repro.** Get the exact steps, URL, input, or failing test from the user. If you can't reproduce it, say so and gather more signal — never "fix" a bug you haven't seen fail. **The repro's URL is also your navigation scope** — the grant is a tool allowlist, not a destination allowlist, and the browser is the operator's own, signed into everything they use. Drive your own tab, on the origins the repro names; a bug that only appears against production is one the operator points you at explicitly, never one you go find.
 3. **A known tree state — because you will need to undo.** You edit source files and this loop can
    end UNRESOLVED (step 4b), which obliges you to leave the tree as you found it. You cannot undo to
@@ -72,8 +72,9 @@ Hold the line in one place: **an observed signal is evidence about behaviour; it
 
 ### 4. Re-prove by observation
 
-- **Reload / re-run the exact repro path.** A normal reload re-fetches your changes.
+- **Reload / re-run the exact repro path, then confirm the runtime is running your edit** — precondition 1's arrival check: the build or restart completed, the served asset changed, a value you just wrote reads back. A reload re-fetches what the app *serves*, which is your edit only when nothing in between was skipped.
 - Observe the same signal you captured in step 1: the console error is gone, the network call returns 200, the log shows the right value, the test passes, the screenshot is correct.
+- **An unchanged signal over unconfirmed code is void, not a refutation.** A stale runtime and a wrong hypothesis produce the *identical* observation, and this skill's own default reading of it — "wrong hypotheses are normal" — picks the wrong one. Repair the arrival path, re-run, judge then. A void iteration refutes nothing, so it does not reach the next bullet: do **not** revert its edit and do **not** count it toward 4b's three. Reverting on a stale read destroys a fix that was never observed, then reports it rejected by an observation that never saw it.
 - **Not resolved? Revert that hypothesis, then iterate** — `git checkout -- <the files it edited>`,
   `rm <the files it created>`, scoped to that hypothesis alone (precondition 3's two lists, kept
   per-hypothesis). Only then back to step 2 with the new signal. A rejected hypothesis was *rejected
@@ -101,13 +102,11 @@ Declare UNRESOLVED and hand back when **either** holds:
 Handing back is not failure — it is the honest version of the same evidence trail. Report the
 rejected hypotheses and *what observation killed each one*; that is the expensive part and the next
 agent (or the human) should not pay for it twice. Then **restore the tree to the state precondition
-3 recorded** — `git checkout -- <the files you edited>`, `rm <the files you created>`, and
-`git status --porcelain` back to the snapshot you reported: empty of your edits, still carrying the
-`??` entries that were there before you. Not *empty* — a run that reports an empty porcelain in a
-tree that started with untracked files deleted something that was not its to delete.
-An UNRESOLVED handoff that also ships four dead edits is worse than no attempt. If step 4 reverted
-each rejected hypothesis as it was rejected, only the current one is left to undo here — and that is
-the point: this restore is the loop's last check, not its only one.
+3 recorded**, by its two commands, and read `git status --porcelain` back to the snapshot you
+reported: empty of your edits, still carrying the `??` entries that were there before you. Not
+*empty* — a run reporting an empty porcelain in a tree that started with untracked files deleted
+something that was not its to delete. If step 4 reverted each rejected hypothesis as it went, only
+the current one is left here: this restore is the loop's last check, not its only one.
 (That is the *tree*'s starting state. The word "baseline" in step 1 means the failure signal you
 captured, which you keep — it is the evidence.)
 
@@ -151,6 +150,7 @@ got, Fix is empty, and Re-proof lists each hypothesis with the observation that 
 ## Rules
 
 - **The proof is the observation**, never the diff. Reload and look before claiming a fix.
+- **Confirm your edit is what is running, before you believe the observation.** A stale runtime refutes nothing, is indistinguishable from a wrong hypothesis, and this loop answers it by reverting the fix and spending one of its three iterations.
 - **Evidence is quoted, and quoting is where secrets escape.** The rule against reading a secret *in* (never dump `.env` into the transcript) is the weaker half: the transcript is ephemeral, while the evidence table you paste into a commit message, an issue or a PR is permanent and public. Everything in the report above — the repro line, the root-cause line, the re-proof line — is redacted at capture. If you cannot state a signal without its secret, state the secret's role and omit it.
 - **Reproduce before fixing**; if you can't see it fail, you can't confirm it's fixed.
 - **Root cause over symptom** — read the runtime state, don't pattern-match.
