@@ -20,6 +20,6 @@ plugins/anantys-team-agents/skills/anantys.debug/SKILL.md: 273
 plugins/anantys-team-agents/skills/anantys.design/SKILL.md: 374
 plugins/anantys-team-agents/skills/anantys.ops/SKILL.md: 490
 plugins/anantys-team-agents/skills/anantys.qa/SKILL.md: 922
-plugins/anantys-team-agents/skills/anantys.review/SKILL.md: 327
+plugins/anantys-team-agents/skills/anantys.review/SKILL.md: 324
 plugins/anantys-team-agents/agents/anantys.code-auditor.md: 206
 plugins/anantys-team-agents/agents/anantys.spec-tester.md: 250

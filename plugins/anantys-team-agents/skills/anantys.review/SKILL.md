@@ -38,7 +38,7 @@ The user names the branch to review (a branch name, a PR number/URL, or "the cur
 ## Discovery (only if the branch wasn't specified)
 
 - Local branches: `git branch --list`.
-- Open PRs: `gh pr list --state open --json number,title,headRefName,author,isDraft` (if `gh` is unavailable, fall back to `git branch -r`).
+- Remote candidates: the Step C2 sweep — every ref on `origin`, each annotated with its number, title and draft state from `gh pr list --state all --json number,title,headRefName,isDraft`, or "no PR".
 - Present the candidates and ask which one to review.
 
 ## Review workflow
@@ -51,13 +51,7 @@ git merge <base> --no-edit
 ```
 Confirm you are on the branch (`git branch --show-current`) before assessing. If conflicts arise, resolve them (the **base wins** on conflicts — the branch adapts to the base, not the reverse), then commit the resolution. If conflicts are non-trivial, surface them to the user rather than guessing.
 
-**This merge is local-only.** You do not push, so the branch now diverges from `origin/<branch>` and the PR on GitHub still shows the old, conflicting head. Say so explicitly and hand the user the one command that closes the gap, theirs to run:
-
-```bash
-git push origin <branch>       # only if they want the resolution on the PR
-```
-
-A conflict resolution you commit and never surface is work thrown away silently.
+**This merge is local-only.** You do not push, so the branch now diverges from `origin/<branch>` and the PR on GitHub still shows the old, conflicting head. Say so explicitly and hand over the one command that closes the gap, theirs to run: `git push origin <branch>`. A conflict resolution you commit and never surface is work thrown away silently.
 
 ### Step B — Identify the PR
 `gh pr view <branch> --json number,state,author,url,isDraft,title` (fallback: skip if no `gh`). Show PR number, author, state, URL up front — context before verdict.
@@ -77,12 +71,21 @@ Read the actual diff, but **present it as a digestible summary, not a raw dump**
 ### Step C2 — Locate the branch in the queue
 A **Merge** verdict is a claim about the tree the branch will *land in*, not the tree it was branched from. With one open PR those are the same tree. With N they are not — and that gap is where a branch-at-a-time review goes wrong: N branches each green against the base can still be red in whatever order you land them.
 
-List the siblings and test this branch against each. Read-only — no checkout, no index, no working tree touched:
+List the siblings and test this branch against each. **The sibling set is every ref on `origin`, not
+the open-PR list.** A branch pushed without a pull request lands the same way and conflicts the same
+way; it is in the repository and in no queue tool's output, so a PR-list sweep reports its edges as
+zero rather than as unknown. Measured on this repo: 61 refs against 48 open-PR heads, and of the ten
+`koan/*` refs carrying commits with no PR at all, **eight** conflict with the head a PR-list review
+would have called independent. Subtract the base and the heads of **closed** PRs — a closed PR is a
+ruling, so its edge is not a landing cost, and one row of declined work is what teaches a reader to
+skip the section. Read-only — no checkout, no index, no working tree touched:
 ```bash
-gh pr list --state open --json number,headRefName --jq '.[].headRefName'
+git fetch origin --prune
+git for-each-ref --format='%(refname:strip=3)' refs/remotes/origin   # minus HEAD, <base>, and:
+gh pr list --state closed --limit 200 --json headRefName --jq '.[].headRefName'
 git merge-tree --write-tree HEAD origin/<sibling> >/dev/null || echo "conflicts: <sibling>"
 ```
-(`--write-tree` needs git ≥ 2.38. Older git's `merge-tree` is a different command that prints a diff and **exits 0 on conflict** — check `git --version` first, or you will report "no conflicts" for every sibling.)
+(`--write-tree` needs git ≥ 2.38. Older git's `merge-tree` is a different command that prints a diff and **exits 0 on conflict** — check `git --version` first, or you will report "no conflicts" for every sibling. Without `gh` the closed-PR heads are unfiltered: report them and say so — an over-reported edge costs a rebase nobody runs, a missed one costs a false Merge.)
 
 Report two things, briefly:
 
@@ -104,7 +107,7 @@ into one word:
 
 - **Superseded** — some other change already delivers this branch's intent. That is observable, so
   name it: the PR or the commit that does, and which part of this diff it covers. There are only
-  two places to look — what landed since the fork point, and the open siblings C2 already listed:
+  two places to look — what landed since the fork point, and the sibling refs C2 already swept:
   ```bash
   git log $(git merge-base <base> HEAD)..<base> --oneline
   ```
@@ -175,10 +178,8 @@ diff, wrong for a second opinion.
 
 ### Step E — Recommend, then STOP
 Give one clear recommendation with a one-line rationale:
-- **Merge** — solid; merge into base locally, hand the push to the user.
-- **Close** — superseded/obsolete; close the PR, leave both branches standing.
-- **Skip** — keep the branch for now, decide later.
-- **Audit** — needs deeper review/testing before deciding.
+**Merge** (solid) · **Close** (superseded — named, per C3) · **Skip** (decide later) · **Audit**
+(needs deeper review first). Each one's actions are below.
 
 Then **wait for the user's decision.** Do not act on Merge/Close until they confirm.
 
@@ -197,20 +198,18 @@ nothing you have done is durable until they do.
   ```bash
   git push origin <base>     # this auto-closes the PR as *Merged*
   ```
-  **Do not run `gh pr close` on a merge.** Pushing the base closes the PR as *Merged* by itself;
-  closing it by hand records the work as *rejected* in the project's history, which is the opposite
-  of the decision that was just made.
+  **Do not run `gh pr close` on a merge** — pushing the base closes the PR as *Merged* by itself,
+  and closing it by hand records the work as *rejected*, the opposite of the decision just made.
 
 - **Close:** `gh pr close <n> --comment "<reason>"`. Closing is reversible; the branches are the
   only copy of the work, so leave them standing. Deleting them is a separate decision the user
   makes afterwards, never a flag bundled into the close.
 
-- **Skip:** return to base, leave the branch untouched.
+- **Skip:** return to base; Step A's resolution stays on the local branch, so report its sha.
 
-**Never delete a branch — local or remote.** Not with `--delete-branch`, not with `git branch -D`.
-On the Merge path the merge commit lives only in an unpushed local base, so deleting both copies
-destroys the work outright; on the Close path the branch *is* the work. Deletion buys nothing a
-later `git branch -d` can't, and it is the one step in this whole skill that cannot be undone.
+**Never delete a branch — local or remote.** Not with `--delete-branch`, not with `git branch -D`. On
+the Merge path the merge commit lives only in an unpushed local base; on the Close path the branch *is*
+the work. It is the one step here that cannot be undone, and `git branch -d` can always do it later.
 
 ## Rules
 
@@ -218,11 +217,9 @@ later `git branch -d` can't, and it is the one step in this whole skill that can
 - **One branch at a time** — never batch diffs or decisions. That bounds what you *read*, not what you *account for*: the verdict still has to name the queue the branch lands into (Step C2).
 - **A Merge verdict names the base it was computed against** — report `git rev-parse <base>` with it. If the base moved after you said it, the verdict expired; re-run Step C2 before anyone acts on it.
 - **A Close verdict names what superseded it** — the PR or commit, and what of this branch it leaves undone. No name, no Close: recommend **Skip** (Step C3).
-- **Summarize the diff** — a readable table + assessment beats a wall of raw diff.
 - **Base wins on conflicts** — the branch adapts to the base.
 - **Show PR info before the verdict** — context first.
 - **Wait for the user** before merging or closing. The recommendation is yours; the decision is theirs.
 - **Never push** — stop at the local merge and hand the push command to the user.
-- **Nothing irreversible before it is durable.** You don't push, so every merge and conflict
-  resolution you make exists in exactly one place: this working tree. Never destroy the other copy
-  — no branch deletion, no `gh pr close` on a merge — while that is true.
+- **Nothing irreversible before it is durable.** Every merge you make exists in one place — this
+  unpushed working tree. No branch deletion, no `gh pr close` on a merge, while that is true.
