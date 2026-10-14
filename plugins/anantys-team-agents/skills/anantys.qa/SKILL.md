@@ -1,5 +1,5 @@
 ---
-name: anantys.qa
+name: anantys-qa
 description: Run a browser-driven QA campaign against a completed feature. Derives an executable test plan from a spec-kit tasks.md, a freeform feature brief (--brief), a set of tracker issues (--from linear:SKU-…), or one or more GitHub pull requests (--from pr:<url>), executes it in a real browser — against a local dev stack or a deployed environment (staging / a preview), selected with --env — recording PASS/FAIL/BLOCKED per assertion, accumulates operator adjudications so a defect is never re-filed twice, and emits a copy-pasteable fix brief for the dev agent. Environment specifics live in a project-local .anantys/qa.md, never in the skill. Use to QA a finished feature — however it was built — before release.
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep, Task, TaskCreate, TaskUpdate, TaskList, AskUserQuestion
 ---
@@ -16,7 +16,7 @@ Three properties make this useful rather than ceremonial:
 
 ## Actions
 
-Invoked as `/anantys.qa <action> [args]`. If no action is given, infer it: no `.anantys/qa.md` → `init`; no `qa-plan.md` → `plan`; otherwise → `status`.
+Invoked as `/anantys-team-agents:anantys-qa <action> [args]`. If no action is given, infer it: no `.anantys/qa.md` → `init`; no `qa-plan.md` → `plan`; otherwise → `status`.
 
 | Action | What it does |
 |---|---|
@@ -44,7 +44,7 @@ matter how the plan was derived.
 
 1. **spec-kit dir** (default) — a folder holding `tasks.md` (and usually `spec.md`, `plan.md`). The
    folder IS the feature directory; artifacts are written beside `tasks.md`.
-   - Named: `/anantys.qa plan 206-subscribe-funnel`.
+   - Named: `/anantys-team-agents:anantys-qa plan 206-subscribe-funnel`.
    - Else read `specs_dir` from `.anantys/qa.md` (default `specs/`), list its subdirectories, and
      take the one matching the current git branch's name; otherwise ask.
 2. **`--brief <file.md>`** — a single markdown brief you wrote by hand (`templates/feature-brief.md`),
@@ -243,7 +243,7 @@ legacy file included — is driven by the operator's connected browser.
 - The pre-write confirmation below is mandatory (it applies to every `shared` env).
 
 Select one with `--env <name>` on any action that reads or writes results — `run`, `retest`,
-`note`, `status`, `report` (`/anantys.qa run --env staging`). With none:
+`note`, `status`, `report` (`/anantys-team-agents:anantys-qa run --env staging`). With none:
 
 - `run` / `retest` use the environment marked **default**, whatever its kind — normally the `local`
   one. A contract with no `local` environment must mark a `shared` one default; a bare `run` then
@@ -397,7 +397,7 @@ State the subset before running it, and say plainly what you are **not** re-test
 
 ## `note` — record an operator adjudication
 
-`/anantys.qa note A4 --env local known dev-env price drift, do not file`
+`/anantys-team-agents:anantys-qa note A4 --env local known dev-env price drift, do not file`
 
 Every ruling has an **environment scope**: `--env <name>` for a ruling true of one environment (any
 drift), `--env all` for a product decision true everywhere (intended behaviour, a REMOVED
