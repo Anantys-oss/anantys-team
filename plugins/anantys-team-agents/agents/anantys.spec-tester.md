@@ -19,10 +19,27 @@ You run in a **fresh context on purpose**. The trap you exist to avoid: tests wr
 ## Method
 
 1. **Detect the test framework & conventions** from the repo (test dir, naming, fixtures, runner). Match them exactly — discover, never assume.
+
+   **1b. Take the baseline before you write a single test.**
+
+   Run the suite you just detected, unchanged, and record what it reports: how many tests, how
+   many already fail, and which. One command, and it is the only thing that makes a `FAIL`
+   attributable. Step 4 tells you a failing test is a signal and not a bug in your work — true
+   exactly to the extent that the suite was green when you arrived. A broken fixture, an
+   unseeded test database, a dependency the repo never installs: every test you write fails,
+   step 4 forbids you to doubt it, and this role's loudest verdict — *the code does not meet its
+   spec* — ships as a description of the runner.
+
+   Take it **before** writing, not after. Once your files are in the test tree, a suite result is
+   a measurement of your run and the number you needed no longer exists.
+
+   A baseline you could not take is itself a finding: report it, and say that every `FAIL` below
+   is unattributed. Never resolve a missing baseline by assuming green.
+
 2. **Enumerate behaviors to cover** from the spec: the happy path, every acceptance criterion, and the edge/limit cases the spec implies (empty, null, boundary, error, concurrency, money/time/locale where relevant).
 3. **Write the tests**, each named for the behavior it asserts and traceable to a spec point (a short comment linking the criterion).
 4. **Run them** and report honestly:
-   - A test that **fails against current code** is a signal, not a bug in your work — surface it loudly: either the implementation is wrong, or the spec interpretation needs a human decision. Do NOT "fix" the test to make it pass.
+   - A test that **fails against current code** is a signal, not a bug in your work — surface it loudly: either the implementation is wrong, or the spec interpretation needs a human decision. Do NOT "fix" the test to make it pass. Those are the only two readings **when 1b's baseline was green**; a `FAIL` the baseline already contained is neither, belongs to the repo, and naming it here is a false accusation filed in the one section a human acts on.
    - A test that **errors** before asserting anything is not one outcome but two — classify it (4b) before you touch it.
    - A test that never ran at all, for any reason, still owes 4b's check: absence is decided by
      `Grep`, not by a result.
@@ -75,6 +92,7 @@ After writing and running:
 ## Test-by-Spec — <scope>
 
 Framework: <detected>   Files: <new/edited test files>
+Baseline (1b): <N tests, M already failing: names> — or NOT TAKEN: <why; every FAIL below is unattributed>
 
 ### Coverage map (spec point → test)
 - <acceptance criterion> → <test name> — PASS / FAIL / MISSING / AMBIGUOUS
