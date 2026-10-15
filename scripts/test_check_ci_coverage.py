@@ -447,6 +447,60 @@ def test_discovery_in_an_unloadable_workflow_does_not_run_the_tests(tmp_path):
     assert any("unittest discover" in e for e in errors), errors
 
 
+def test_a_wrapped_pipeline_discards_the_gates_status(tmp_path):
+    """A physical line is not a command: the `|` rides the continuation."""
+    tree(tmp_path, ["check_a.py"],
+         [("a.yml", ON_PR + "      - run: |\n"
+                            "          python3 scripts/check_a.py --root . \\\n"
+                            "            --verbose | tee gate.log\n")])
+    errors, _ = scan_and_check(tmp_path)
+    assert len(errors) == 1, errors
+    assert "discards its exit status" in errors[0], errors[0]
+
+
+def test_a_wrapped_gate_with_no_neuter_still_gates(tmp_path):
+    tree(tmp_path, ["check_a.py"],
+         [("a.yml", ON_PR + "      - run: |\n"
+                            "          python3 scripts/check_a.py --root . \\\n"
+                            "            --verbose\n")])
+    assert scan_and_check(tmp_path) == ([], [])
+
+
+def test_a_flag_continuation_does_not_open_a_new_step(tmp_path):
+    """`--root .` is a bullet to a `- ` pattern and to nothing else."""
+    tree(tmp_path, ["check_a.py"],
+         [("a.yml", ON_PR + "      - run: |\n"
+                            "          python3 scripts/check_a.py \\\n"
+                            "            --root .\n"
+                            "        continue-on-error: true\n")])
+    errors, _ = scan_and_check(tmp_path)
+    assert len(errors) == 1, errors
+    assert "cannot fail the check" in errors[0], errors[0]
+
+
+def test_steps_written_level_with_their_key_are_coverage(tmp_path):
+    """A block sequence may sit at the indentation of the key that owns it."""
+    tree(tmp_path, ["check_a.py"],
+         [("a.yml", "on:\n  pull_request:\n\njobs:\n  j:\n    steps:\n"
+                    "    - run: python3 scripts/check_a.py\n")])
+    assert scan_and_check(tmp_path) == ([], [])
+
+
+def test_activity_types_written_level_with_their_key_are_read(tmp_path):
+    tree(tmp_path, ["check_a.py"],
+         [("a.yml", "on:\n  pull_request:\n    types:\n    - opened\n    - synchronize\n"
+                    + JOBS + RUN_A)])
+    assert scan_and_check(tmp_path) == ([], [])
+
+
+def test_late_activity_types_written_level_with_their_key_are_not_coverage(tmp_path):
+    tree(tmp_path, ["check_a.py"],
+         [("a.yml", "on:\n  pull_request:\n    types:\n    - closed\n" + JOBS + RUN_A)])
+    errors, _ = scan_and_check(tmp_path)
+    assert len(errors) == 1, errors
+    assert "closed, all after the decision" in errors[0], errors[0]
+
+
 def test_the_repos_own_workflows_load(tmp_path):
     root = Path(__file__).resolve().parent.parent
     for workflow in sorted((root / ".github/workflows").glob("*.y*ml")):

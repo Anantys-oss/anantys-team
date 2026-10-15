@@ -155,6 +155,47 @@ another's status on the next. The same per-line test applies to the discovery
 step, which is otherwise the one place a single `|| true` buys back every
 assertion the third error above makes.
 
+A physical line is not a command, and the whole argument above was priced
+against the wrong string. One backslash defeats every shape it enumerates:
+
+    - run: |
+        python3 scripts/check_a.py --root . \
+          --verbose | tee gate.log
+
+The first line names the gate and holds no construct; the second holds the
+construct and names no gate. Both halves of the per-line test are individually
+correct and together they certify the accidental form this file calls out by
+name. Continuations are therefore joined before matching — and joined only
+there, because `unloadable` removes `run:` bodies from the text it scans by
+substring and needs them verbatim.
+
+Wrapping breaks the *step* as well, one level out. A step is found by its `- `
+bullet, and a wrapped invocation's `--flag` continuation is a bullet to that
+pattern:
+
+    - run: |
+        python3 scripts/check_a.py \
+          --root .
+      continue-on-error: true
+
+The `--root .` line opens a second step, so `continue-on-error:` sits in a block
+that runs no gate and the gate sits in a block with no guard — and because both
+blocks are removed from the text the job-level test reads, nothing sees it
+either. Bullets are taken at the outermost bullet indentation only; shell is not
+YAML and may not vote on where a step begins.
+
+Indentation is where the YAML reading was wrong in the other direction too. A
+block sequence may sit level with the key that owns it, which GitHub's own
+documentation does for both keys this file walks:
+
+    steps:
+    - run: python3 scripts/check_a.py
+
+Read as empty, that is every gate in the file "guards nothing"; the same shape
+under `types:` yields an empty activity set, and the error says the trigger
+fires on nothing at all. Loud, unlike the two above, and still a gate that is
+wrong about a tree a human can read correctly.
+
 Coverage is satisfied by *any* PR-triggered workflow, so a gate may keep its own
 workflow file or join an existing one — this fixes the wiring, not the layout.
 
@@ -194,6 +235,12 @@ NEUTERED = re.compile(r"^\s*(?:-\s*)?(?:continue-on-error:\s*true|if:)(?:\s|$)",
 # throws the gate's exit status away. Matched per line, against lines that already
 # name a gate, so an unrelated pipe elsewhere in the body is not read.
 DISCARDED = re.compile(r"\|\||\||&\s*$")
+# A backslash continuation, joined before `DISCARDED` and `NAMED` are matched. A
+# physical line is not a command: wrap a long invocation and the construct that
+# throws its status away moves onto a line that names no gate, which is both
+# halves of the per-line test disagreeing about the same command. Not applied to
+# the text `unloadable` removes, which has to match the file verbatim.
+CONTINUED = re.compile(r"\\\n\s*")
 # The `pull_request` activity types that fire while the branch is still a branch.
 # Anything outside this set reports on a decision already taken.
 PREVENTIVE = {"opened", "synchronize", "reopened", "ready_for_review", "edited"}
@@ -210,27 +257,48 @@ PLAIN_COLON = re.compile(
 
 
 def nested(lines, index):
-    """The lines under `lines[index]` — strictly more indented, blanks dropped."""
+    """The lines under `lines[index]`, blanks dropped.
+
+    More indented, or a sequence bullet at the key's own indentation: YAML lets a
+    block sequence sit level with the key that owns it, and `steps:` and `types:`
+    are both written that way in GitHub's own documentation. A strict
+    more-indented test reads those blocks as empty, which is wrong in both
+    directions at once — no steps found means every gate the file runs "guards
+    nothing", and no `types:` found means the set of activity types is empty, so
+    the trigger is reported as firing on nothing.
+    """
     outer = len(lines[index]) - len(lines[index].lstrip())
     body = []
     for line in lines[index + 1:]:
         if not line.strip():
             continue
-        if len(line) - len(line.lstrip()) <= outer:
+        indent = len(line) - len(line.lstrip())
+        if indent < outer or (indent == outer and not line.lstrip().startswith("-")):
             break
         body.append(line)
     return body
 
 
 def steps(text):
-    """Every `- ` bullet under a `steps:` key, as one block of text each."""
+    """Every `- ` bullet under a `steps:` key, as one block of text each.
+
+    Bullets are taken at the outermost bullet indentation only. A step's `run:`
+    body is shell, and a shell line may open with `-`: a wrapped invocation's
+    `--flag` continuation is a bullet to this pattern and to nothing else. Split
+    there and the step's remaining keys — `continue-on-error:`, `if:` — land in a
+    block of their own, which `scan` then reads as a step that runs no gate. The
+    gate's own step is left looking unguarded, and the guard is attributed to
+    nothing. A false certificate assembled out of two correct-looking halves.
+    """
     lines = text.splitlines()
     blocks = []
     for i, line in enumerate(lines):
         if not re.match(r"^\s*steps:\s*$", line):
             continue
         body = nested(lines, i)
-        starts = [n for n, ln in enumerate(body) if re.match(r"^\s*-", ln)]
+        bullets = [n for n, ln in enumerate(body) if re.match(r"^\s*-", ln)]
+        depth = min((len(body[n]) - len(body[n].lstrip()) for n in bullets), default=0)
+        starts = [n for n in bullets if len(body[n]) - len(body[n].lstrip()) == depth]
         for n, start in enumerate(starts):
             end = starts[n + 1] if n + 1 < len(starts) else len(body)
             blocks.append("\n".join(body[start:end]))
@@ -345,7 +413,7 @@ def scan(root):
                 "runs the gate in a step that cannot fail the check"
                 if NEUTERED.search(block) else None
             )
-            for line in commands(block).splitlines():
+            for line in CONTINUED.sub(" ", commands(block)).splitlines():
                 discarded = guarded or (
                     "runs the gate in a shell construct that discards its exit status"
                     if DISCARDED.search(line) else None
