@@ -26,6 +26,20 @@ class ToolGrants(unittest.TestCase):
         errors, _ = role(["mcp__x__navigate"], "Call `tabs_context_mcp` first.")
         self.assertIn("`tabs_context_mcp`", errors[0])
 
+    def test_a_namespaced_tool_written_out_in_prose_is_seen(self):
+        # The spelling `check_mcp_grants`' baseline prescribes and
+        # `koan/the-browser-is-a-manifest-field` writes into two role bodies. A
+        # server class without `_` cannot cross `plugin_`, so this read as no
+        # mention at all and the role came back clean.
+        qualified = "mcp__plugin_anantys-team-agents_claude-in-chrome__tabs_context_mcp"
+        errors, _ = role(["mcp__x__navigate"], f"Call {qualified} first.")
+        self.assertIn("`tabs_context_mcp`", errors[0])
+
+    def test_a_namespaced_tool_that_is_granted_stays_clean(self):
+        qualified = "mcp__plugin_anantys-team-agents_claude-in-chrome__tabs_context_mcp"
+        errors, _ = role([qualified], f"Call {qualified} first.")
+        self.assertEqual(errors, [])
+
     def test_backticked_non_tool_word_is_not_a_tool(self):
         errors, _ = role(["mcp__x__navigate"], "Read `document.title` in the browser.")
         self.assertEqual(errors, [])

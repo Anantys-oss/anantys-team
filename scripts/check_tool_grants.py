@@ -92,7 +92,16 @@ WITHHELD = re.compile(
     re.I,
 )
 
-MCP_IN_PROSE = re.compile(r"`([a-z_]+)`|mcp__[a-z-]+__([a-z_]+)")
+# A bare backticked name, or a fully-qualified grant written out in prose. The
+# qualified form's server class must admit `_`: a server declared in `plugin.json`
+# is exposed as `mcp__plugin_<plugin>_<server>__<tool>`, and `[a-z-]+` cannot cross
+# the first `_` of `plugin_`, so it matched no part of the namespaced spelling at
+# all. That is the spelling `check_mcp_grants`' own baseline prescribes, and the
+# branch it names writes it into two role bodies — where this check then saw
+# nothing and reported a role clean for naming a tool it may not hold. Tool class
+# widened to the loader's for the same reason (`[\w.-]+`): dots, hyphens and
+# capitals are legal in a tool name and were read as the end of the match.
+MCP_IN_PROSE = re.compile(r"`([a-z_]+)`|mcp__[\w-]+__([\w.-]+)")
 BASH_FENCE = re.compile(r"```(?:bash|sh|shell)\n(.*?)```", re.S)
 INLINE_CODE = re.compile(r"`([a-z][\w./-]*(?: [^`\n]*)?)`")
 FRONTMATTER = re.compile(r"\A---\n(.*?)\n---\n(.*)\Z", re.S)
