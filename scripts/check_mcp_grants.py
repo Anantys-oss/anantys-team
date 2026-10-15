@@ -47,6 +47,19 @@ in the output tells the two apart. So `probe` follows the cursor, and any exchan
 it cannot finish — an unanswered page, a cursor the server never clears — comes
 back unprobed, in the same column as a server that would not launch.
 
+**A grant may name no tool at all.** The loader's rule ends in an optional
+segment — `mcp__<server>__*` and bare `mcp__<server>` both grant the whole
+server — and `check_platform.py` states both forms as the remedy it hands
+authors: collapse an enumeration into `__*`, and disambiguate a one-segment
+grant by writing `__*`. Read as a tool name, `*` is advertised by no server, so
+the gate charged that remedy to the role file as `does not advertise`, in the
+same words as the `update_plan` finding above and with the same instruction to
+delete it. The bare form missed the regex entirely, which left its server out of
+every role's tally and produced a `no role grants it` warning about a server one
+role grants in full. Both forms are now the server half of a grant and nothing
+else; the tool half of a whole-server grant is the server's whole list, which
+this gate has no finding about.
+
 Errors that predate this gate are declared in `mcp-grants-baseline.txt` rather
 than fixed here — a gate may not fix its own subject, or it forces an order on
 changes that have none.
@@ -71,13 +84,25 @@ BASELINE = Path(__file__).with_name("mcp-grants-baseline.txt")
 #: deadline; no real server needs ten pages to name its tools.
 MAX_PAGES = 10
 
-#: `mcp__<server>__<tool>`. Deliberately looser than `check_platform.py`'s
-#: `TOOL_SHAPE`: a malformed identifier is that gate's finding, and re-reporting
-#: it here would give one edit two diagnoses. What this needs from the string is
-#: only its two segments, so it splits on the first `__` pair and takes the rest
-#: as the tool — `mcp__a__b__c` yields server `a`, tool `b__c`, which no server
-#: lists, which is the right answer for it.
-GRANT = re.compile(r"^mcp__([^_].*?)__(.+)$")
+#: `mcp__<server>` or `mcp__<server>__<tool>`. Deliberately looser than
+#: `check_platform.py`'s `TOOL_SHAPE`: a malformed identifier is that gate's
+#: finding, and re-reporting it here would give one edit two diagnoses. What this
+#: needs from the string is only its segments, so it splits on the first `__`
+#: pair and takes the rest as the tool — `mcp__a__b__c` yields server `a`, tool
+#: `b__c`, which no server lists, which is the right answer for it.
+#:
+#: The tool half is optional because the loader's rule makes it optional: a
+#: single segment after `mcp__` is a whole-server grant. Requiring it meant the
+#: server segment of such a grant was never read, so the server went into no
+#: role's tally and the manifest got a `no role grants it` warning naming a
+#: server a role does grant, in whole.
+GRANT = re.compile(r"^mcp__([^_].*?)(?:__(.+))?$")
+
+#: The two tool segments that mean *every tool this server lists*, per the
+#: loader's `^mcp__[\w-]+(?:__(?:[\w.-]+|\*))?$`: the literal `*`, and no segment
+#: at all. Neither is a tool name, so neither may be looked up in a `tools/list`
+#: answer — `*` is not advertised by any server that advertises anything.
+WHOLE_SERVER = (None, "*")
 
 #: How the loader exposes a server declared in `plugin.json`, measured on CLI
 #: 2.1.278: the manifest's `claude-in-chrome` under plugin `anantys-team-agents`
@@ -260,6 +285,16 @@ def check(plugin, servers, roles, advertised):
                     )
                 continue
             named.add(server)
+            if tool in WHOLE_SERVER:
+                # Every tool the server lists, so there is no name to look up.
+                # `check_platform.py` tells authors to write exactly this — it
+                # fails a seven-tool enumeration into `mcp__<server>__*` and
+                # resolves the one-segment ambiguity with "write `…__*` for the
+                # server". Looked up as a tool name, `*` came back as
+                # `does not advertise` on the role file, in the same words as a
+                # true finding, telling its owner to delete a grant that holds
+                # the whole server.
+                continue
             tools = advertised.get(server)
             if tools is not None and tool not in tools:
                 errors.append(

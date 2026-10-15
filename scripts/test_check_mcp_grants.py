@@ -117,6 +117,36 @@ class GrantShape(unittest.TestCase):
         self.assertIn("`a__b`", errors[0][1])
 
 
+class WholeServerGrant(unittest.TestCase):
+    """`mcp__<server>__*` and bare `mcp__<server>` grant every tool, so the tool
+    half names nothing to look up. `check_platform.py` hands authors both forms
+    as its own remedy."""
+
+    def test_a_star_tool_segment_is_not_looked_up_as_a_tool_name(self):
+        errors, warnings = run(SPEC, [f"mcp__{CHROME}__*"], TOOLS)
+        self.assertEqual((errors, warnings), ([], []))
+
+    def test_a_star_grant_still_resolves_its_server_segment(self):
+        errors, _ = run(SPEC, ["mcp__plugin_other_whatever__*"], TOOLS)
+        self.assertIn("does not declare", errors[0][1])
+
+    def test_a_bare_server_grant_counts_as_granting_that_server(self):
+        _, warnings = run(SPEC, [f"mcp__{CHROME}"], TOOLS)
+        self.assertEqual(warnings, [])
+
+    def test_a_bare_undeclared_server_reaches_the_manifest_tally(self):
+        errors, _ = run({}, ["mcp__claude-in-chrome"], {})
+        self.assertIn("1 granted server (claude-in-chrome)", errors[0][1])
+
+    def test_a_whole_server_grant_to_an_unprobed_server_is_not_an_error(self):
+        errors, _ = run(SPEC, [f"mcp__{CHROME}__*"], {"claude-in-chrome": None})
+        self.assertEqual(errors, [])
+
+    def test_a_star_in_the_server_segment_is_still_a_server_name(self):
+        errors, _ = run(SPEC, ["mcp__*__navigate"], TOOLS)
+        self.assertIn("does not declare", errors[0][1])
+
+
 class Probe(unittest.TestCase):
     def test_a_command_that_does_not_exist_is_unprobed_not_empty(self):
         self.assertIsNone(c.probe({"command": "koan-no-such-binary-xyz"}))
