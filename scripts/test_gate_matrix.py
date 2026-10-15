@@ -8,7 +8,10 @@ distinguish "passed" from "was not measured" is worse than no sweep, so those tw
 outcomes are what these cover.
 """
 
+import tempfile
 import unittest
+from pathlib import Path
+from unittest import mock
 
 import gate_matrix as gm
 
@@ -45,6 +48,98 @@ class ACellSaysWhichOfThreeThingsHappened(unittest.TestCase):
     def test_a_head_that_only_failed_to_check_out_is_not_counted_as_failing(self) -> None:
         out = gm.table({"origin/koan/x": {}}, self.NAMES)
         self.assertIn("0 head(s) with a failing gate", out)
+
+    def test_the_tally_names_the_heads_it_could_not_measure(self) -> None:
+        # The assertion above is correct and used to be the whole tally: an unmeasured
+        # head is not a failing one. It is also not a passing one, and "1 head(s) x 2
+        # gate(s) — 0 head(s) with a failing gate" is what a reader quotes as a sweep.
+        out = gm.table({"origin/koan/x": {}}, self.NAMES)
+        self.assertIn("1 not measured", out)
+
+    def test_a_measured_sweep_does_not_mention_measuring(self) -> None:
+        out = gm.table({"origin/koan/x": {"check_a": 0, "check_b": 1}}, self.NAMES)
+        self.assertNotIn("not measured", out)
+
+
+class TheSweepRulesOnlyOnItsOwnMeasuring(unittest.TestCase):
+    """`main`'s exit code, which is about the sweep and never about the gates."""
+
+    def test_a_failing_gate_is_reported_not_ruled_on(self) -> None:
+        with mock.patch.object(gm, "table", return_value=""):
+            self.assertEqual(self._main_over({"origin/koan/x": {"check_a": 1}}), 0)
+
+    def test_a_sweep_where_no_head_resolved_exits_nonzero(self) -> None:
+        # Two unresolvable refs printed a confident tally and exited 0. A sweep that
+        # measured nothing has produced no report, so it has nothing to be silent about.
+        with mock.patch.object(gm, "table", return_value=""):
+            self.assertEqual(self._main_over({"origin/koan/typo": {}}), 1)
+
+    def test_one_measured_head_is_enough_to_have_measured(self) -> None:
+        with mock.patch.object(gm, "table", return_value=""):
+            rows = {"origin/koan/typo": {}, "origin/koan/x": {"check_a": 0}}
+            self.assertEqual(self._main_over(rows), 0)
+
+    def test_no_heads_at_all_exits_nonzero(self) -> None:
+        with mock.patch.object(gm, "heads", return_value=[]):
+            self.assertEqual(gm.main([]), 1)
+
+    @staticmethod
+    def _main_over(rows: dict[str, dict[str, int]]) -> int:
+        """`main` with the git work replaced, so only the verdict is under test."""
+        with (
+            mock.patch.object(gm, "git", return_value=""),
+            mock.patch.object(gm, "gates", return_value=["check_a"]),
+            mock.patch.object(gm, "run", side_effect=lambda _t, ref, _n: rows[ref]),
+        ):
+            return gm.main(list(rows))
+
+
+class RunIsTheSeamThatTalksToGit(unittest.TestCase):
+    """`run` and `heads` were the two untested functions, and both shell out.
+
+    `table` is pure and was covered exhaustively, which is exactly why nothing asked
+    whether the dict it formats is the one git produced. The "will not check out"
+    sentinel in particular is an empty dict that only `run` can return.
+    """
+
+    def test_a_ref_that_does_not_resolve_yields_the_unmeasured_sentinel(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tree = Path(tmp) / "head"
+            gm.git("worktree", "add", "--detach", str(tree), "HEAD")
+            try:
+                cells = gm.run(tree, "refs/remotes/origin/koan/no-such-head", ["check_a"])
+            finally:
+                gm.git("worktree", "remove", "--force", str(tree))
+        self.assertEqual(cells, {})
+
+    def test_this_repos_own_head_resolves_and_scores_every_gate(self) -> None:
+        names = gm.gates()
+        with tempfile.TemporaryDirectory() as tmp:
+            tree = Path(tmp) / "head"
+            gm.git("worktree", "add", "--detach", str(tree), "HEAD")
+            try:
+                cells = gm.run(tree, "HEAD", names)
+            finally:
+                gm.git("worktree", "remove", "--force", str(tree))
+        self.assertEqual(sorted(cells), sorted(names))
+        self.assertTrue(all(isinstance(code, int) for code in cells.values()))
+
+
+class HeadsComeFromTheRepositoryNotFromANamingConvention(unittest.TestCase):
+    def test_the_sweep_is_not_restricted_to_one_branch_prefix(self) -> None:
+        # `refs/remotes/origin/koan/*` is where the queue happens to live. A head that
+        # will land and is spelled otherwise was reported as nothing at all.
+        found = gm.heads()
+        outside = gm.git(
+            "for-each-ref", "--format=%(refname:short)", "refs/remotes/origin/**"
+        ).splitlines()
+        outside = [r for r in outside if r and r != "origin" and not r.startswith("origin/koan/")]
+        if not outside:  # nothing is spelled otherwise here, so nothing to assert
+            self.skipTest("every refs/remotes/origin/** ref is under origin/koan/")
+        self.assertTrue(all(r.startswith("origin/") for r in found))
+        self.assertNotIn("origin", found)  # origin/HEAD, which is a symref to a row
+        for ref in outside:
+            self.assertIn(ref, found)
 
 
 class TheGateListComesFromTheTree(unittest.TestCase):

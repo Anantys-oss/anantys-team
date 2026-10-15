@@ -12,7 +12,7 @@ skill-name rule asserting a string the runtime does not expose, and an unguarded
 `entry[field]` that raised `KeyError` out of `main` on a sibling that legitimately drops
 the field. Neither was reachable from this branch's own tree.
 
-    python3 scripts/gate_matrix.py                        # every origin/koan/* head
+    python3 scripts/gate_matrix.py                        # every head on origin
     python3 scripts/gate_matrix.py origin/koan/a-head ...  # just these
 
 The gates are overlaid onto each head, so what is measured is the head's *content*
@@ -43,8 +43,16 @@ def gates() -> list[str]:
 
 
 def heads() -> list[str]:
-    refs = git("for-each-ref", "--format=%(refname:short)", "refs/remotes/origin/koan/*")
-    return [r for r in refs.splitlines() if r]
+    """Every remote-tracking head, not every head whose *name* matches a convention.
+
+    This swept `origin/koan/*`, which is where the queue's branches happen to live.
+    A head is in the sweep because it will land, not because of how it is spelled:
+    `origin/qa/non-speckit-sources` carries commits and matched nothing. `origin/main`
+    is the sharper omission — it is the destination, it carries none of these gates,
+    so CI has never run one against it, which is the exact cell this tool exists for.
+    """
+    refs = git("for-each-ref", "--format=%(refname:short)", "refs/remotes/origin/**")
+    return [r for r in refs.splitlines() if r and r != "origin"]  # `origin` is origin/HEAD
 
 
 def run(tree: Path, head: str, names: list[str]) -> dict[str, int]:
@@ -83,7 +91,14 @@ def table(rows: dict[str, dict[str, int]], names: list[str]) -> str:
         marks = " ".join(f"{('ok' if cells[n] == 0 else f'FAIL {cells[n]}'):>9}" for n in names)
         out.append(f"{head:<{width}}  {marks}")
     failing = sum(1 for cells in rows.values() if any(cells.values()))
-    out.append(f"\n{len(rows)} head(s) x {len(names)} gate(s) — {failing} head(s) with a failing gate")
+    unmeasured = sum(1 for cells in rows.values() if not cells)
+    tally = f"\n{len(rows)} head(s) x {len(names)} gate(s) — {failing} head(s) with a failing gate"
+    # A cell has three outcomes and this line reported two, so an unmeasured head landed
+    # in the same bucket as a passing one. `len(rows) x len(names)` then reads as a count
+    # of cells that were run. Name the third outcome wherever it occurred.
+    if unmeasured:
+        tally += f", {unmeasured} not measured"
+    out.append(tally)
     return "\n".join(out)
 
 
@@ -100,7 +115,14 @@ def main(argv: list[str]) -> int:
         finally:
             git("worktree", "remove", "--force", str(tree))
     print(table(rows, names))
-    return 0  # a reported cell is the output; failing cells are not this tool's verdict
+    # A reported cell is the output, so a failing cell is not this tool's verdict — it is
+    # the thing the reader was asked to look at. An *unmeasured* cell is the absence of
+    # the output, and a sweep where none resolved (a typo'd ref, a worktree that would not
+    # add) printed a confident tally and exited 0. Rule on the measuring, not the gates.
+    if not any(rows.values()):
+        print("nothing was measured: no head resolved", file=sys.stderr)
+        return 1
+    return 0
 
 
 if __name__ == "__main__":
