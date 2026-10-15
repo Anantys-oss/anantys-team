@@ -134,6 +134,62 @@ class InlineCommands(unittest.TestCase):
         self.assertIn("`find`", errors[0])
 
 
+class Pipelines(unittest.TestCase):
+    """A line is a pipeline, so a grant must answer for every command in it.
+
+    `permitted()` bounds the head of the string it is handed. Handed a whole
+    line it bounds the first command and nothing after the first operator —
+    the same defect `UNBOUNDED` rejects one level up.
+    """
+
+    def test_a_command_after_a_pipe_is_checked(self):
+        errors, _ = role(["Bash(git log:*)"], "```bash\ngit log --oneline | tee notes.txt\n```")
+        self.assertIn("`tee notes.txt`", errors[0])
+
+    def test_a_command_after_double_ampersand_is_checked(self):
+        errors, _ = role(["Bash(git log:*)"], "```bash\ngit log --oneline && rm -rf build\n```")
+        self.assertIn("`rm -rf build`", errors[0])
+
+    def test_a_command_substitution_inside_a_permitted_command_is_checked(self):
+        """`git diff $(git merge-base ...)` is two git subcommands, one granted."""
+        errors, _ = role(
+            ["Bash(git diff:*)"],
+            "```bash\ngit diff $(git merge-base <base> HEAD)...HEAD --stat\n```",
+        )
+        self.assertEqual(len(errors), 1)
+        self.assertIn("`git merge-base`", errors[0])
+
+    def test_an_inline_span_is_split_too(self):
+        """The anchor still admits the span as a unit; what is compared is its parts."""
+        errors, _ = role(["Bash(git checkout:*)"], "Run `git checkout <base> && git merge <b>`.")
+        self.assertIn("`git merge`", errors[0])
+
+    def test_every_segment_of_a_fully_granted_pipeline_passes(self):
+        errors, _ = role(
+            ["Bash(git log:*)", "Bash(tee:*)"], "```bash\ngit log --oneline | tee notes.txt\n```"
+        )
+        self.assertEqual(errors, [])
+
+    def test_a_pipe_inside_quotes_is_not_an_operator(self):
+        """Splitting on the raw text would make `grep -E 'a|b'` two broken commands."""
+        errors, _ = role(["Bash(grep:*)"], "```bash\ngrep -E 'a|b' file\n```")
+        self.assertEqual(errors, [])
+
+    def test_a_redirect_target_is_not_a_command(self):
+        errors, _ = role(["Bash(ls:*)"], "```bash\nls -l > out.txt 2>&1\n```")
+        self.assertEqual(errors, [])
+
+    def test_a_line_that_yields_no_command_is_kept_whole(self):
+        """A bash fence holding output keeps the behaviour, and the text, it had."""
+        self.assertEqual(c.segments("OK (3 passed)"), ["OK (3 passed)"])
+
+    def test_an_unbalanced_quote_is_not_taken_apart(self):
+        self.assertEqual(c.segments("echo 'unterminated"), ["echo 'unterminated"])
+
+    def test_a_single_command_is_unchanged(self):
+        self.assertEqual(c.segments("mkdir -p artifacts/qa"), ["mkdir -p artifacts/qa"])
+
+
 class NamingIsNotRunning(unittest.TestCase):
     """A role that justifies a grant it withholds must not be read as wanting it.
 

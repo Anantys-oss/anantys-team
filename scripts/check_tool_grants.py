@@ -44,6 +44,7 @@ Exit 1 on undeclared errors, 0 on warnings and declared ones.
 """
 
 import re
+import shlex
 import sys
 from pathlib import Path
 
@@ -76,6 +77,12 @@ UNBOUNDED = {
 }
 
 BASELINE = Path(__file__).with_name("tool-grants-baseline.txt")
+
+# Shell tokens that end one command. `(` both ends and opens, so command
+# substitution is reached. See `segments`.
+SEPARATORS = {"|", "||", "&&", ";", "&", "(", ")"}
+REDIRECTS = {"<", "<<", "<&", ">", ">>", ">&", ">|"}
+COMMAND_NAME = re.compile(r"[a-z][\w./-]*")
 
 # Prose that withholds or forbids a command, up to the span it governs. Anchored
 # at the end so it must reach the span, and `[^.`\n]*` keeps it inside the one
@@ -135,10 +142,66 @@ def prose_surface(path, body):
     return "\n".join(parts), warnings
 
 
+def segments(line):
+    """Every command one shell line runs, not only the one it starts with.
+
+    A line is a pipeline, and `permitted()` compares a prefix against the head
+    of whatever string it is handed: on a whole line it bounds the first command
+    and nothing after the first operator. That is the same defect `UNBOUNDED`
+    exists to reject, one level up — `Bash(git log:*)` plus
+    `git log --oneline | tee notes.txt && rm -rf build` was a clean run, while
+    the identical commands on three lines were two errors. `xargs` is in
+    `UNBOUNDED` precisely because it runs a second command; a `|` did it for
+    free.
+
+    Splitting is `shlex` with `punctuation_chars`, so quoting is respected and
+    `grep -E 'a|b'` stays one command rather than becoming two broken ones.
+    Beyond the operators, two tokens end a segment:
+
+      * `(` closes the segment before it and opens a new one, which is how
+        `$(git merge-base ...)` inside a permitted `git diff` is reached;
+      * a redirect discards the rest of the segment — the filename after `>` is
+        not a command. `<placeholder>` in prose reads as a redirect too, which
+        truncates `git merge-base <base> HEAD` to `git merge-base`. Still the
+        right command to compare, with less of it.
+
+    A segment whose first token cannot be a command name is dropped, and a line
+    that yields no segment at all is returned whole: a fence holding output
+    rather than commands keeps the behaviour, and the error text, it had before.
+    """
+    lexer = shlex.shlex(line, punctuation_chars=True)
+    lexer.whitespace_split = True
+    try:
+        tokens = list(lexer)
+    except ValueError:  # unbalanced quote — not a line we can take apart
+        return [line]
+    out, cur, after_redirect = [], [], False
+
+    def flush():
+        if cur and COMMAND_NAME.fullmatch(cur[0]):
+            out.append(" ".join(cur))
+        cur.clear()
+
+    for token in tokens:
+        if token in SEPARATORS:
+            if token == "(" and cur[-1:] == ["$"]:
+                cur.pop()
+            flush()
+            after_redirect = False
+        elif token in REDIRECTS:
+            flush()
+            after_redirect = True
+        elif not after_redirect:
+            cur.append(token)
+    flush()
+    return out or [line]
+
+
 def bash_commands(body, heads=frozenset(), known_mcp=frozenset()):
     """Every command the prose runs: bash-fenced lines, plus inline code spans.
 
-    Fenced lines are kept whole because a grant may name a subcommand:
+    Each line is split into its commands by `segments`, and each is kept whole
+    from its first word on, because a grant may name a subcommand:
     `Bash(git diff:*)` permits `git diff --stat` and nothing else `git`.
     Truncating to the first word would compare `git` against `git diff` and
     reject every narrowed grant — pushing authors to `Bash(git:*)`, which
@@ -185,12 +248,12 @@ def bash_commands(body, heads=frozenset(), known_mcp=frozenset()):
         for line in block.splitlines():
             line = line.strip()
             if line and not line.startswith("#"):
-                found.add(line)
+                found.update(segments(line))
     for m in INLINE_CODE.finditer(body):
         word, _, rest = m.group(1).partition(" ")
         if word not in known_mcp and (word in heads or rest.startswith("-")):
             if not WITHHELD.search(body[:m.start()]):
-                found.add(m.group(1).strip())
+                found.update(segments(m.group(1).strip()))
     return found
 
 
