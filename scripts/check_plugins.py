@@ -10,8 +10,10 @@ Exit 0 = clean (warnings allowed), 1 = at least one error.
 
 import json
 import re
+import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -232,6 +234,38 @@ def loader_details(plugin_dir: Path, name: str) -> str | None:
     return done.stdout if done.returncode == 0 else None
 
 
+def baseline_details(plugin_dir: Path, name: str) -> str | None:
+    """The same cost table at ``BASE``, or ``None`` when it cannot be measured.
+
+    ``at`` is no help here: the loader prices a *tree*, so the baseline has to be
+    materialised as one. ``git archive`` writes the plugin directory as it stood at
+    the merge base and the loader reads it there — tokenized locally, same as the
+    working tree's table, so this costs one more CLI run and no credential.
+
+    ``None`` on any failure, including ``BASE is None``. The caller treats that as
+    "no baseline", which keeps the pre-baseline behaviour: every crossing is this
+    branch's until something can say otherwise.
+    """
+    if BASE is None:
+        return None
+    with tempfile.TemporaryDirectory() as tmp:
+        archive = Path(tmp) / "base.tar"
+        try:
+            done = subprocess.run(
+                ["git", "archive", "--output", str(archive), BASE, "--", rel(plugin_dir)],
+                cwd=ROOT, capture_output=True, text=True, timeout=60,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return None
+        if done.returncode != 0:
+            return None
+        try:
+            shutil.unpack_archive(archive, tmp)
+        except (ValueError, OSError):
+            return None
+        return loader_details(Path(tmp) / rel(plugin_dir), name)
+
+
 def tokens(printed: str) -> int:
     """`190` -> 190, `8.6k` -> 8600, `1,736` -> 1736. The loader rounds; so does this.
 
@@ -242,8 +276,33 @@ def tokens(printed: str) -> int:
     return round(float(bare) * (1000 if printed.endswith("k") else 1))
 
 
-def check_cost(plugin_dir: Path, name: str, details: str | None) -> None:
-    """Error when the loader's own cost table puts a plugin over one of its two budgets.
+def crossing(finding: str, now: int, before: int | None, limit: int) -> None:
+    """File ``finding`` as an error when this branch moved ``now`` past ``limit``.
+
+    ``before`` is the same number at the merge base, or ``None`` when no baseline
+    could be measured. The split is the one `require`, `check_contract_clauses` and
+    `check_version_bump` draw — severity is remedy locality — and the condition for a
+    warning is both halves together: the baseline was *already* over, **and** this
+    branch did not raise it. A branch that pushes an already-red number further owns
+    the lines it added; a branch that only inherits the number owns nothing, and a
+    branch that lowered it but not enough has already done the only thing it can.
+
+    On a push to the default branch the merge base is HEAD, so ``now == before`` and a
+    standing overflow warns rather than failing the build. That is the same thing
+    `require` does there and for the same reason: there is no branch to fix it in.
+    """
+    if before is not None and before > limit and now <= before:
+        verb = "the same" if now == before else f"lower than the baseline's {before}"
+        warnings.append(
+            f"{finding} — over at the baseline too and {verb} here, so the crossing is "
+            "not this branch's to fix"
+        )
+    else:
+        errors.append(finding)
+
+
+def check_cost(plugin_dir: Path, name: str, details: str | None, base: str | None = None) -> None:
+    """Error when *this branch* puts a plugin over one of the loader's two budgets.
 
     This replaces a 200-**line** ceiling over a role's "worst-case one-action load"
     — the role file, its preamble links, the largest `reference/` topic it names and
@@ -281,12 +340,27 @@ def check_cost(plugin_dir: Path, name: str, details: str | None) -> None:
       role, against which a campaign's own token spend is far larger. Loose, and it
       bounds one thing: the preamble a role charges before doing any work.
 
-    Both are errors rather than warnings, on the test the rest of this file uses: the
-    remedy is wholly inside the branch's own diff. A description and a role body are
-    the role's own files, arriving in the role's own change, with no other branch to
-    wait on — unlike the shared contract, whose lines the old ceiling counted and
-    which is precisely why that gate needed an inherited-debt arm at all. The contract
-    is not in either column here, so the arm is not needed either.
+    Both are errors on the test the rest of this file uses — the remedy is wholly
+    inside the branch's own diff — **when the branch is what moved them**, which is
+    why ``base`` is read. The argument that retired the baseline here was that a
+    description and a role body are the role's own files, so there is no other branch
+    to wait on. That is a claim about who owns a *file*, and the budgets are not
+    file-shaped:
+
+    - Always-on is a **sum over every role**, as the bullet above says in as many
+      words. Seven descriptions in seven files, arriving in up to seven changes. It is
+      the shared-cost shape the old line ceiling needed its inherited-debt arm for; the
+      arm was dropped because the *contract* is in neither column, which identified the
+      wrong thing as the shared cost. The other six descriptions are the shared cost.
+    - On-invoke is per component, but a branch that never opens ``anantys.qa/SKILL.md``
+      is still handed its row. Role-local is not branch-local.
+
+    Measured on the queue this gate ships into: two of the open heads price at 1,034
+    always-on against a 1,000 ceiling, and one prices ``anantys.qa`` at 12.8k against
+    12,000. Without the baseline, the first of those to merge reddens every one of the
+    other heads for a number it did not move — and hands each of them a remedy
+    (*shorten those descriptions*, *move detail into `reference/`*) in files it does
+    not own. That is the order-forcing this file refuses everywhere else.
     """
     if details is None:
         warnings.append(
@@ -303,21 +377,35 @@ def check_cost(plugin_dir: Path, name: str, details: str | None) -> None:
         )
         return
 
+    # A baseline whose own table this gate cannot read attributes nothing, and must not
+    # be mistaken for a baseline that measured 0: `None` means "no baseline".
+    base_total = LOADER_TOTAL.search(base) if base else None
+    was = {c: tokens(oi) for c, _, oi in LOADER_ROW.findall(base or "")}
+
     if (always_on := tokens(total.group(1))) > ALWAYS_ON_MAX:
-        errors.append(
+        crossing(
             f"{name}: {always_on} always-on tokens (> {ALWAYS_ON_MAX}) — every session "
             "with this plugin enabled pays them before invoking anything; the column is "
             "the roles' frontmatter `description`s, so what has to shorten is those, or "
-            "the plugin has fewer roles"
+            "the plugin has fewer roles",
+            always_on,
+            tokens(base_total.group(1)) if base_total else None,
+            ALWAYS_ON_MAX,
         )
 
     for component, _, on_invoke in LOADER_ROW.findall(details):
         if (cost := tokens(on_invoke)) > ON_INVOKE_MAX:
-            errors.append(
+            crossing(
                 f"{component}: {cost} tokens on invoke (> {ON_INVOKE_MAX}) — move detail "
                 "a given action does not need into `reference/` topic files, which the "
                 "loader charges only to the action that reads them, and this column not "
-                "at all"
+                "at all",
+                cost,
+                # A component the baseline did not have is new here, so it is this
+                # branch's — absent from `was` must not read as "was 0 and is over now"
+                # by way of a default that happens to be under the limit.
+                was.get(component),
+                ON_INVOKE_MAX,
             )
 
 
@@ -559,9 +647,16 @@ def main() -> int:
         # about the baseline, which is `check_contract_clauses`'s subject — so absence is
         # routed into it rather than short-circuited around it. Deciding here, where the
         # baseline is not read, is what let a deletion pass as a not-landed-yet file.
-        # One CLI call per plugin: the always-on budget is a property of the plugin,
-        # and the per-component rows come out of the same table.
-        check_cost(plugin_dir, manifest["name"], loader_details(plugin_dir, manifest["name"]))
+        # One CLI call per plugin per tree: the always-on budget is a property of the
+        # plugin, and the per-component rows come out of the same table. The second
+        # tree is the merge base — a budget is only this branch's when this branch
+        # moved it, and nothing but the loader can say what it was before.
+        check_cost(
+            plugin_dir,
+            manifest["name"],
+            loader_details(plugin_dir, manifest["name"]),
+            baseline_details(plugin_dir, manifest["name"]),
+        )
 
         contract = plugin_dir / CONTRACT
         check_contract_clauses(contract)

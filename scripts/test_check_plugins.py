@@ -5,6 +5,7 @@ import contextlib
 import io
 import json
 import shutil
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -113,6 +114,146 @@ class CostIsPricedInTheLoadersCurrency(Harness):
         warning, = self.cost(None)
         self.assertIn("did not run", warning)
         self.assertEqual(cp.errors, [])
+
+
+class ABudgetIsThisBranchsOnlyIfThisBranchMovedIt(Harness):
+    """Severity is remedy locality, and neither budget is shaped like one branch's diff.
+
+    Always-on is a sum over every role's `description` — seven files, up to seven
+    changes — and a component's on-invoke row is handed to every branch in the queue,
+    including the ones that never open that role. Measured on the real queue: two open
+    heads price at 1,034 always-on against a 1,000 ceiling and one prices `anantys.qa`
+    at 12.8k against 12,000, so the first of them to merge decides whether the other
+    heads are red. These cases are what keeps that from happening.
+    """
+
+    def cost(self, table: str | None, base: str | None = None) -> tuple[list[str], list[str]]:
+        cp.check_cost(cp.ROOT, "p", table, base)
+        return cp.errors, cp.warnings
+
+    def test_an_inherited_always_on_overflow_is_not_this_branchs_to_fix(self) -> None:
+        errors, (warning,) = self.cost(details("~1,034", a="~900"), details("~1,034", a="~900"))
+        self.assertEqual(errors, [])
+        self.assertIn("1034 always-on tokens (> 1000)", warning)
+        self.assertIn("over at the baseline too and the same here", warning)
+
+    def test_raising_an_already_over_total_is_this_branchs(self) -> None:
+        (error,), warnings = self.cost(details("~1,200", a="~900"), details("~1,034", a="~900"))
+        self.assertIn("1200 always-on tokens", error)
+        self.assertEqual(warnings, [])
+
+    def test_lowering_an_over_total_without_clearing_it_is_not_an_error(self) -> None:
+        # The branch did the only thing its own diff can do. Reddening it anyway makes
+        # the remedy "edit the six descriptions you do not own", which is an order.
+        errors, (warning,) = self.cost(details("~1,010", a="~900"), details("~1,034", a="~900"))
+        self.assertEqual(errors, [])
+        self.assertIn("lower than the baseline's 1034", warning)
+
+    def test_crossing_a_budget_the_baseline_was_under_is_an_error(self) -> None:
+        (error,), warnings = self.cost(details("~1,034", a="~900"), details("~716", a="~900"))
+        self.assertIn("1034 always-on tokens", error)
+        self.assertEqual(warnings, [])
+
+    def test_no_baseline_attributes_every_crossing_to_this_branch(self) -> None:
+        # `baseline_details` returns None when git or the CLI cannot say. That must not
+        # read as a baseline of 0, and it must not excuse the crossing either.
+        (error,), warnings = self.cost(details("~1,034", a="~900"), None)
+        self.assertIn("1034 always-on tokens", error)
+        self.assertEqual(warnings, [])
+
+    def test_a_baseline_whose_table_is_unreadable_attributes_nothing(self) -> None:
+        (error,), _ = self.cost(details("~1,034", a="~900"), "Nothing recognisable here\n")
+        self.assertIn("1034 always-on tokens", error)
+
+    def test_an_inherited_component_row_is_not_this_branchs_to_fix(self) -> None:
+        errors, (warning,) = self.cost(details("~700", qa="~12.8k"), details("~700", qa="~12.8k"))
+        self.assertEqual(errors, [])
+        self.assertIn("qa: 12800 tokens on invoke (> 12000)", warning)
+
+    def test_a_component_the_baseline_did_not_have_is_this_branchs(self) -> None:
+        # A new role arrives over the budget in the change that adds it. Reading its
+        # absence from the baseline as "was 0" would warn instead, and the one branch
+        # that can shorten it would be the one told it is not its problem.
+        (error,), warnings = self.cost(details("~700", new="~20k"), details("~700", old="~900"))
+        self.assertIn("new: 20000 tokens on invoke", error)
+        self.assertEqual(warnings, [])
+
+    def test_each_component_is_attributed_on_its_own_row(self) -> None:
+        errors, warnings = self.cost(
+            details("~700", qa="~12.8k", debug="~40k"),
+            details("~700", qa="~12.8k", debug="~950"),
+        )
+        self.assertIn("debug: 40000", errors[0])
+        self.assertIn("qa: 12800", warnings[0])
+
+    def test_a_budget_under_the_ceiling_says_nothing_about_the_baseline(self) -> None:
+        self.assertEqual(self.cost(details("~716", a="~900"), details("~1,034", a="~20k")), ([], []))
+
+
+@unittest.skipIf(shutil.which("claude") is None, "needs the Claude Code CLI")
+class TheBaselineIsATreeNotABlob(unittest.TestCase):
+    """`baseline_details` has to materialise the merge base, because the loader prices a tree.
+
+    `at` returns one file's content and the cost table is a property of a directory —
+    frontmatter in every role, read by the CLI. So this is the one place in the file
+    that shells out twice, and the case that matters is the obvious failure: measuring
+    the working tree a second time and calling it the baseline, which would make every
+    crossing look inherited and the gate silent.
+    """
+
+    def setUp(self) -> None:
+        cp.errors.clear()
+        cp.warnings.clear()
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.root = Path(tmp.name).resolve()
+        self.addCleanup(setattr, cp, "ROOT", cp.ROOT)
+        self.addCleanup(setattr, cp, "BASE", cp.BASE)
+        cp.ROOT = self.root
+
+        plugin = self.root / "plugins/p"
+        (plugin / ".claude-plugin").mkdir(parents=True)
+        (plugin / ".claude-plugin/plugin.json").write_text(
+            json.dumps({"name": "p", "version": "0.1.0", "description": "d"}), encoding="utf-8"
+        )
+        (plugin / "skills/s").mkdir(parents=True)
+        self.skill = plugin / "skills/s/SKILL.md"
+        self.skill.write_text("---\nname: s\ndescription: Short.\n---\n\nbody\n", encoding="utf-8")
+        self.plugin = plugin
+
+        def git(*args: str) -> None:
+            subprocess.run(["git", *args], cwd=self.root, check=True, capture_output=True)
+
+        git("init", "-q")
+        git("-c", "user.email=t@t", "-c", "user.name=t", "commit", "--allow-empty", "-qm", "root")
+        git("add", "-A")
+        git("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "base")
+        cp.BASE = subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=self.root, capture_output=True, text=True, check=True
+        ).stdout.strip()
+
+    def total(self, table: str | None) -> int:
+        self.assertIsNotNone(table, "the CLI is installed but printed no cost table")
+        return cp.tokens(cp.LOADER_TOTAL.search(table).group(1))
+
+    def test_the_baseline_table_is_the_committed_tree_not_the_working_one(self) -> None:
+        before = self.total(cp.baseline_details(self.plugin, "p"))
+        self.skill.write_text(
+            "---\nname: s\ndescription: " + " a description that is very much longer. " * 20
+            + "\n---\n\nbody\n",
+            encoding="utf-8",
+        )
+        self.assertGreater(self.total(cp.loader_details(self.plugin, "p")), before)
+        self.assertEqual(self.total(cp.baseline_details(self.plugin, "p")), before)
+
+    def test_a_plugin_absent_from_the_baseline_has_no_baseline_table(self) -> None:
+        # `git archive` exits non-zero on a path the commit does not have, which is a
+        # new plugin's own change: nothing to attribute to, so every crossing is its own.
+        self.assertIsNone(cp.baseline_details(self.root / "plugins/absent", "p"))
+
+    def test_no_merge_base_is_no_baseline_rather_than_an_empty_one(self) -> None:
+        cp.BASE = None
+        self.assertIsNone(cp.baseline_details(self.plugin, "p"))
 
 
 @unittest.skipIf(shutil.which("claude") is None, "needs the Claude Code CLI")

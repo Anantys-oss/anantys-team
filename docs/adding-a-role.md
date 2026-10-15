@@ -77,12 +77,30 @@ platform intends, and it is not a hole to be closed by charging for it.
   a role charges before doing any work. Six roles measure 820–2.1k; `anantys.qa` measures
   **8.6k** and is the only role this number is about.
 
-Both are **errors**, on the test the rest of the gate uses: the remedy is wholly inside the
-branch's own diff. A description and a role body are the role's own files, arriving in the
-role's own change, with no other branch to wait on. The old ceiling needed an inherited-debt
-arm precisely because it charged `TEAM-CONTRACT.md`, which is seven roles' at once; the
-contract is in neither column here, so that arm is gone with it — and so is the merge-base
-baseline the ceiling needed to tell a crossing from standing debt.
+Both are **errors**, on the test the rest of the gate uses — the remedy is wholly inside the
+branch's own diff — **when the branch is what moved the number**. That qualifier was missing
+for one round, on the argument that a description and a role body are the role's own files,
+so there is no other branch to wait on. It is a claim about who owns a *file*, and neither
+budget is file-shaped:
+
+- Always-on is a **sum over every role**, as the bullet above says outright. Seven
+  descriptions in seven files, arriving in up to seven changes. That is exactly the
+  shared-cost shape the old ceiling needed its inherited-debt arm for. The arm was dropped
+  because `TEAM-CONTRACT.md` is in neither column — which named the wrong thing as the shared
+  cost. The shared cost is the other six descriptions.
+- On-invoke is per component, but a branch that never opens `anantys.qa/SKILL.md` is still
+  handed its row. Role-local is not branch-local.
+
+Measured on the queue this gate ships into: two open heads price at **1,034** always-on, and
+one prices `anantys.qa` at **12.8k** on invoke. Without a baseline, the first of those to
+merge turns every other head red for a number it did not move, and hands each of them a
+remedy — *shorten those descriptions*, *move detail into `reference/`* — in files it does not
+own. So the merge-base baseline is back, and it is measured the only way a tree-shaped number
+can be: `git archive` the plugin directory at the merge base and run the loader on that too.
+A crossing the baseline already had, and that this branch did not raise, is a **warning** that
+says so. On a push to the default branch the merge base is HEAD, so a standing overflow warns
+there rather than failing the build — the same thing the frontmatter-name check does, and for
+the same reason: there is no branch to fix it in.
 
 **A gate that cannot measure does not rule.** With no `claude` on `PATH` the check warns and
 says so. CI installs the CLI for exactly that reason: a budget nothing measures is a number
