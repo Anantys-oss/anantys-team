@@ -38,6 +38,21 @@ authoring time:
      number on a run that never happened. Both are rules the README states and
      nothing enforces.
 
+     That second half was first written as a ratio — fail above half the scored
+     weight — and a ratio cannot express it. The measurement above puts the
+     failure *at* 0.50, and five of this suite's six cases sit on exactly that
+     value: over two to four graders the share quantizes to {0, .33, .5, .67, 1},
+     so any ceiling in between decides cases by how many graders their author
+     happened to write. What the floor actually asks for is a **witness**: one
+     scored grader that observes something the run did. A case needs at least
+     one, and counting is the wrong instrument for "at least one".
+
+     A witness must also still be scored on the run that is in trouble. The CLI
+     skips paid graders — `llm`, `baseline` — when `--max-cost-usd` is breached
+     while free graders still score the run, so a case whose only non-absence
+     verdict is an `llm` grader reports 1.00 on an aborted run: strictly worse
+     than the 0.50 this gate was written to catch.
+
 What this checker deliberately does not do: score a role. That needs the agent
 runs, a credential, and a human reading the result. It asserts only that the
 suite is capable of scoring one.
@@ -56,9 +71,10 @@ REPO = pathlib.Path(__file__).resolve().parent.parent
 # resolves to absent on a sealed sandbox; `not_contains` matches an empty trace;
 # `tool_used max: 0` is satisfied by a session that made no calls at all.
 VACUOUS = "vacuous"
-# The share of a case's scored weight that may pass by absence. Above a half, a
-# crashed run reads as a majority-passing case.
-VACUITY_CEILING = 0.5
+# Grader types the harness stops scoring when `--max-cost-usd` is breached: they
+# call a judge model. A verdict that disappears under a budget ceiling cannot be
+# the only thing standing between a crashed run and a perfect score.
+PAID = {"llm", "baseline"}
 
 
 def parse_case(text: str) -> dict:
@@ -137,6 +153,27 @@ def grader_kind(grader: dict) -> str | None:
     return None
 
 
+def witnesses(graders: list[dict]) -> list[str]:
+    """The graders that still return a verdict about a run that went wrong.
+
+    Three exclusions, each for a different reason the verdict is not there:
+
+    - ``arm: with-only`` — the default ablation keeps these out of the score
+      entirely; they report whether the plugin fired, not whether it behaved.
+    - ``VACUOUS`` — satisfied by the empty trace a sealed sandbox leaves behind.
+    - ``PAID`` — skipped when `--max-cost-usd` is breached.
+
+    A case with none of these left has no way to tell a refusal from a crash.
+    """
+    return [
+        g.get("name", "<unnamed>")
+        for g in graders
+        if g.get("arm") != "with-only"
+        and grader_kind(g) != VACUOUS
+        and g.get("type") not in PAID
+    ]
+
+
 def split_row(row: str) -> list[str]:
     """Split a markdown table row on its unescaped pipes."""
     cells = re.split(r"(?<!\\)\|", row.strip())
@@ -201,7 +238,6 @@ def check_suite(evals_dir: pathlib.Path) -> list[str]:
                 f"'{case_file.parent.name}' — `--case` filters by name"
             )
 
-        scored = vacuous = 0
         for grader in graders:
             gname = grader.get("name", "<unnamed>")
             gtype = grader.get("type")
@@ -247,18 +283,14 @@ def check_suite(evals_dir: pathlib.Path) -> list[str]:
             if gtype == "file_exists" and not grader.get("path"):
                 errors.append(f"{where}: grader '{gname}' has no path")
 
-            if grader.get("arm") == "with-only":
-                continue
-            scored += 1
-            if grader_kind(grader) == VACUOUS:
-                vacuous += 1
-
-        if scored and vacuous / scored > VACUITY_CEILING:
+        if not witnesses(graders):
             errors.append(
-                f"{where}: {vacuous} of {scored} scored graders pass by absence "
-                f"({vacuous / scored:.0%}) — a crashed run would score that high "
-                f"having verified nothing; add a grader that cannot go green by "
-                f"accident (README: 'prefer `exists: true`')"
+                f"{where}: no scored grader witnesses what the run did — every "
+                f"verdict here is either an absence an empty trace satisfies, or a "
+                f"paid grader the CLI stops scoring when `--max-cost-usd` is "
+                f"breached, so a crashed run reports this case as passing having "
+                f"verified nothing; add one free grader that observes what the role "
+                f"read or wrote before it refused (README: 'prefer `exists: true`')"
             )
 
     for name in sorted(vectors.keys() - documented):

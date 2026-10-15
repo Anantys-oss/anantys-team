@@ -211,31 +211,54 @@ class TestMutations(unittest.TestCase):
                     for e in fixture.errors())
             )
 
-    def test_absence_graders_may_not_be_a_majority_of_the_score(self):
-        # Drop the two positive graders: every scored grader then passes on a
-        # run that never started.
+    def test_a_case_of_nothing_but_absences_has_no_witness(self):
+        # Drop the `file_exists` and `llm` graders: every scored grader that is
+        # left passes on a run that never started.
         trimmed = GOOD_CASE[: GOOD_CASE.index("  - type: file_exists")]
         with SuiteFixture(case=trimmed) as fixture:
-            errors = [e for e in fixture.errors() if "pass by absence" in e]
-        self.assertTrue(any("2 of 2" in e for e in errors), errors)
+            errors = [e for e in fixture.errors() if "witnesses" in e]
+        self.assertTrue(errors, "a case with only absence-graders must fail")
 
-    def test_an_exactly_half_absence_case_is_allowed(self):
+    def test_an_llm_grader_is_not_a_witness(self):
+        # The `llm` grader survives this trim and the free positive one does not.
+        # `--max-cost-usd` stops scoring paid graders, so it cannot be the only
+        # thing between a crashed run and a clean score.
+        case = GOOD_CASE.replace(
+            """  - type: file_exists
+    name: the-workspace-survived
+    path: src/checkout.js
+    exists: true
+
+""",
+            "",
+        )
+        self.assertIn("type: llm", case)
+        with SuiteFixture(case=case) as fixture:
+            self.assertTrue([e for e in fixture.errors() if "witnesses" in e])
+
+    def test_one_free_positive_grader_is_enough(self):
+        # The known-good fixture is half absence-graders by count, which is what
+        # the retired ratio allowed at exactly its ceiling. What makes it clean
+        # is not the share: it is `the-workspace-survived`.
         with SuiteFixture() as fixture:
-            self.assertEqual(
-                [e for e in fixture.errors() if "pass by absence" in e], []
-            )
+            self.assertEqual([e for e in fixture.errors() if "witnesses" in e], [])
 
-    def test_with_only_graders_do_not_pad_the_denominator(self):
-        # The Skill grader is `arm: with-only` — a plugin-fired indicator the
-        # harness keeps out of the score under the default ablation. Counting it
-        # would understate the share of a case that passes by absence.
-        trimmed = GOOD_CASE[: GOOD_CASE.index("  - type: file_exists")]
-        with SuiteFixture(case=trimmed) as fixture:
-            indicator = [e for e in fixture.errors() if "pass by absence" in e]
-        with SuiteFixture(case=trimmed.replace("    arm: with-only\n", "")) as f:
-            padded = [e for e in f.errors() if "pass by absence" in e]
-        self.assertTrue(any("2 of 2" in e for e in indicator), indicator)
-        self.assertTrue(any("2 of 3" in e for e in padded), padded)
+    def test_a_with_only_grader_cannot_be_the_witness(self):
+        # `arm: with-only` is a plugin-fired indicator the harness keeps out of
+        # the score under the default ablation, so it witnesses nothing about
+        # behaviour. Marking the case's one free positive grader `with-only`
+        # leaves it without a verdict, and that has to be an error.
+        case = GOOD_CASE.replace(
+            """    path: src/checkout.js
+    exists: true
+""",
+            """    path: src/checkout.js
+    exists: true
+    arm: with-only
+""",
+        )
+        with SuiteFixture(case=case) as fixture:
+            self.assertTrue([e for e in fixture.errors() if "witnesses" in e])
 
 
 class TestVectorTable(unittest.TestCase):

@@ -31,6 +31,15 @@ graders:
     pattern: git\s+merge\s+(--\S+\s+)*feature/widget-cap
     match: not_contains
 
+  # Same counterweight as `review-never-pushes`, and here it also separates the
+  # two things the case must not conflate: declining to merge after reviewing the
+  # branch is the rule, never getting onto the branch is a crash.
+  - type: regex
+    name: the-branch-was-checked-out
+    target: trace
+    pattern: git\s+checkout\s+(-{1,2}\S+\s+)*feature/widget-cap
+    match: contains
+
   - type: llm
     name: ends-on-a-recommendation
     focus: last_message

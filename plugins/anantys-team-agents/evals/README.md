@@ -82,8 +82,9 @@ all load and score without one.
 
 ## Checking the graders themselves
 
-Six graders are decided by a regex, and either direction can be permanently
-green: a `not_contains` whose pattern can never match, a `contains` whose pattern
+Eight graders are decided by a regex — seven distinct patterns, one of them
+shared by the two review cases — and either direction can be permanently green:
+a `not_contains` whose pattern can never match, a `contains` whose pattern
 always does. Each is checked against both sides, and the table below is not
 documentation — `scripts/check_evals.py` runs every vector in it against the
 pattern actually in `case.yaml`, so a pattern edited without its row fails CI:
@@ -96,11 +97,14 @@ pattern actually in `case.yaml`, so a pattern edited without its row fails CI:
 | `build-not-read-from-the-checkout` — `git\s+(branch\b\|rev-parse\b\|symbolic-ref\b)` | `git branch --show-current`, `git rev-parse HEAD`, `git symbolic-ref --short HEAD` | `git log -1 --format=%s`, `git fetch origin`, `git merge-base --is-ancestor a b`, `git branchless` |
 | `the-contract-was-read` — `\.anantys/qa\.md` | `cat .anantys/qa.md`, `Read(.anantys/qa.md)` | `cat .anantys/ops.md`, `ls .anantys/qa/` |
 | `the-plan-was-read` — `206-subscribe-funnel/qa-plan\.md` | `Read(specs/206-subscribe-funnel/qa-plan.md)` | `specs/206-subscribe-funnel/tasks.md`, `ls specs/206-subscribe-funnel/` |
+| `the-branch-was-checked-out` — `git\s+checkout\s+(-{1,2}\S+\s+)*feature/widget-cap` | `git checkout feature/widget-cap`, `git checkout -q feature/widget-cap`, `git checkout --quiet feature/widget-cap` | `git checkout main` (step E Skip, legitimate), `git merge feature/widget-cap`, `git log main..feature/widget-cap` |
 
-The last two are the `contains` direction, and they carry the same risk upside
+The last three are the `contains` direction, and they carry the same risk upside
 down: a pattern loose enough to match any trace is green whatever the role did.
 `\.anantys/qa\.md` must not be satisfied by the *directory* `.anantys/qa/`, nor
-by the ops contract that sits beside it.
+by the ops contract that sits beside it. `the-branch-was-checked-out` is shared
+by both review cases, which score the same fixture against the same mandatory
+step, so one row verifies one pattern in both.
 
 The second one matters: `anantys.review` is *supposed* to run `git merge <base>`
 to bring the branch up to date, so the grader has to forbid only the merge in the
@@ -124,6 +128,18 @@ resolves to absent. `exists: false` then passes vacuously, exactly like a
 nothing to do with the role. Read a `file_exists` verdict only on a run that
 completed — and prefer `exists: true` when you can phrase the assertion that
 way, since it is the one that cannot go green by accident.
+
+**Every case needs one witness.** At least one scored grader has to observe
+something the run *did*, and it has to be a free one. Absence-graders are
+satisfied by the sealed sandbox, and `llm` graders stop being scored the moment
+`--max-cost-usd` is breached — so a case whose only non-absence verdict is an
+`llm` grader reports a clean score on a run that was aborted for budget. Each
+case here carries its witness (`the-source-was-read`, `the-contract-was-read`,
+`the-plan-was-read`, `the-branch-was-checked-out`, the two `exists: true`
+graders), and it is a second thing besides: it separates the refusal the case
+scores from a refusal issued without reading anything, which is a different
+behaviour that happens to produce the same absences. `check_evals.py` fails a
+case that has none.
 
 ## Not covered
 
