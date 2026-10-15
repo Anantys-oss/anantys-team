@@ -21,6 +21,16 @@ git consults, so it may only choose the warning — never gate the measurement. 
 this still cannot see: a rule file git reads and the inventory does not (a global
 `core.excludesFile`) leaves the warning claiming less was measured, never more.
 
+The generated half has no git to ask — it is a list of markers, so its own liveness is
+an assertion this file has to make, and the assertion has to be made against paths git
+emits rather than against paths derived from the matcher. Derived, it is a tautology:
+`probe()` added the trailing-slash marker's own text to the path it then searched for,
+and appended the suffix marker to the path it then suffix-tested, so every marker
+matched its probe by construction and the loop could not fail for any marker set at
+all. The one shape it claimed to catch is the one it certified — `__pycache__` without
+its slash matches no path `git ls-files` emits, and shipped green while every tracked
+`.pyc` under it went unreported. `EMITTED` is therefore written out, not computed.
+
 Exit 0 = clean (warnings allowed), 1 = at least one error.
 """
 
@@ -35,6 +45,21 @@ ROOT = Path(__file__).resolve().parent.parent
 #: on the branches that have no `.gitignore` yet.
 GENERATED = ("__pycache__/", ".pyc", ".pyo", ".DS_Store", ".egg-info/")
 
+#: Paths `git ls-files` can actually emit, against which each marker above is proved
+#: alive. Stated literally, because a marker is not evidence about itself: `probe()`
+#: built its test path by the same trailing-slash dispatch `matches()` applies, so
+#: `marker in probe(marker)` or `probe(marker).endswith(marker)` held by construction
+#: and the loop could not fail for *any* marker set. `("__pycache__",)` — the slashless
+#: spelling `matches()` documents as matching nothing git emits — passed it green.
+#: Adding a marker means adding the path it is meant to catch.
+EMITTED = (
+    "pkg/__pycache__/mod.cpython-313.pyc",
+    "pkg/mod.pyc",
+    "pkg/mod.pyo",
+    "pkg/.DS_Store",
+    "mypkg.egg-info/PKG-INFO",
+)
+
 
 def git(*args: str) -> list[str]:
     out = subprocess.run(
@@ -48,18 +73,20 @@ def git(*args: str) -> list[str]:
     return [line for line in out.stdout.splitlines() if line]
 
 
-def generated(path: str) -> bool:
+def matches(marker: str, path: str) -> bool:
     """A trailing `/` makes a marker a directory — match it anywhere in the path.
 
     Dispatching on the *first* character instead silently killed `.egg-info/`:
-    `git ls-files` never emits a trailing slash, so no path can end with one.
+    `git ls-files` never emits a trailing slash, so no path can end with one. Taken
+    one marker at a time so a marker can be asked about a path on its own; asking
+    `generated()` answers for the whole set, which is why the dead-marker loop below
+    could not tell a live marker from a dead one in the company of live ones.
     """
-    return any(m in path if m.endswith("/") else path.endswith(m) for m in GENERATED)
+    return marker in path if marker.endswith("/") else path.endswith(marker)
 
 
-def probe(marker: str) -> str:
-    """A path `marker` must match. Keeps a dead marker from shipping unnoticed."""
-    return f"pkg/{marker}out" if marker.endswith("/") else f"pkg/x{marker}"
+def generated(path: str) -> bool:
+    return any(matches(m, path) for m in GENERATED)
 
 
 def exclude_sources() -> list[str]:
@@ -87,7 +114,7 @@ def main() -> int:
     warnings: list[str] = []
 
     for marker in GENERATED:
-        if not generated(probe(marker)):
+        if not any(matches(marker, path) for path in EMITTED):
             errors.append(f"{marker}: marker matches nothing — `generated()` cannot see it")
 
     flagged = {path for path in git("ls-files") if generated(path)}

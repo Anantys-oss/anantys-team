@@ -94,11 +94,37 @@ class TrackedIgnored(Harness):
         self.assertEqual(rc, 0)
         self.assertIn("warning: no exclude source", out)
 
-    def test_every_generated_marker_can_match_a_path(self) -> None:
+    def test_every_generated_marker_matches_a_path_git_can_emit(self) -> None:
         """A dead marker emits nothing, so the verdict is identical whether it works."""
         for marker in cti.GENERATED:
             with self.subTest(marker=marker):
-                self.assertTrue(cti.generated(cti.probe(marker)))
+                self.assertTrue(any(cti.matches(marker, p) for p in cti.EMITTED))
+
+    def test_a_directory_marker_without_its_slash_is_reported(self) -> None:
+        """The shape `matches()` documents as dead, and the one `probe()` certified."""
+        self.track("scripts/__pycache__/check.cpython-313.pyc")
+        with mock.patch.object(cti, "GENERATED", ("__pycache__",)):
+            rc, out = self.run_check()
+        self.assertEqual(rc, 1)
+        self.assertIn("__pycache__: marker matches nothing", out)
+
+    def test_a_marker_naming_nothing_at_all_is_reported(self) -> None:
+        """Proving the loop can fail: derived from the matcher, no marker set could."""
+        self.track("scripts/check.py")
+        with mock.patch.object(cti, "GENERATED", ("zzz", "dist/")):
+            rc, out = self.run_check()
+        self.assertEqual(rc, 1)
+        self.assertIn("zzz: marker matches nothing", out)
+        self.assertIn("dist/: marker matches nothing", out)
+
+    def test_a_live_marker_is_not_graded_by_the_company_it_keeps(self) -> None:
+        """`generated()` answers for the whole set, so it cannot grade one member."""
+        self.track("scripts/check.py")
+        with mock.patch.object(cti, "GENERATED", (".pyc", "zzz")):
+            rc, out = self.run_check()
+        self.assertEqual(rc, 1)
+        self.assertIn("zzz: marker matches nothing", out)
+        self.assertNotIn(".pyc: marker matches nothing", out)
 
     def test_a_directory_marker_matches_a_file_inside_it(self) -> None:
         """The case `m[0] == "."` dispatch could not reach: a dotted directory name."""
@@ -112,12 +138,10 @@ class TrackedIgnored(Harness):
         """Keyed on the first character, `.egg-info/` matched nothing and said nothing."""
         self.track("scripts/check.py")
 
-        def first_character_dispatch(path: str) -> bool:
-            return any(
-                path.endswith(m) if m[0] == "." else m in path for m in cti.GENERATED
-            )
+        def first_character_dispatch(marker: str, path: str) -> bool:
+            return path.endswith(marker) if marker[0] == "." else marker in path
 
-        with mock.patch.object(cti, "generated", first_character_dispatch):
+        with mock.patch.object(cti, "matches", first_character_dispatch):
             rc, out = self.run_check()
         self.assertEqual(rc, 1)
         self.assertIn(".egg-info/: marker matches nothing", out)
