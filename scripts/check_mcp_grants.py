@@ -37,6 +37,16 @@ might not run at all. An unprobed server's tool names go unverified and the gate
 says which, in the pattern `check_platform.py` set for the loader it also cannot
 always run.
 
+**Asking the provider means asking it for every page.** `tools/list` is paginated:
+the reply carries `nextCursor` when more tools follow, and the server picks the
+page size. A probe that read the first page and stopped would not report less — it
+would report the tools on page two as tools the server *does not advertise*, which
+is an error, on a role file, telling its owner to delete a grant that works. The
+`update_plan` case above is what that message looks like when it is true; nothing
+in the output tells the two apart. So `probe` follows the cursor, and any exchange
+it cannot finish — an unanswered page, a cursor the server never clears — comes
+back unprobed, in the same column as a server that would not launch.
+
 Errors that predate this gate are declared in `mcp-grants-baseline.txt` rather
 than fixed here — a gate may not fix its own subject, or it forces an order on
 changes that have none.
@@ -48,11 +58,18 @@ Exit 1 on undeclared errors, 0 on warnings and declared ones.
 import json
 import os
 import re
+import select
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 BASELINE = Path(__file__).with_name("mcp-grants-baseline.txt")
+
+#: Pages of `tools/list` this gate will follow before calling the server unprobed.
+#: A server that never clears its cursor would otherwise be read until the
+#: deadline; no real server needs ten pages to name its tools.
+MAX_PAGES = 10
 
 #: `mcp__<server>__<tool>`. Deliberately looser than `check_platform.py`'s
 #: `TOOL_SHAPE`: a malformed identifier is that gate's finding, and re-reporting
@@ -72,14 +89,85 @@ def exposed(plugin: str, server: str) -> str:
     return f"plugin_{plugin}_{server}"
 
 
+def send(proc, message: dict) -> None:
+    """One JSON-RPC message, line-delimited. Silent if the server is already gone.
+
+    A write that fails needs no branch of its own: the only consequence is a reply
+    that never arrives, which ``result`` already reports as unprobed.
+    """
+    try:
+        proc.stdin.write((json.dumps(message) + "\n").encode())
+        proc.stdin.flush()
+    except OSError:
+        pass
+
+
+def replies(stdout, deadline: float):
+    """Every JSON message the server writes, until the deadline or EOF.
+
+    Reads *bytes* and splits them here rather than calling ``readline``: one
+    ``readline`` on a buffered stream can pull two replies into the stream's own
+    buffer, after which ``select`` on the file descriptor blocks for the full
+    deadline with the second reply already in hand. That is not a theoretical
+    ordering — a server that answers `initialize` and `tools/list` back to back
+    writes both into one chunk, which is the common case.
+    """
+    pending = b""
+    while True:
+        while b"\n" in pending:
+            line, _, pending = pending.partition(b"\n")
+            try:
+                yield json.loads(line)
+            except json.JSONDecodeError:
+                continue
+        if (left := deadline - time.monotonic()) <= 0:
+            return
+        if not select.select([stdout], [], [], left)[0]:
+            return
+        if not (chunk := os.read(stdout.fileno(), 65536)):
+            return
+        pending += chunk
+
+
+def result(stream, want: int) -> dict | None:
+    """The ``result`` of request ``want``, or ``None`` if it never arrives.
+
+    Skips anything that is not that reply — a server is free to emit notifications
+    in between, and a probe that assumed the next message was its answer would
+    report a server with no tools, which is the one wrong answer that reads as a
+    finding. An error reply has no ``result`` and so is unprobed too.
+    """
+    for msg in stream:
+        if msg.get("id") == want:
+            return msg.get("result")
+    return None
+
+
 def probe(spec: dict, timeout: float = 20.0) -> set[str] | None:
     """The tool names a server advertises, or ``None`` if it could not be asked.
 
-    One stdio session: `initialize`, the `initialized` notification, `tools/list`.
-    Reads line-delimited JSON and skips anything that is not the reply to the
-    request it sent — a server is free to emit notifications in between, and a
-    probe that assumed the next line was its answer would report a server with no
-    tools, which is the one wrong answer that reads as a finding.
+    One stdio session: `initialize`, the `initialized` notification, then
+    `tools/list` until the server stops handing back a cursor.
+
+    **The cursor is not optional.** `tools/list` is a paginated method: the reply
+    carries `nextCursor` when more tools follow, and the *server* chooses the page
+    size. Reading the first page as the whole list is not a partial measurement —
+    it is a false `does not advertise` **error**, charged to a role file, whose
+    stated remedy is to delete a grant that works. `update_plan` is this gate's own
+    worked example of a real finding; against a server that paginates before it,
+    the same code produces that identical message about a tool the server *does*
+    list, and nothing in the output distinguishes the two. Reply-matching above
+    closed one route to "a server with no tools"; this was the other, and it is the
+    one a server reaches by following the spec.
+
+    ``None`` whenever the exchange does not complete — a handshake that is never
+    answered, a page that never arrives, a cursor the server never clears. A gate
+    that cannot finish measuring must not rule on half an answer, which is the
+    whole reason an unprobed server is a warning and not an error.
+
+    The three opening messages are still written without waiting on the
+    `initialize` reply, so a lenient server that answers only `tools/list` is read
+    exactly as before; the deadline bounds every read after that.
     """
     cmd = [spec.get("command", "")] + list(spec.get("args") or [])
     if not cmd[0]:
@@ -90,43 +178,37 @@ def probe(spec: dict, timeout: float = 20.0) -> set[str] | None:
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
-            text=True,
             env={**os.environ, **(spec.get("env") or {})},
         )
     except OSError:
         return None
+    deadline = time.monotonic() + timeout
     try:
         hello = {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
             "clientInfo": {"name": "check_mcp_grants", "version": "1"},
         }
-        out, _ = proc.communicate(
-            "\n".join(
-                json.dumps(m)
-                for m in (
-                    {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": hello},
-                    {"jsonrpc": "2.0", "method": "notifications/initialized", "params": {}},
-                    {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
-                )
-            )
-            + "\n",
-            timeout=timeout,
-        )
-    except (subprocess.TimeoutExpired, OSError):
-        proc.kill()
+        send(proc, {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": hello})
+        send(proc, {"jsonrpc": "2.0", "method": "notifications/initialized", "params": {}})
+        send(proc, {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}})
+        stream = replies(proc.stdout, deadline)
+        tools: set[str] = set()
+        for page in range(2, 2 + MAX_PAGES):
+            if page > 2:
+                send(proc, {"jsonrpc": "2.0", "id": page, "method": "tools/list",
+                            "params": {"cursor": cursor}})
+            if (answer := result(stream, page)) is None:
+                return None
+            tools |= {t["name"] for t in answer.get("tools") or [] if "name" in t}
+            if not (cursor := answer.get("nextCursor")):
+                return tools
+        return None  # still paginating at MAX_PAGES — unprobed, not an empty server
+    except OSError:
         return None
     finally:
         if proc.poll() is None:
             proc.kill()
-    for line in out.splitlines():
-        try:
-            msg = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if msg.get("id") == 2 and "result" in msg:
-            return {t["name"] for t in msg["result"].get("tools") or [] if "name" in t}
-    return None
 
 
 def check(plugin, servers, roles, advertised):

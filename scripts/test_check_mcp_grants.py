@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Fixture tests for check_mcp_grants — run: python3 -m unittest discover scripts"""
 
+import json
 import sys
 import tempfile
 import unittest
@@ -138,6 +139,74 @@ class Probe(unittest.TestCase):
 
     def test_a_server_that_answers_nothing_is_unprobed(self):
         self.assertIsNone(c.probe({"command": sys.executable, "args": ["-c", "pass"]}))
+
+
+#: A stdio server that answers `tools/list` from `pages`, keyed by the cursor it
+#: was asked with (`None` for the first page). Each value is the `result` verbatim,
+#: so a test writes the exact shape the spec allows.
+PAGINATING = """
+import sys, json
+pages = json.loads({pages!r})
+for line in sys.stdin:
+    if not line.strip():
+        continue
+    msg = json.loads(line)
+    if msg.get("method") == "initialize":
+        print(json.dumps({{"jsonrpc": "2.0", "id": msg["id"], "result": {{}}}}), flush=True)
+    elif msg.get("method") == "tools/list":
+        cursor = (msg.get("params") or {{}}).get("cursor") or "first"
+        print(json.dumps({{"jsonrpc": "2.0", "id": msg["id"],
+                          "result": pages[cursor]}}), flush=True)
+"""
+
+
+def paginating(pages: dict) -> set[str] | None:
+    script = PAGINATING.format(pages=json.dumps(pages))
+    return c.probe({"command": sys.executable, "args": ["-c", script]}, timeout=10.0)
+
+
+class Pagination(unittest.TestCase):
+    """`tools/list` is paginated, and the first page read as the whole list is an error."""
+
+    def test_every_page_is_collected(self):
+        self.assertEqual(
+            paginating(
+                {
+                    "first": {"tools": [{"name": "navigate"}], "nextCursor": "p2"},
+                    "p2": {"tools": [{"name": "computer"}], "nextCursor": "p3"},
+                    "p3": {"tools": [{"name": "update_plan"}]},
+                }
+            ),
+            {"navigate", "computer", "update_plan"},
+        )
+
+    def test_a_tool_on_a_later_page_is_not_reported_as_unadvertised(self):
+        tools = paginating(
+            {
+                "first": {"tools": [{"name": "navigate"}], "nextCursor": "p2"},
+                "p2": {"tools": [{"name": "update_plan"}]},
+            }
+        )
+        # Asserted, not implied: an unprobed `None` would also produce no error,
+        # which is the one way this test could go green while the defect stands.
+        self.assertEqual(tools, {"navigate", "update_plan"})
+        errors, _ = run(SPEC, [f"mcp__{CHROME}__update_plan"], {"claude-in-chrome": tools})
+        self.assertEqual(errors, [])
+
+    def test_a_single_page_is_the_whole_list(self):
+        self.assertEqual(
+            paginating({"first": {"tools": [{"name": "navigate"}]}}), {"navigate"}
+        )
+
+    def test_a_cursor_the_server_never_clears_is_unprobed_not_partial(self):
+        self.assertIsNone(paginating({"first": {"tools": [{"name": "navigate"}], "nextCursor": "first"}}))
+
+    def test_a_page_the_server_does_not_answer_is_unprobed_not_partial(self):
+        # `p2` is absent, so the server raises and dies rather than replying: the
+        # first page's one tool must not become the server's whole advertised set.
+        self.assertIsNone(
+            paginating({"first": {"tools": [{"name": "navigate"}], "nextCursor": "p2"}})
+        )
 
 
 if __name__ == "__main__":
