@@ -43,14 +43,33 @@ that silently stops applying:
      `mcp__server__tool`; a single underscore *between* those separators makes
      it a tool that does not exist, the skill loads without it, and the prose
      that depends on it ("capture the console error") becomes unexecutable at
-     the one moment it is needed. The server segment itself may hold
-     underscores: a server declared in `plugin.json` is exposed as
-     `mcp__plugin_<plugin>_<server>__<tool>`, measured on CLI 2.1.278, and the
-     loader's own rule is `^mcp__[\w-]+(?:__(?:[\w.-]+|\*))?$`. A narrower
-     server class here cannot see a plugin-declared server at all, so every
-     grant to one reads as malformed while the session resolves it fine. The grant list is read across the indented lines
-     YAML lets it wrap onto, because a check that only reads the key's own line
-     goes quiet on every wrapped form — and quiet is the thing being checked for.
+     the one moment it is needed. The shape is the loader's own rule, which is
+     `^mcp__[\w-]+(?:__(?:[\w.-]+|\*))?$` in the 2.1.278 binary, and every
+     clause of it is load-bearing here. The server segment may hold underscores:
+     a server declared in `plugin.json` is exposed as
+     `mcp__plugin_<plugin>_<server>__<tool>`. The tool segment may hold dots,
+     hyphens and capitals, which is how most servers outside this repo name
+     their tools. The segment may be `*`, and it may be absent — those are the
+     two ways to grant a whole server. Narrowing any of those classes makes this
+     gate report a grant the session resolves as a grant that was dropped, and
+     it reports it *as the thing it exists to catch*: a role enumerating seven
+     tools from one server on one 500-character line passes, and collapsing
+     those same seven into the loader's `mcp__<server>__*` comes back as a
+     malformed identifier that "the skill loads without". Backwards, and
+     backwards in the direction the rest of this file pushes authors.
+
+     One shape stays an error, and not because the loader rejects it: a single
+     segment after `mcp__`. `mcp__claude-in-chrome` grants a whole server and
+     `mcp__claude-in-chrome_navigate` is `mcp__claude-in-chrome__navigate` with
+     one `_` too few — the loader takes both, as a server grant, and resolves
+     them to a full tool set and to nothing at all. No shape tells them apart
+     and neither can a reader, so the ambiguity is the finding and the remedy is
+     to write whichever was meant unambiguously: `__*` for the server, or the
+     tool's name.
+
+     The grant list is read across the indented lines YAML lets it wrap onto,
+     because a check that only reads the key's own line goes quiet on every
+     wrapped form — and quiet is the thing being checked for.
 
 Neither check invents a registry of real tool names — that would go stale and
 is not ours to maintain. They check spelling and shape, which is where the
@@ -79,8 +98,11 @@ SKILL_KEYS = frozenset(
 AGENT_KEYS = frozenset({"name", "description", "tools", "model", "color"})
 
 # `Read`, `Bash(git:*)`, `mcp__claude-in-chrome__navigate`,
-# `mcp__plugin_anantys-team-agents_claude-in-chrome__navigate` — and nothing else.
-TOOL_SHAPE = re.compile(r"^(?:mcp__[a-z0-9_-]+__[a-z0-9_]+|[A-Z][A-Za-z]*(?:\([^)]*\))?)$")
+# `mcp__plugin_anantys-team-agents_claude-in-chrome__navigate`,
+# `mcp__claude-in-chrome__*` — and nothing else. The `mcp__` half is the loader's
+# own rule verbatim; see the docstring for why each of its classes is this wide.
+MCP_GRANT = r"mcp__[\w-]+(?:__(?:[\w.-]+|\*))?"
+TOOL_SHAPE = re.compile(rf"^(?:{MCP_GRANT}|[A-Z][A-Za-z]*(?:\([^)]*\))?)$")
 
 errors: list[str] = []
 warnings: list[str] = []
@@ -211,7 +233,16 @@ def check_component(path: Path, known: frozenset[str], tools_key: str) -> None:
                 "looks like it sets is not set"
             )
         for tool in tools:
-            if not TOOL_SHAPE.match(tool):
+            if tool.startswith("mcp__") and "__" not in tool[5:] and TOOL_SHAPE.match(tool):
+                # Loader-legal, and that is the problem: one segment is both a
+                # whole-server grant and a `mcp__server__tool` short one `_`.
+                errors.append(
+                    f"{rel(path)}: `{tool}` names one segment after `mcp__`, so it is either "
+                    f"the whole `{tool[5:]}` server or `mcp__…__…` with one `_` too few — the "
+                    "loader takes both, as a server grant, resolving to every tool or to none. "
+                    f"Write `{tool}__*` for the server, or name the tool"
+                )
+            elif not TOOL_SHAPE.match(tool):
                 errors.append(
                     f"{rel(path)}: `{tool}` is not a well-formed tool identifier — the skill "
                     "loads without it and the prose that needs it cannot run"

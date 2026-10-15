@@ -57,6 +57,50 @@ class CheckPlatform(unittest.TestCase):
             self.check(GOOD_SKILL.replace("mcp__claude-in-chrome__navigate", scoped)), []
         )
 
+    def test_the_mcp_class_is_the_loader_rule_from_the_binary(self) -> None:
+        # `^mcp__[\w-]+(?:__(?:[\w.-]+|\*))?$`, read off the 2.1.278 binary. Each
+        # case below is a grant the session resolves; a narrower class here calls
+        # every one of them a dropped grant, which is this gate's own failure mode.
+        for grant in (
+            "mcp__claude-in-chrome__*",
+            "mcp__plugin_anantys-team-agents_claude-in-chrome__*",
+            "mcp__chrome__get-console-logs",
+            "mcp__chrome__read.file",
+            "mcp__Chrome__navigateTo",
+        ):
+            with self.subTest(grant=grant):
+                cp.errors.clear()
+                self.assertEqual(
+                    self.check(GOOD_SKILL.replace("mcp__claude-in-chrome__navigate", grant)), []
+                )
+
+    def test_the_wildcard_a_long_grant_line_collapses_to_stays_clean(self) -> None:
+        # The live shape: `anantys.debug` enumerates seven tools from one server on
+        # one line. Collapsing them to the loader's wildcard is the obvious edit,
+        # and it must not come back as a malformed identifier.
+        seven = ", ".join(
+            f"mcp__claude-in-chrome__{t}"
+            for t in ("tabs_context_mcp", "navigate", "computer", "read_page")
+        )
+        self.assertEqual(self.check(GOOD_SKILL.replace("mcp__claude-in-chrome__navigate", seven)), [])
+        cp.errors.clear()
+        self.assertEqual(
+            self.check(GOOD_SKILL.replace("mcp__claude-in-chrome__navigate", "mcp__chrome__*")), []
+        )
+
+    def test_one_segment_after_mcp_is_ambiguous_and_charged(self) -> None:
+        # Loader-legal both ways, which is why shape alone cannot settle it: a
+        # whole-server grant and a `__` typo are the same string. Erroring on it
+        # as "not well-formed" was false in both readings — the loader resolves it.
+        for grant in ("mcp__claude-in-chrome", "mcp__claude-in-chrome_navigate"):
+            with self.subTest(grant=grant):
+                cp.errors.clear()
+                found = self.check(GOOD_SKILL.replace("mcp__claude-in-chrome__navigate", grant))
+                self.assertEqual(len(found), 1)
+                self.assertIn("names one segment after `mcp__`", found[0])
+                self.assertIn(f"`{grant}__*`", found[0])
+                self.assertNotIn("not a well-formed", found[0])
+
     def test_scoped_bash_grant_is_well_formed(self) -> None:
         self.assertEqual(self.check(GOOD_SKILL.replace("Bash(git:*)", "Bash(mkdir:*)")), [])
 
