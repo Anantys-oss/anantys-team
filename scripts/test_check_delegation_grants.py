@@ -118,6 +118,23 @@ def test_parse_reads_a_block_sequence_grant_list(tmp_path):
     assert parse(agent) == ("x", {"Bash", "Write"}, "body\n")
 
 
+def test_parse_reads_an_unindented_block_sequence(tmp_path):
+    """A block sequence may sit at its key's own column. Same list to the loader."""
+    agent = tmp_path / "a.md"
+    agent.write_text("---\nname: x\ntools:\n- Bash\n- Write\nmodel: opus\n---\nbody\n")
+    assert parse(agent) == ("x", {"Bash", "Write"}, "body\n")
+
+
+def test_an_unindented_agent_list_is_still_an_escalation(tmp_path):
+    """The parse feeds `check`, so reading that list as empty certifies the dispatch."""
+    agent = tmp_path / "a.md"
+    agent.write_text("---\nname: auditor\ntools:\n- Bash\n- Glob\n---\nbody\n")
+    name, grants, _ = parse(agent)
+    errors, _ = check([skill("s", {"Task", "Read"}, "dispatch `auditor`")], {name: grants})
+    assert len(errors) == 1, errors
+    assert "Bash, Glob" in errors[0], errors
+
+
 def test_an_absent_grant_key_is_not_an_empty_one(tmp_path):
     """No `tools:` key means every tool, so it cannot parse as no tools."""
     agent = tmp_path / "a.md"
@@ -127,6 +144,29 @@ def test_an_absent_grant_key_is_not_an_empty_one(tmp_path):
     empty = tmp_path / "b.md"
     empty.write_text("---\nname: y\ntools: []\n---\nbody\n")
     assert parse(empty) == ("y", set(), "body\n")
+
+
+def test_a_valueless_grant_key_is_read_as_absent(tmp_path):
+    """`tools:` with nothing after it is YAML null — every tool, not no tools."""
+    agent = tmp_path / "a.md"
+    agent.write_text("---\nname: x\ntools:\nmodel: opus\n---\nbody\n")
+    assert parse(agent) == ("x", None, "body\n")
+
+
+def test_a_whole_server_mcp_grant_covers_its_tools():
+    """`check_mcp_grants` reads both spellings as the server's whole tool list."""
+    assert covers({"mcp__chrome__*"}, "mcp__chrome__get-console-logs")
+    assert covers({"mcp__chrome"}, "mcp__chrome__get-console-logs")
+    assert not covers({"mcp__chrome__*"}, "mcp__other__read")
+    assert not covers({"mcp__chrome__read"}, "mcp__chrome__write")
+
+
+def test_an_agents_mcp_tool_under_a_wildcard_skill_is_not_an_escalation():
+    errors, _ = check(
+        [skill("design", {"Task", "mcp__chrome__*"}, "dispatch `shot`")],
+        {"shot": {"mcp__chrome__take-screenshot"}},
+    )
+    assert errors == [], errors
 
 
 def test_dispatching_an_agent_that_declares_no_tools_is_an_escalation():

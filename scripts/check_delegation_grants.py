@@ -48,8 +48,12 @@ DECLINED_TEMPLATE = (r"\b(?:do(?:es)?\s+not|don'?t|never|rather\s+than)\s+(?:\w+
 # a markdown block: paragraph, bullet, or numbered step — the unit a disclaimer scopes to
 BLOCK = re.compile(r"\n\s*\n|\n(?=\s*(?:[-*+]\s|\d+\.\s))")
 REFERENCE_LINK = re.compile(r"`(reference/[\w.-]+\.md)`")
-# a YAML block sequence item under the grant key: "  - Bash"
-BLOCK_ITEM = re.compile(r"\A\s+-\s*(.+?)\s*\Z")
+# a YAML block sequence item under the grant key: "  - Bash" or "- Bash".
+# Indentation is optional in YAML: a block sequence nested under a mapping key may
+# sit at the key's own column. Requiring it read the unindented spelling as no items.
+BLOCK_ITEM = re.compile(r"\A\s*-\s*(.+?)\s*\Z")
+# the grant spelling `check_mcp_grants.GRANT` parses: `mcp__<server>[__<tool>]`
+MCP_GRANT = re.compile(r"\Amcp__([^_].*?)(?:__(.+))?\Z")
 
 
 def parse(path):
@@ -61,9 +65,15 @@ def parse(path):
     key as `set()` scores the unbounded case as the narrowest one and certifies
     every dispatch of it. `tools: []` is the opposite claim and stays a set.
 
-    Both YAML sequence dialects count. A flow list on the key line is what the
-    agents in this tree write today; the block form under it is equally valid to
-    the loader, and an escalation written that way must not read as no grants.
+    Every YAML spelling of the key counts, because `set()` is the narrowest
+    reading the format has and three different values collapse onto it if the
+    parse is literal. A flow list on the key line is what the agents in this
+    tree write today. A block sequence under it is equally valid to the loader
+    in *both* its indentations — `  - Bash` and `- Bash` are the same list, and
+    an escalation written in the second must not read as no grants. A key with
+    no value at all is YAML `null`, which the loader reads exactly as it reads
+    an absent key: every tool. So it returns `None` here too. Only `tools: []`
+    is the claim `set()` makes.
     """
     m = FRONTMATTER.match(path.read_text(encoding="utf-8"))
     if not m:
@@ -74,9 +84,9 @@ def parse(path):
         if line.startswith("name:"):
             name = line.split(":", 1)[1].strip()
         elif line.startswith(("allowed-tools:", "tools:")):
-            field = line.split(":", 1)[1].strip() or ",".join(
-                it.group(1) for it in
-                takewhile(bool, map(BLOCK_ITEM.match, lines[i + 1:])))
+            items = [it.group(1) for it in
+                     takewhile(bool, map(BLOCK_ITEM.match, lines[i + 1:]))]
+            field = line.split(":", 1)[1].strip() or (",".join(items) or None)
     if field is None:
         return name, None, m.group(2)
     # agents write tools: ["Bash", "Read"]; skills write a bare comma list
@@ -125,10 +135,27 @@ def covers(grants, needed):
 
     `grants is None` is an absent grant key — the role declares no ceiling, so
     nothing it dispatches can exceed one.
+
+    A whole-server MCP grant subsumes every tool on that server. This is the
+    rule `check_mcp_grants` states and acts on — `mcp__<server>__*` and the
+    bare one-segment `mcp__<server>` are both the whole list — and a second
+    reading of it here would make the two gates disagree about the same grant.
+    Three skills in this tree hold MCP grants today; an agent that names one
+    server tool would otherwise be reported as an escalation past a ceiling
+    that already contains it, and the error would land on the skill's file.
+
+    Not modelled: whether `Bash(git:*)` subsumes `Bash(git log:*)`. The loader's
+    prefix semantics for the scoped form are not established anywhere in this
+    tree, and guessing them here would be the third reading this docstring
+    exists to avoid. It over-reports, which is the safe direction.
     """
     if grants is None or needed in grants:
         return True
-    return needed.startswith("Bash(") and "Bash" in grants
+    if needed.startswith("Bash(") and "Bash" in grants:
+        return True
+    if (m := MCP_GRANT.match(needed)) and m.group(2):
+        return f"mcp__{m.group(1)}__*" in grants or f"mcp__{m.group(1)}" in grants
+    return False
 
 
 def check(skills, agents):
