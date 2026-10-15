@@ -310,6 +310,42 @@ class VersionBumpCase(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn("v0.10.0", result.stderr)
 
+    def test_the_tag_without_a_prefix_is_ranked_by_its_number(self) -> None:
+        """The filter accepts a bare tag, so the ranking has to order one too."""
+        self.sh("git", "tag", "-d", "v0.1.0")
+        for version in ("0.9.0", "0.10.0"):
+            self.write_plugin(version)
+            self.commit(f"ship {version}")
+            self.sh("git", "tag", version)
+        self.branch()
+        self.write(f"{PLUGIN}/skills/demo/SKILL.md", "---\nname: demo\n---\n\nrewritten\n")
+        self.commit("edit skill, name no new version")
+        result = self.check()
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("version is still 0.10.0", result.stderr)
+
+    def test_a_v_prefix_does_not_outrank_the_number_after_it(self) -> None:
+        """Both spellings are accepted, so a repo that switched holds both.
+
+        `--sort=v:refname` ranked `v0.1.0` above `0.10.0` — versionsort compares
+        digits only within equal alpha segments, and a leading `v` is not one.
+        The floor then read 0.1.0, so an unbumped 0.10.0 branch was reported as
+        `0.1.0 → 0.10.0` and passed: the defect the check exists to catch,
+        reached through the tag the check itself asks for.
+        """
+        for version in ("0.9.0", "0.10.0"):  # the convention dropped the `v`
+            self.write_plugin(version)
+            self.commit(f"ship {version}")
+            self.sh("git", "tag", version)
+        self.branch()
+        self.write(f"{PLUGIN}/skills/demo/SKILL.md", "---\nname: demo\n---\n\nrewritten\n")
+        self.commit("edit skill, name no new version")
+        result = self.check()
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("version is still 0.10.0", result.stderr)
+        # ...and no release talk: 0.10.0 is both the base's version and tagged.
+        self.assertNotIn("cut the release", result.stderr)
+
     # --- the manifest exclusion covers `version`, not the whole file ---------
 
     def test_description_rewrite_is_content(self) -> None:

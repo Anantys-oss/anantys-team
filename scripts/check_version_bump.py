@@ -101,9 +101,28 @@ def resolve_base(argv: list[str]) -> str | None:
 
 
 def released_tag() -> str | None:
-    """Newest MAJOR.MINOR.PATCH tag (optionally `v`-prefixed), or None if none exist."""
-    tags = git("tag", "--list", "--sort=-v:refname").splitlines()
-    return next((t for t in tags if re.fullmatch(r"v?\d+\.\d+\.\d+", t)), None)
+    """Highest MAJOR.MINOR.PATCH tag (optionally `v`-prefixed), or None if none exist.
+
+    Ranked on the parsed triple rather than by `--sort=v:refname`. Versionsort
+    compares digit runs only inside otherwise-equal alpha segments, so a leading
+    `v` is an alpha segment that outranks every number after it: `v0.1.0` sorts
+    above both `0.9.0` and `0.10.0`. The filter accepts either spelling — a repo
+    that changed convention mid-stream holds both — and the sort then names the
+    oldest tag the floor, which reads as a *lower* shipped version than the one
+    on the branch. That is the quiet direction: the gate reports a bump the
+    branch never made and exits 0 on exactly the unbumped content change it
+    exists to catch, while the stale-tag warning tells the reader to cut a
+    release that is already tagged.
+
+    A tie (`0.5.0` and `v0.5.0` both present) names the same version twice, so
+    either ref answers; break on the name to keep the choice stable.
+    """
+    tags = [t for t in git("tag", "--list").splitlines() if re.fullmatch(r"v?\d+\.\d+\.\d+", t)]
+    return max(
+        tags,
+        key=lambda t: (tuple(int(p) for p in t.removeprefix("v").split(".")), t),
+        default=None,
+    )
 
 
 def json_at(ref: str, path: str) -> dict | None:
