@@ -239,6 +239,87 @@ class ContractClauses(Harness):
             [],
         )
 
+    def test_rewriting_the_rule_under_a_kept_label_is_a_drop(self) -> None:
+        # The move the label key priced at zero while charging 1 error for a relabel.
+        # A relabel breaks `say so and stop (C2)` where a reader can see it; this
+        # leaves the citation resolving, to the negation of what it cited.
+        error, = self.clauses(
+            "## C2 — A stop is a result\n\n**A stopped run may leave the artifact untouched.**\n",
+            before="## C2 — A stop is a result\n\n**A stopped run records the stop.**\n",
+        )
+        self.assertIn("C2 kept the label and changed the rule it states", error)
+
+    def test_restating_the_rule_in_other_words_is_still_a_drop(self) -> None:
+        # Not a judgement that the reword is wrong — the gate cannot read meaning, so
+        # it prices every change to the stated rule at the retirement it might be.
+        self.assertEqual(len(self.clauses(
+            "## C1 — Observation\n\n**Report only what you saw.**\n",
+            before="## C1 — Observation\n\n**Report what you actually observed.**\n",
+        )), 1)
+
+    def test_reflowing_the_same_rule_is_not_a_drop(self) -> None:
+        self.assertEqual(self.clauses(
+            "## C1 — Observation\n\n**Report what you\nactually observed.**\n",
+            before="## C1 — Observation\n\n**Report what you actually observed.**\n",
+        ), [])
+
+    def test_a_clause_that_stated_nothing_has_nothing_to_lose(self) -> None:
+        # Four tests above write bare headings. Keying an absent statement would make
+        # writing one later read as a rewrite of it.
+        self.assertEqual(self.clauses(
+            "## C2 — A stop\n\n**A stopped run records the stop.**\n",
+            before="## C2 — A stop\n",
+        ), [])
+
+    def test_deleting_the_rule_and_keeping_the_label_is_a_drop(self) -> None:
+        error, = self.clauses(
+            "## C2 — A stop is a result\n\nSee the role files.\n",
+            before="## C2 — A stop is a result\n\n**A stopped run records the stop.**\n",
+        )
+        self.assertIn("C2 kept the label", error)
+
+    def test_an_inline_bold_bullet_is_not_the_clause_statement(self) -> None:
+        # The real C2 carries `**Name the stop as the verdict**` in a bullet under its
+        # statement. Keying the first bold *anywhere* would make the elaboration the rule.
+        self.assertEqual(
+            cp.clauses("## C2 — A stop\n\nprose first.\n\n- **Name the stop**, with the gate.\n"),
+            {"C2": ""},
+        )
+
+    def test_the_statement_is_read_from_the_tree_the_roles_cite(self) -> None:
+        # The parse is keyed to a shape, so the shape is worth asserting against the
+        # file itself rather than against fixtures written to match the parser.
+        contract = """# Team contract
+
+Every role file points here.
+
+---
+
+## C1 — Observation over inference
+
+**Report what you actually observed. Never what you expected.**
+
+- A result you did not see is not a result.
+
+---
+
+## C2 — A stop is a result
+
+**A run that stops records the stop where its result would have gone.**
+
+- **Name the stop as the verdict**, with the gate that fired.
+
+---
+
+## What belongs here
+
+Prose, not a clause.
+"""
+        self.assertEqual(cp.clauses(contract), {
+            "C1": "Report what you actually observed. Never what you expected.",
+            "C2": "A run that stops records the stop where its result would have gone.",
+        })
+
     def test_adding_a_clause_is_how_the_contract_grows(self) -> None:
         self.assertEqual(self.clauses("## C1 — a\n\n## C2 — b\n", before="## C1 — a\n"), [])
 

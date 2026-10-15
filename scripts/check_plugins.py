@@ -344,17 +344,30 @@ def check_contract(path: Path, contract: Path) -> None:
         )
 
 
-def clauses(text: str) -> set[str]:
-    """The contract's binding rules, keyed by their `## C<N>` label.
+def clauses(text: str) -> dict[str, str]:
+    """The contract's binding rules: `## C<N>` label -> the one line it states.
 
     The title after the dash is prose and may be reworded; the label is what the
-    role files cite (`say so and stop (C2)`), so it is the identity.
+    role files cite (`say so and stop (C2)`), so it is the identity of the
+    *citation*. It is not the identity of the rule. Every clause opens with exactly
+    one standalone bold line — true of C1 and C2 on all four heads that carry this
+    file — and that line is what a citation resolves to. The bullets under it,
+    including the inline bold ones, elaborate; they are not keyed.
+
+    Empty string when a clause has no such line: nothing stated is nothing to
+    protect, and inventing a key for it would make adding the statement later look
+    like changing it.
     """
-    return set(re.findall(r"^## (C\d+)\b", text, re.MULTILINE))
+    found = {}
+    for head in re.finditer(r"^## (C\d+)\b.*$", text, re.MULTILINE):
+        body = text[head.end():].split("\n## ", 1)[0]
+        stated = re.match(r"\s*\*\*(.+?)\*\*[^\S\n]*\n", body, re.S)
+        found[head.group(1)] = " ".join(stated.group(1).split()) if stated else ""
+    return found
 
 
 def check_contract_clauses(contract: Path) -> None:
-    """Error when a clause that existed at ``BASE`` is no longer in the contract.
+    """Error when a clause that existed at ``BASE`` is gone, or no longer says what it said.
 
     ``check_contract`` guarantees that every role *links* this file. Nothing read
     what the file then says — and the retired ceiling's remedy pointed at that guarantee
@@ -369,9 +382,22 @@ def check_contract_clauses(contract: Path) -> None:
     in both the error list and the warning list. The ceiling that made the move
     profitable is retired; the move is still silent, which is what this gate is for.
 
-    Only deletion is an error. Adding a clause is how the contract grows, and a
-    reworded title is not a changed rule — the label is the identity because the
-    label is what the role files cite.
+    Keying the clause set on the label alone left the same hole one level down, and
+    left it cheaper than the move above. Keeping `## C2` and replacing the line under
+    it with its own negation — *"a silent stop is indistinguishable from a clean run,
+    which is fine"* — inverted both clauses in a 9-insertion, 34-deletion diff for 0
+    errors and not one new warning, while relabelling `C2` to `C9` and touching
+    nothing else cost 1 error. That ranking is backwards: a relabel breaks every
+    citation, which a reader of `say so and stop (C2)` can see, and a rewrite leaves
+    every citation resolving cleanly to a rule that now says the opposite. So the
+    stealthier move was the one this gate did not charge for.
+
+    Only loss is an error, in both directions. Adding a clause is how the contract
+    grows, a reworded *title* is not a changed rule, and a clause that stated nothing
+    at the baseline has nothing to lose. Changing what a clause requires is a
+    retirement, and takes the retirement's remedy: a new label, and the citations
+    moved to it in the same change — the same price the relabel already paid, which is
+    what makes the two cost the same.
     """
     if BASE is None:
         warnings.append(
@@ -404,11 +430,19 @@ def check_contract_clauses(contract: Path) -> None:
             "that removes the citations"
         )
         return
-    if gone := sorted(clauses(before) - clauses(here)):
+    stated, now = clauses(before), clauses(here)
+    if gone := sorted(stated.keys() - now.keys()):
         errors.append(
             f"{rel(contract)}: {', '.join(gone)} present at the baseline and gone here — "
             "a clause the role files cite may not be dropped or relabelled silently; "
             "retire it by name in the same change that removes the citations"
+        )
+    if rewritten := sorted(c for c, said in stated.items() if said and now.get(c, said) != said):
+        errors.append(
+            f"{rel(contract)}: {', '.join(rewritten)} kept the label and changed the rule "
+            "it states — every citation still resolves, to something else. Changing what a "
+            "clause requires is retiring it: give the new rule a new label and move the "
+            "citations in the same change"
         )
 
 
