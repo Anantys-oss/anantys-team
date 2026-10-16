@@ -196,6 +196,35 @@ under `types:` yields an empty activity set, and the error says the trigger
 fires on nothing at all. Loud, unlike the two above, and still a gate that is
 wrong about a tree a human can read correctly.
 
+Both of those readings decide where a block *starts*; a blank line is the shape
+that decides what a block *contains*, and it was dropped. Three of the rules
+above are not applied to text this file reads — they are applied to the file
+minus the step blocks, and minus each step's `run:` body, subtracted by verbatim
+string. Drop a blank line from either and the subtraction matches nothing, so the
+text it was meant to remove stays:
+
+    - run: |
+        python3 scripts/check_a.py --soft
+
+        python3 scripts/check_a.py --report
+      continue-on-error: true
+    - run: python3 scripts/check_b.py
+
+One blank line, between two commands of one `run:` body, in the shape anybody
+writes. The guard belongs to the first step and the verdict should name one gate;
+instead the step is still in the job's text, so `continue-on-error:` is read as
+job-level and `check_b.py` — and this checker, wherever it runs beside them — is
+reported as unable to block a merge it blocks. The same miss aims the tab scan at
+ordinary indented shell, and a tab is fatal to the whole workflow, so a heredoc
+with a blank line above it un-covers every gate in the file.
+
+Both are errors in the loud direction, which is the only reason nine months of
+this file's history did not include them: a false error on a wired gate is
+noticed the day it fires. It is still a gate that is wrong about a tree a human
+reads correctly, and it is wrong about *other* gates than the one it is reading —
+the failure mode this file exists to deny. Blanks are kept where they are
+interior to a block and dropped where they are not.
+
 Coverage is satisfied by *any* PR-triggered workflow, so a gate may keep its own
 workflow file or join an existing one — this fixes the wiring, not the layout.
 
@@ -257,7 +286,7 @@ PLAIN_COLON = re.compile(
 
 
 def nested(lines, index):
-    """The lines under `lines[index]`, blanks dropped.
+    """The lines under `lines[index]`, verbatim, interior blanks kept.
 
     More indented, or a sequence bullet at the key's own indentation: YAML lets a
     block sequence sit level with the key that owns it, and `steps:` and `types:`
@@ -266,15 +295,31 @@ def nested(lines, index):
     directions at once — no steps found means every gate the file runs "guards
     nothing", and no `types:` found means the set of activity types is empty, so
     the trigger is reported as firing on nothing.
+
+    A blank line cannot end a block — it carries no indentation to compare — but
+    dropping one is not free either, because `scan` and `unloadable` subtract
+    these lines from the file by *verbatim text* to decide what is shell and what
+    is YAML structure. Drop a blank and the subtraction silently matches nothing,
+    so a step stays in the text the job-level guard check reads and its `run:`
+    body stays in the text the tab scan reads. One blank line inside a guarded
+    step therefore moved that step's `continue-on-error:` onto the job and
+    condemned every *other* gate in the file; one blank line inside a `run: |`
+    body exposed ordinary tab-indented shell to a check that calls a tab fatal,
+    which disqualifies the workflow whole. Blanks are buffered and flushed only
+    when a later line proves them interior, so a trailing run of blanks before
+    the next key is still not part of the block.
     """
     outer = len(lines[index]) - len(lines[index].lstrip())
-    body = []
+    body, blanks = [], []
     for line in lines[index + 1:]:
         if not line.strip():
+            blanks.append(line)
             continue
         indent = len(line) - len(line.lstrip())
         if indent < outer or (indent == outer and not line.lstrip().startswith("-")):
             break
+        body.extend(blanks)
+        blanks.clear()
         body.append(line)
     return body
 
@@ -310,6 +355,11 @@ def commands(block):
 
     Indentation is measured from the `run:` key rather than the line start, so a
     block scalar stops at the step's next key instead of swallowing it.
+
+    Interior blanks are kept, for the reason `nested` gives: `unloadable`
+    subtracts this text from the file verbatim to exempt shell from the YAML
+    scan, and a blank line between two commands of one `run: |` body is the
+    ordinary way to write it.
     """
     lines = block.splitlines()
     body = []
@@ -320,11 +370,15 @@ def commands(block):
             body.append(inline)
             continue
         outer = line.index("run:")
+        blanks = []
         for after in lines[i + 1:]:
             if not after.strip():
+                blanks.append(after)
                 continue
             if len(after) - len(after.lstrip()) <= outer:
                 break
+            body.extend(blanks)
+            blanks.clear()
             body.append(after)
     return "\n".join(body)
 

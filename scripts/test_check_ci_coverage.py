@@ -501,6 +501,57 @@ def test_late_activity_types_written_level_with_their_key_are_not_coverage(tmp_p
     assert "closed, all after the decision" in errors[0], errors[0]
 
 
+def test_a_workflow_with_no_trigger_at_all_is_not_coverage(tmp_path):
+    """Neuter this return and the suite stayed green: no case reached it."""
+    tree(tmp_path, ["check_a.py"], [("a.yml", "jobs:\n  j:\n    steps:\n" + RUN_A)])
+    errors, _ = scan_and_check(tmp_path)
+    assert len(errors) == 1, errors
+    assert "does not trigger on pull_request" in errors[0], errors[0]
+
+
+def test_a_blank_line_in_a_run_body_does_not_expose_its_shell_to_the_tab_scan(tmp_path):
+    """The exemption for shell is a verbatim subtraction, so the blank must survive it."""
+    tree(tmp_path, ["check_a.py"],
+         [("a.yml", ON_PR + "      - run: |\n          if x; then\n"
+                            "\n"
+                            "          \techo y\n          fi\n" + RUN_A)])
+    assert scan_and_check(tmp_path) == ([], [])
+
+
+def test_a_blank_line_in_a_guarded_step_does_not_move_the_guard_to_the_job(tmp_path):
+    """One step's `continue-on-error:` may not condemn another step's gate."""
+    tree(tmp_path, ["check_a.py", "check_b.py"],
+         [("a.yml", ON_PR + "      - run: |\n"
+                            "          python3 scripts/check_b.py --soft\n"
+                            "\n"
+                            "          python3 scripts/check_b.py --report\n"
+                            "        continue-on-error: true\n"
+                            + RUN_A)])
+    errors, _ = scan_and_check(tmp_path)
+    assert all("check_a.py" not in e for e in errors), errors
+    assert len(errors) == 1, errors
+    assert "in a step that cannot fail the check" in errors[0], errors[0]
+
+
+def test_a_blank_line_before_a_jobs_guard_still_reads_it_as_job_level(tmp_path):
+    """The buffer flushes only on an interior line: a trailing blank ends the block."""
+    tree(tmp_path, ["check_a.py"],
+         [("a.yml", ON_PR.replace("    steps:", "    if: github.actor != 'bot'\n    steps:")
+                    + RUN_A)])
+    errors, _ = scan_and_check(tmp_path)
+    assert len(errors) == 1, errors
+    assert "in a job that cannot fail the check" in errors[0], errors[0]
+
+
+def test_a_blank_line_does_not_extend_a_step_past_the_next_key(tmp_path):
+    """A run of blanks between a `run:` body and the following key is not body."""
+    tree(tmp_path, ["check_a.py"],
+         [("a.yml", ON_PR + "      - run: |\n          python3 scripts/check_a.py\n"
+                            "\n"
+                            "        name: the gate\n")])
+    assert scan_and_check(tmp_path) == ([], [])
+
+
 def test_the_repos_own_workflows_load(tmp_path):
     root = Path(__file__).resolve().parent.parent
     for workflow in sorted((root / ".github/workflows").glob("*.y*ml")):
