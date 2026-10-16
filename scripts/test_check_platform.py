@@ -276,8 +276,8 @@ class Discovery(unittest.TestCase):
         )
         self.addCleanup(self.tmp.cleanup)
 
-    def plugin(self, name: str) -> Path:
-        manifest = cp.ROOT / "plugins" / name / ".claude-plugin" / "plugin.json"
+    def plugin(self, name: str, under: str = "plugins") -> Path:
+        manifest = cp.ROOT / under / name / ".claude-plugin" / "plugin.json"
         manifest.parent.mkdir(parents=True)
         manifest.write_text("{}", encoding="utf-8")
         return manifest.parent.parent
@@ -300,6 +300,27 @@ class Discovery(unittest.TestCase):
         self.skill(second, "s", GOOD_SKILL)
         self.assertEqual(cp.main([]), 1)
         self.assertEqual(self.asked, [first, second])
+
+    def test_a_plugin_outside_plugins_is_asked_about_too(self) -> None:
+        """`plugins/*/` is not where a plugin lives — `marketplace.json`'s `source` is.
+
+        `check_plugins` reads the catalog and so already walks `**`. On a tree with
+        a plugin at `vendor/extra` it reported three errors about that plugin's
+        roles while this gate reported none: the loader was never asked and the
+        frontmatter vocabulary was never read. Two gates in one CI run,
+        disagreeing about which files the repo contains.
+        """
+        vendored = self.plugin("extra", under="vendor")
+        self.skill(vendored, "s", GOOD_SKILL.replace("allowed-tools:", "allowed_tools:"))
+        self.assertEqual(cp.main([]), 1)
+        self.assertEqual(self.asked, [vendored])
+
+    def test_the_same_plugin_under_plugins_is_the_control(self) -> None:
+        """Positive control: the error is the frontmatter key, not the path."""
+        listed = self.plugin("extra")
+        self.skill(listed, "s", GOOD_SKILL.replace("allowed-tools:", "allowed_tools:"))
+        self.assertEqual(cp.main([]), 1)
+        self.assertEqual(self.asked, [listed])
 
 
 class AskTheLoader(unittest.TestCase):

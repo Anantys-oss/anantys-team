@@ -446,6 +446,70 @@ class Baseline(unittest.TestCase):
         self.assertIn("fixed, so delete", report)
 
 
+class SubjectSet(unittest.TestCase):
+    """Which files the gate governs, which is not `plugins/*/`.
+
+    `marketplace.json`'s `source` names where a plugin lives and is a free-form
+    relative path. `check_plugins` reads the catalog and so already walks
+    `**/.claude-plugin/plugin.json`: on a tree with a plugin at `vendor/extra` it
+    reported real errors about that plugin's roles while this gate reported none.
+    Two gates in one CI run, disagreeing about which files the repo contains —
+    and the one that saw the tree proved it was reachable.
+    """
+
+    OFFENCE = "`Bash(git:*)` is not a narrowing"
+
+    def setUp(self):
+        import tempfile
+
+        self.root = Path(tempfile.mkdtemp())
+        self.addCleanup(setattr, c, "BASELINE", c.BASELINE)
+        c.BASELINE = self.root / "baseline.txt"
+
+    def _plant(self, where):
+        skill = self.root / where / "skills/s/SKILL.md"
+        skill.parent.mkdir(parents=True)
+        skill.write_text(
+            "---\nallowed-tools: Bash(git:*)\n---\nRun `git log --oneline`.\n",
+            encoding="utf-8",
+        )
+
+    def _run(self):
+        import contextlib
+        import io
+
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            code = c.main(self.root)
+        return code, out.getvalue()
+
+    def test_a_role_outside_plugins_is_audited(self):
+        self._plant("vendor/extra")
+        code, report = self._run()
+        self.assertEqual(code, 1)
+        self.assertIn(self.OFFENCE, report)
+        self.assertIn("vendor/extra/skills/s/SKILL.md", report)
+
+    def test_the_same_role_under_plugins_is_the_control(self):
+        """Positive control: the error is the unbounded grant, not the path."""
+        self._plant("plugins/p")
+        code, report = self._run()
+        self.assertEqual(code, 1)
+        self.assertIn(self.OFFENCE, report)
+
+    def test_an_agent_outside_plugins_is_a_dispatch_target(self):
+        """`agents` feeds the mention check, so a missed agent also mis-reports `Task`."""
+        self._plant("plugins/p")
+        agent = self.root / "vendor/extra/agents/auditor.md"
+        agent.parent.mkdir(parents=True)
+        agent.write_text("---\ntools: Read\n---\nbody\n", encoding="utf-8")
+        skill = self.root / "plugins/p/skills/s/SKILL.md"
+        skill.write_text(
+            "---\nallowed-tools: Task\n---\nDispatch `auditor`.\n", encoding="utf-8"
+        )
+        self.assertNotIn("grants `Task` but the prose never mentions it", self._run()[1])
+
+
 class Parse(unittest.TestCase):
     def _write(self, text):
         path = Path(self.tmp) / "r.md"

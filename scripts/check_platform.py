@@ -323,7 +323,15 @@ def main(argv: list[str]) -> int:
     if not have_cli:
         errors.append("the `claude` CLI is not on PATH — this gate asks it, it cannot guess")
 
-    manifests = sorted(ROOT.glob("plugins/*/.claude-plugin/plugin.json"))
+    # Every plugin in the tree, at whatever depth. `plugins/*/` was not the tree's
+    # rule for where a plugin lives — `marketplace.json`'s `source` is, and it is a
+    # free-form relative path. `check_plugins` reads the catalog and so already
+    # walks `**`: on a tree with a plugin at `vendor/extra` it reported three errors
+    # about that plugin's roles while this gate reported none — the loader was never
+    # asked about it and its frontmatter vocabulary was never read. Two gates in one
+    # CI run, disagreeing about which files the repo contains. `**` skips hidden
+    # directories, and over-inclusion is the loud direction.
+    manifests = sorted(ROOT.glob("**/.claude-plugin/plugin.json"))
     if not manifests:
         print(f"no plugins found under {ROOT}", file=sys.stderr)
         return 1

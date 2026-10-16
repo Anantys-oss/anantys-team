@@ -394,8 +394,27 @@ def baseline():
 
 
 def main(root):
-    files = sorted(root.glob("plugins/*/skills/*/SKILL.md")) + sorted(
-        root.glob("plugins/*/agents/*.md")
+    """Every role in the tree, at whatever depth it sits.
+
+    `plugins/*/skills/...` was the subject set, and it is not the tree's rule for
+    where a plugin lives — `marketplace.json`'s `source` is, and it is a free-form
+    relative path. `check_plugins` reads the catalog and so already walks
+    `**/.claude-plugin/plugin.json`: a plugin at `vendor/extra` is listed,
+    installable, and validated there. To this file it did not exist, so an
+    unbounded `Bash(git:*)` on one of its roles — the error this gate's own
+    baseline declares for `ops` — went unreported while CI stayed green.
+
+    That is the subject set disagreeing with a sibling gate's, which is the same
+    class of silence `gate_matrix` exists for one level out: there, a gate is
+    pointed only at the branch it was written from; here, at a subtree.
+
+    `**` is the fail-closed direction for the same reason the glob was wrong: a
+    `skills/` directory that is not a plugin's gets read and complained about,
+    which is loud, whereas a role the sweep skips is certified in silence. Hidden
+    directories are not descended into, so `.git` is not in the sweep.
+    """
+    files = sorted(root.glob("**/skills/*/SKILL.md")) + sorted(
+        root.glob("**/agents/*.md")
     )
     if not files:
         print(f"no skills or agents found under {root}", file=sys.stderr)
@@ -414,7 +433,7 @@ def main(root):
     # Dispatch targets, from the tree — an agent that exists is the only thing a
     # role can dispatch. A body never names its own file's agent (the `name:`
     # field is frontmatter, which `parse` strips), so this needs no self-exclusion.
-    agents = {p.stem for p in root.glob("plugins/*/agents/*.md")}
+    agents = {p.stem for p in root.glob("**/agents/*.md")}
 
     declared, matched = baseline(), set()
     failed = False

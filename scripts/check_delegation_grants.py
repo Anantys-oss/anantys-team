@@ -198,14 +198,29 @@ def check(skills, agents):
 
 
 def main(root):
+    """Every role in the tree, at whatever depth it sits.
+
+    `plugins/*/skills/...` was the subject set, and it is not the tree's rule for
+    where a plugin lives — `marketplace.json`'s `source` is, and it is a free-form
+    relative path. `check_plugins` reads the catalog and so already walks
+    `**/.claude-plugin/plugin.json`: a plugin at `vendor/extra` is listed,
+    installable, and validated there. To this file it did not exist, so its roles'
+    dispatch escalations were not audited while CI stayed green — and the gate that
+    *did* see the tree proved it was reachable.
+
+    `**` is the fail-closed direction for the same reason the glob was wrong: a
+    `skills/` directory that is not a plugin's gets read and complained about, which
+    is loud, whereas a role the sweep skips is certified in silence. Hidden
+    directories are not descended into, so `.git` is not in the sweep.
+    """
     skills, agents, orphans = [], {}, []
-    for path in sorted(root.glob("plugins/*/skills/*/SKILL.md")):
+    for path in sorted(root.glob("**/skills/*/SKILL.md")):
         if parsed := parse(path):
             name, grants, body = parsed
             body, unnamed = prose_surface(path, body)
             orphans += [f"{name}: {w}" for w in unnamed]
             skills.append((name, grants, body))
-    for path in sorted(root.glob("plugins/*/agents/*.md")):
+    for path in sorted(root.glob("**/agents/*.md")):
         if parsed := parse(path):
             agents[parsed[0]] = parsed[1]
 

@@ -16,8 +16,11 @@ SPEC = {"claude-in-chrome": {"command": "claude", "args": ["--claude-in-chrome-m
 TOOLS = {"claude-in-chrome": {"navigate", "computer", "tabs_context_mcp"}}
 
 
-def run(servers, grants, advertised):
-    return c.check(PLUGIN, servers, [("skills/r/SKILL.md", grants)], advertised)
+MANIFEST = f"plugins/{PLUGIN}/.claude-plugin/plugin.json"
+
+
+def run(servers, grants, advertised, manifest=MANIFEST):
+    return c.check(PLUGIN, servers, [("skills/r/SKILL.md", grants)], advertised, manifest)
 
 
 class UndeclaredServer(unittest.TestCase):
@@ -237,6 +240,80 @@ class Pagination(unittest.TestCase):
         self.assertIsNone(
             paginating({"first": {"tools": [{"name": "navigate"}], "nextCursor": "p2"}})
         )
+
+
+class SubjectSet(unittest.TestCase):
+    """Which plugins the gate governs, which is not `plugins/*/`.
+
+    `marketplace.json`'s `source` names where a plugin lives and is a free-form
+    relative path. `check_plugins` reads the catalog and so already walks
+    `**/.claude-plugin/plugin.json`: on a tree with a plugin at `vendor/extra` it
+    reported real errors about that plugin's roles while this gate reported none.
+    """
+
+    def setUp(self):
+        self.root = Path(tempfile.mkdtemp())
+        self.addCleanup(setattr, c, "BASELINE", c.BASELINE)
+        c.BASELINE = self.root / "baseline.txt"
+
+    def _plant(self, where):
+        plugin = self.root / where
+        (plugin / ".claude-plugin").mkdir(parents=True)
+        (plugin / ".claude-plugin/plugin.json").write_text(
+            json.dumps({"name": plugin.name, "version": "0.1.0"}), encoding="utf-8"
+        )
+        skill = plugin / "skills/s/SKILL.md"
+        skill.parent.mkdir(parents=True)
+        skill.write_text(
+            "---\nallowed-tools: mcp__claude-in-chrome__navigate\n---\nDrive it.\n",
+            encoding="utf-8",
+        )
+
+    def _run(self):
+        import contextlib
+        import io
+
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            code = c.main(self.root)
+        return code, out.getvalue()
+
+    def test_a_plugin_outside_plugins_is_audited(self):
+        self._plant("vendor/extra")
+        code, report = self._run()
+        self.assertEqual(code, 1)
+        self.assertIn("declares no `mcpServers`", report)
+
+    def test_the_reported_path_is_the_manifest_that_was_read(self):
+        """The charged path used to be built from the plugin's *name*.
+
+        For the one plugin in this tree `plugins/<name>/...` happened to be where
+        the manifest was, so the synthesis was invisible. Anywhere else it names a
+        file that does not exist — and `baseline()` matches declared errors by
+        that exact string, so no baseline line could name the real file either.
+        """
+        self._plant("vendor/extra")
+        self.assertIn("vendor/extra/.claude-plugin/plugin.json", self._run()[1])
+
+    def test_the_same_plugin_under_plugins_is_the_control(self):
+        """Positive control: the error is the missing provider, not the path."""
+        self._plant("plugins/extra")
+        code, report = self._run()
+        self.assertEqual(code, 1)
+        self.assertIn("plugins/extra/.claude-plugin/plugin.json", report)
+
+    def test_a_declared_error_is_matched_at_the_real_path(self):
+        """The baseline's purpose: a pre-existing error must be declarable."""
+        self._plant("vendor/extra")
+        entry = next(
+            line[len("ERROR ") :]
+            for line in self._run()[1].splitlines()
+            if line.startswith("ERROR ")
+        )
+        c.BASELINE.write_text(entry + "\n", encoding="utf-8")
+        code, report = self._run()
+        self.assertEqual(code, 0)
+        self.assertIn("BASE ", report)
 
 
 if __name__ == "__main__":

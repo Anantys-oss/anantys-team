@@ -207,6 +207,56 @@ def test_main_errors_when_no_roles_exist(tmp_path):
     assert main(tmp_path) == 1
 
 
+def _escalating_plugin(root):
+    """A skill that dispatches a wider agent, under whatever `root` is handed."""
+    sd = root / "skills" / "s"
+    sd.mkdir(parents=True)
+    (sd / "SKILL.md").write_text("---\nname: s\nallowed-tools: Read, Task\n---\ncall `a`\n")
+    ad = root / "agents"
+    ad.mkdir(parents=True)
+    (ad / "a.md").write_text('---\nname: a\ntools: ["Read", "Write"]\n---\nbody\n')
+
+
+def _report(root):
+    """(exit code, report) — the exit code alone cannot witness this one.
+
+    An empty subject set also exits 1, via `no roles found under <root>`. So a
+    test that reads only the code goes green on the defect it was written for:
+    the gate did not audit the plugin, it failed to find it. The finding has to
+    be the sentence.
+    """
+    import contextlib
+    import io
+
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        code = main(root)
+    return code, out.getvalue()
+
+
+def test_a_plugin_outside_plugins_is_still_audited(tmp_path):
+    """`marketplace.json`'s `source` is a free-form path; `plugins/*/` is not the rule.
+
+    `check_plugins` walks `**/.claude-plugin/plugin.json`, so a plugin at
+    `vendor/extra` is listed, installable and validated there. Globbing
+    `plugins/*/skills/...` here meant its dispatch escalations were never read —
+    a role the sweep skips is certified in silence.
+    """
+    _escalating_plugin(tmp_path / "vendor" / "extra")
+    code, report = _report(tmp_path)
+    assert code == 1, report
+    assert "1 skills, 1 agents" in report, report
+    assert "Write" in report, report
+
+
+def test_the_same_plugin_under_plugins_is_the_control(tmp_path):
+    """Positive control: the error above is the escalation, not the path."""
+    _escalating_plugin(tmp_path / "plugins" / "p")
+    code, report = _report(tmp_path)
+    assert code == 1, report
+    assert "1 skills, 1 agents" in report, report
+
+
 def _split_skill(tmp_path, procedure, agent_tools='["Bash", "Write"]'):
     """A skill whose procedure lives in a named reference file, plus one agent."""
     sd = tmp_path / "plugins" / "p" / "skills" / "s"

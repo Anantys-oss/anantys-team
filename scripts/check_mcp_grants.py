@@ -236,17 +236,25 @@ def probe(spec: dict, timeout: float = 20.0) -> set[str] | None:
             proc.kill()
 
 
-def check(plugin, servers, roles, advertised):
+def check(plugin, servers, roles, advertised, manifest):
     """Errors and warnings for one plugin.
 
     ``servers`` maps a declared server name to its launch spec, ``roles`` is
     ``(path, grants)`` pairs, and ``advertised`` maps a declared server name to
     the tool names it lists or to ``None`` when it could not be asked. Pure, so
-    the tests inject all three rather than installing a plugin.
+    the tests inject all four rather than installing a plugin.
+
+    ``manifest`` is the path the manifest-charged errors are reported at, and it
+    is passed rather than derived. It used to be `f"plugins/{plugin}/..."`, built
+    from the plugin's *name* — two different claims spliced into one string. For
+    the one plugin in this tree the two coincide, so the synthesis was invisible;
+    for a plugin the catalog sources from anywhere else it names a file that does
+    not exist, and `baseline()` matches declared errors by that exact string, so
+    no baseline line could ever name the real file either. A reported path is an
+    answer about the tree, never a guess from a name.
     """
     errors: list[tuple[str, str]] = []
     warnings: list[tuple[str, str]] = []
-    manifest = f"plugins/{plugin}/.claude-plugin/plugin.json"
     # server name -> the grant prefix a role must write it as
     prefixes = {exposed(plugin, s): s for s in servers}
     named: set[str] = set()
@@ -370,7 +378,16 @@ def baseline() -> set[str]:
 
 
 def main(root: Path) -> int:
-    manifests = sorted(root.glob("plugins/*/.claude-plugin/plugin.json"))
+    # Every plugin in the tree, at whatever depth. `plugins/*/` was not the tree's
+    # rule for where a plugin lives — `marketplace.json`'s `source` is, and it is a
+    # free-form relative path. `check_plugins` reads the catalog and so already
+    # walks `**`: a plugin at `vendor/extra` is listed there, installable, and
+    # validated. To this file it did not exist, so its granted-but-unprovided MCP
+    # servers went unreported while CI stayed green — the same error this gate's own
+    # baseline declares for the one plugin it could see. `**` skips hidden
+    # directories, so `.git` is not in the sweep, and over-inclusion is the loud
+    # direction: a non-plugin manifest gets read and complained about.
+    manifests = sorted(root.glob("**/.claude-plugin/plugin.json"))
     if not manifests:
         print(f"no plugin manifests found under {root}", file=sys.stderr)
         return 1
@@ -393,7 +410,9 @@ def main(root: Path) -> int:
             )
         ]
         advertised = {name: probe(spec) for name, spec in servers.items()}
-        errors, warnings = check(plugin, servers, roles, advertised)
+        errors, warnings = check(
+            plugin, servers, roles, advertised, str(manifest.relative_to(root))
+        )
         for path, message in errors:
             entry = f"{path}: {message}"
             if entry in declared:
