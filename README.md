@@ -52,6 +52,9 @@ Then invoke a skill directly:
 /anantys.qa      plan --brief feat.md     # …or from a hand-written feature brief
 /anantys.qa      run                      # walk it in a real browser, on the local env (asks: autonomous or interactive)
 /anantys.qa      run --env staging        # …or on a deployed env — never reset, additive only
+/anantys.qa      retest                   # after a fix: the unresolved set + the regression risk around it
+/anantys.qa      note A4 --env local      # rule on a non-defect so it is never re-filed
+/anantys.qa      status                   # where the campaign stands, without running anything (the default)
 /anantys.qa      report                   # fix brief to paste into a dev session
 ```
 
