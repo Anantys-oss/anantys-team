@@ -8,7 +8,6 @@ error names it.
 
 import pathlib
 import tempfile
-import textwrap
 import unittest
 
 import check_evals
@@ -123,6 +122,36 @@ class TestParser(unittest.TestCase):
                 any("no graders parsed" in e for e in fixture.errors())
             )
 
+    def test_quoting_a_scalar_does_not_change_what_it_says(self):
+        # Every rule in the checker is an equality against a bare spelling, and
+        # YAML has three spellings of each. The case files already quote
+        # `schema_version`, so the quoted form is in the format's normal register.
+        quoted = (
+            GOOD_CASE.replace("match: not_contains", 'match: "not_contains"')
+            .replace("    max: 0", '    max: "0"')
+            .replace("exists: true", "exists: 'true'")
+            .replace("name: nothing-was-pushed", 'name: "nothing-was-pushed"')
+        )
+        self.assertEqual(
+            check_evals.parse_case(quoted)["graders"],
+            check_evals.parse_case(GOOD_CASE)["graders"],
+        )
+
+    def test_a_bare_dash_opens_a_new_grader_instead_of_extending_the_last(self):
+        # `-` alone on its line is a block sequence item like any other. Read as
+        # a continuation, the keys below it overwrite the previous grader's name
+        # and pattern: one grader scored twice, the other gone from the list.
+        case = GOOD_CASE + (
+            "  -\n"
+            "    type: regex\n"
+            "    name: a-second-pattern\n"
+            "    target: trace\n"
+            "    pattern: nope\n"
+            "    match: not_contains\n"
+        )
+        names = [g.get("name") for g in check_evals.parse_case(case)["graders"]]
+        self.assertEqual(names[-2:], ["hands-it-back", "a-second-pattern"])
+
     def test_an_escaped_pipe_inside_a_vector_survives_the_row_split(self):
         row = "| `g` — `up` | `make up` | `docker compose config \\| grep up` |"
         self.assertEqual(
@@ -148,6 +177,37 @@ class TestMutations(unittest.TestCase):
     def test_max_0_without_min_0_is_an_unsatisfiable_range(self):
         errors = self.mutate("    min: 0\n    max: 0", "    max: 0")
         self.assertTrue(any("max: 0 without min: 0" in e for e in errors))
+
+    def test_a_quoted_max_0_is_still_an_unsatisfiable_range(self):
+        errors = self.mutate("    min: 0\n    max: 0", '    max: "0"')
+        self.assertTrue(any("max: 0 without min: 0" in e for e in errors), errors)
+
+    def test_a_quoted_not_contains_is_still_an_absence_grader(self):
+        # Same trim as `test_a_case_of_nothing_but_absences_has_no_witness`, with
+        # the one surviving pattern grader quoted. Read literally, the quotes make
+        # it a non-absence grader, so the case acquires a witness it does not have
+        # — a crashed run reports it as passing.
+        trimmed = GOOD_CASE[: GOOD_CASE.index("  - type: file_exists")]
+        quoted = trimmed.replace("match: not_contains", 'match: "not_contains"')
+        with SuiteFixture(case=quoted) as fixture:
+            self.assertTrue([e for e in fixture.errors() if "witnesses" in e])
+
+    def test_a_flow_mapping_grader_is_reported_not_skipped(self):
+        # Partitioned on its first colon, `- {type: regex, …}` yields the junk key
+        # `{type` and a grader with no type: every check below is a no-op on it and
+        # the witness rule accepts it.
+        errors = self.mutate(
+            "  - type: regex\n    name: nothing-was-pushed",
+            "  - {type: regex, name: nothing-was-pushed,"
+            " target: trace, pattern: x, match: not_contains}\n"
+            "  - type: regex\n    name: nothing-was-pushed",
+        )
+        self.assertTrue(any("cannot read" in e for e in errors), errors)
+
+    def test_an_unknown_grader_type_is_not_a_free_witness(self):
+        errors = self.mutate("  - type: regex\n", "  - type: Regex\n")
+        self.assertTrue(any("not\none this checker has a rule for" in e
+                            or "has a rule for" in e for e in errors), errors)
 
     def test_a_refusal_of_an_ungranted_tool_cannot_be_scored(self):
         errors = self.mutate("[Skill, Bash, Read, Write]", "[Skill, Bash, Read]")

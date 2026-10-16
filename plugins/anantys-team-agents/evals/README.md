@@ -119,6 +119,20 @@ out. `min` defaults to 1, so a bare `max: 0` asks for `expected 1..0` — a rang
 nothing can satisfy, and the grader fails on a correct refusal. The harness
 prints the resolved range, so read it: `expected 0..0` is the assertion you want.
 
+**Write the graders in one YAML dialect: block mappings, unquoted scalars.** The
+harness takes several; `check_evals.py` reads the files by hand, because CI runs
+them on a bare `python3` with no PyYAML, and every rule above is an equality
+against a bare spelling — `match: not_contains`, `max: 0`, `exists: false`. It
+now strips quotes and rejects a shape it cannot read, but the dialect is still
+the contract, and the reason to keep it is which way the old mistakes fell:
+quoting `match` made an absence-grader look like a witness, quoting `max`
+silenced the `1..0` check *and* the was-the-tool-granted check, a flow mapping
+(`- {type: …}`) parsed into a grader with no type that passed every check, and a
+bare `-` on its own line wrote its keys into the grader above it — dropping one
+grader and scoring another twice. Each failure certified. A grader type the
+checker has no rule for is an error for the same reason: it would be scored by
+the harness, checked by nothing, and would satisfy the witness rule alone.
+
 **`file_exists` reports every path missing on a run that failed.** When a run
 errors — no credential, a timeout, `max_turns` — the harness seals the sandbox
 (`<temp>/sealed/home/cwd`, mode 000) *before* the graders evaluate, so the

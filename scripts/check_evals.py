@@ -75,6 +75,34 @@ VACUOUS = "vacuous"
 # call a judge model. A verdict that disappears under a budget ceiling cannot be
 # the only thing standing between a crashed run and a perfect score.
 PAID = {"llm", "baseline"}
+# Grader types this checker has rules for. An unknown one reaches every branch
+# below as a no-op and then counts as the case's witness, so a typo in `type:`
+# buys a clean score for a grader the harness never ran. Widening the harness is
+# one line here; the error says so, because the conservative reading of a shape
+# nobody has written a rule for is "ask", not "pass".
+KINDS = {"regex", "tool_used", "file_exists", "llm", "baseline"}
+# A grader key this parser could not read. `check_suite` turns it into an error:
+# a dropped grader makes this gate the thing it exists to prevent.
+UNREADABLE = "__unreadable__"
+
+
+def scalar(value: str) -> str:
+    """A YAML scalar with its optional quotes removed.
+
+    Every rule in this file is an equality against a bare spelling —
+    `match == "not_contains"`, `max == "0"`, `exists == "false"`. YAML spells
+    each of those three ways, and these case files already quote one scalar
+    (`schema_version: "1.0"`), so the quoted spelling is in the format's normal
+    register rather than an exotic one. Comparing the raw text makes the gate's
+    verdict depend on the quoting: `match: "not_contains"` is not read as an
+    absence-grader, so the case acquires a witness it does not have, and a
+    quoted `max: "0"` skips both the unsatisfiable-range check and the
+    was-the-tool-granted check. Three findings, silenced by one pair of quotes,
+    and in the direction that certifies.
+    """
+    if len(value) > 1 and value[0] == value[-1] and value[0] in "\"'":
+        return value[1:-1]
+    return value
 
 
 def parse_case(text: str) -> dict:
@@ -85,6 +113,15 @@ def parse_case(text: str) -> dict:
     this checker has not been pointed at, and it says so rather than guessing:
     a parser that silently drops a grader turns this gate into the thing it is
     here to prevent.
+
+    Two block-sequence spellings are that shape, and both used to be read in
+    silence. A flow mapping (`- {type: regex, …}`) partitioned on its first
+    colon into the junk key `{type`, leaving a grader with no `type` at all —
+    which passes every check and then counts as the case's witness. A bare `-`
+    on its own line did not open a new mapping, so the keys that followed it
+    were written into the *previous* grader, overwriting its name and pattern:
+    one grader scored twice, the other gone from the list entirely. Neither
+    produced an error. They produce one now.
     """
     case: dict = {"graders": []}
     grader: dict | None = None
@@ -110,15 +147,18 @@ def parse_case(text: str) -> dict:
             grader = None
             if not in_graders and ":" in stripped:
                 key, _, value = stripped.partition(":")
-                case[key.strip()] = value.strip()
+                case[key.strip()] = scalar(value.strip())
             continue
 
         if in_graders:
-            if stripped.startswith("- "):
+            if stripped == "-" or stripped.startswith("- "):
                 grader = {}
                 case["graders"].append(grader)
-                stripped = stripped[2:].strip()
-            if grader is None or ":" not in stripped:
+                stripped = stripped[1:].strip()
+                if stripped.startswith(("{", "*", "&")):
+                    grader[UNREADABLE] = stripped
+                    continue
+            if grader is None or UNREADABLE in grader or ":" not in stripped:
                 continue
             key, _, value = stripped.partition(":")
             key, value = key.strip(), value.strip()
@@ -126,17 +166,17 @@ def parse_case(text: str) -> dict:
                 grader[key] = ""
                 pending_block = (grader, key, indent)
             else:
-                grader[key] = value
+                grader[key] = scalar(value)
             continue
 
         # `execution:` / `context:` — one level of nesting, scalars only.
         if ":" in stripped:
             key, _, value = stripped.partition(":")
-            case.setdefault(key.strip(), value.strip())
+            case.setdefault(key.strip(), scalar(value.strip()))
 
     allowed = case.get("allowed_tools", "")
     case["allowed_tools"] = [
-        t.strip() for t in allowed.strip("[]").split(",") if t.strip()
+        scalar(t.strip()) for t in allowed.strip("[]").split(",") if t.strip()
     ]
     return case
 
@@ -239,8 +279,26 @@ def check_suite(evals_dir: pathlib.Path) -> list[str]:
             )
 
         for grader in graders:
+            if UNREADABLE in grader:
+                errors.append(
+                    f"{where}: grader written as `- {grader[UNREADABLE]}` is a "
+                    f"shape this checker cannot read — spell it as a block "
+                    f"mapping (`- type: …` then one key per line), because a "
+                    f"grader parsed into nothing passes every check here and "
+                    f"then counts as the case's witness"
+                )
+                continue
             gname = grader.get("name", "<unnamed>")
             gtype = grader.get("type")
+            if gtype not in KINDS:
+                errors.append(
+                    f"{where}: grader '{gname}' has type '{gtype}', which is not "
+                    f"one this checker has a rule for — it would be scored by the "
+                    f"harness and checked by nothing, and it would satisfy this "
+                    f"case's witness requirement on its own; fix the spelling, or "
+                    f"add the type to KINDS with the rules it needs"
+                )
+                continue
 
             if gtype == "tool_used":
                 tool = grader.get("tool")
