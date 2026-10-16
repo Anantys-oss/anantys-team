@@ -55,7 +55,47 @@ def heads() -> list[str]:
     return [r for r in refs.splitlines() if r and r != "origin"]  # `origin` is origin/HEAD
 
 
-def run(tree: Path, head: str, names: list[str]) -> dict[str, int]:
+class Cell(int):
+    """A gate's exit code for one head, carrying the line it failed on.
+
+    The cell stays an `int` because the exit code is what the table rules on. But a
+    failing cell that reports only that code hands the reader a coordinate and no
+    finding, and reading it back is not a re-run of one gate: this file's whole
+    contribution is the *overlay*, so the reader has to rebuild the checkout-strip-copy
+    dance by hand, once per head, to see a sentence the sweep already had. Ten failing
+    cells here cost ten hand-built worktrees to classify — seven of which turned out to
+    be one untagged release, which the message says and the exit code cannot.
+    """
+
+    why: str
+
+    def __new__(cls, code: int, why: str = "") -> "Cell":
+        self = super().__new__(cls, code)
+        self.why = why
+        return self
+
+
+def finding(out: str, err: str) -> str:
+    """The first error line a gate printed, or the last line it died on.
+
+    The eight gates agree on an `error:`/`ERROR ` prefix and on nothing else, so the
+    prefix is the match. Both streams are scanned: they do not agree on which one a
+    finding goes to either — `check_plugins` writes it to stdout, `check_version_bump`
+    writes the *changed file list* to stdout and the finding to stderr, and reading
+    only stdout returns a bare path with no sentence attached to it.
+
+    A gate that *raises* prints no such line at all, and the last line of its traceback
+    is the exception — which is this tool's own finding rather than the head's, and the
+    one most worth carrying out of a sweep.
+    """
+    for line in (out + "\n" + err).splitlines():
+        if line.lstrip().lower().startswith("error"):
+            return line.strip()
+    tail = [line.strip() for line in (err or out).splitlines() if line.strip()]
+    return tail[-1] if tail else ""
+
+
+def run(tree: Path, head: str, names: list[str]) -> dict[str, Cell]:
     """Exit code per gate for one head's content. Empty when the head will not check out."""
     for name in OVERLAY:  # a head that tracks these would conflict with the checkout
         subprocess.run(("rm", "-rf", str(tree / name)), check=False)
@@ -69,15 +109,19 @@ def run(tree: Path, head: str, names: list[str]) -> dict[str, int]:
         subprocess.run(("cp", "-R", str(ROOT / name), str(tree / name)), check=False)
     # `check=False` and the returncode read together: a gate is allowed to fail, and a
     # gate that raises is a finding of its own, so a traceback must not stop the sweep.
-    return {
-        gate: subprocess.run(
+    cells = {}
+    for gate in names:
+        done = subprocess.run(
             (sys.executable, str(tree / "scripts" / f"{gate}.py"), "."),
             cwd=tree,
             capture_output=True,
+            text=True,
             check=False,
-        ).returncode
-        for gate in names
-    }
+        )
+        cells[gate] = Cell(
+            done.returncode, finding(done.stdout, done.stderr) if done.returncode else ""
+        )
+    return cells
 
 
 def table(rows: dict[str, dict[str, int]], names: list[str]) -> str:
@@ -90,6 +134,17 @@ def table(rows: dict[str, dict[str, int]], names: list[str]) -> str:
             continue
         marks = " ".join(f"{('ok' if cells[n] == 0 else f'FAIL {cells[n]}'):>9}" for n in names)
         out.append(f"{head:<{width}}  {marks}")
+    # `getattr`, because `table` is called with plain ints by anything that builds rows
+    # itself, and a cell with no message must read as a cell with nothing to add.
+    whys = [
+        f"{head} {n.removeprefix('check_')}: {getattr(cells[n], 'why', '')}"
+        for head, cells in rows.items()
+        for n in names
+        if cells.get(n) and getattr(cells[n], "why", "")
+    ]
+    if whys:
+        out.append("")
+        out.extend(whys)
     failing = sum(1 for cells in rows.values() if any(cells.values()))
     unmeasured = sum(1 for cells in rows.values() if not cells)
     tally = f"\n{len(rows)} head(s) x {len(names)} gate(s) — {failing} head(s) with a failing gate"

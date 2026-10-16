@@ -61,6 +61,54 @@ class ACellSaysWhichOfThreeThingsHappened(unittest.TestCase):
         self.assertNotIn("not measured", out)
 
 
+class AFailingCellCarriesItsFinding(unittest.TestCase):
+    """A coordinate is not a finding, and the overlay is what makes re-reading costly."""
+
+    NAMES = ["check_a", "check_b"]
+
+    def test_the_message_is_printed_with_its_head_and_gate(self) -> None:
+        out = gm.table(
+            {"origin/koan/x": {"check_a": gm.Cell(0), "check_b": gm.Cell(1, "error: too big")}},
+            self.NAMES,
+        )
+        self.assertIn("origin/koan/x b: error: too big", out)
+
+    def test_a_passing_cell_contributes_no_message(self) -> None:
+        # A gate is allowed to print on its way to exit 0, and a clean cell with a
+        # line under it reads as a failure the table marked `ok`.
+        out = gm.table({"origin/koan/x": {"check_a": gm.Cell(0, "error: stale")}}, ["check_a"])
+        self.assertNotIn("stale", out)
+
+    def test_plain_int_rows_still_render(self) -> None:
+        # Every other test in this file builds rows by hand out of `int`.
+        out = gm.table({"origin/koan/x": {"check_a": 1}}, ["check_a"])
+        self.assertIn("FAIL 1", out)
+
+    def test_the_first_error_line_is_the_finding(self) -> None:
+        stdout = "warning: cosmetic\nerror: a: the real one\nerror: b: the second\n"
+        self.assertEqual(gm.finding(stdout, ""), "error: a: the real one")
+
+    def test_an_uppercase_prefix_is_matched_too(self) -> None:
+        # `check_mcp_grants` writes `ERROR `, `check_platform` writes `error:`.
+        self.assertEqual(gm.finding("ERROR path: nope\n", ""), "ERROR path: nope")
+
+    def test_a_finding_on_stderr_is_found(self) -> None:
+        # `check_version_bump`'s live shape: the changed files land on stdout and the
+        # finding on stderr. Reading only stdout returns a path and no sentence.
+        out = "plugins/anantys-team-agents/skills/anantys.review/SKILL.md\n"
+        err = "error: anantys-team-agents: version is still 0.6.0\n1 error(s)\n"
+        self.assertEqual(gm.finding(out, err), "error: anantys-team-agents: version is still 0.6.0")
+
+    def test_a_gate_that_raises_reports_its_exception(self) -> None:
+        # No `error:` line exists, and the sweep's own docstring calls a gate that
+        # raises a finding of its own — so the exception is what must survive.
+        err = 'Traceback (most recent call last):\n  File "x", line 1\nKeyError: \'tools\'\n'
+        self.assertEqual(gm.finding("", err), "KeyError: 'tools'")
+
+    def test_a_silent_failure_yields_no_message_rather_than_a_guess(self) -> None:
+        self.assertEqual(gm.finding("", ""), "")
+
+
 class TheSweepRulesOnlyOnItsOwnMeasuring(unittest.TestCase):
     """`main`'s exit code, which is about the sweep and never about the gates."""
 
