@@ -148,6 +148,54 @@ def test_a_branch_filter_on_the_pr_target_is_not_a_path_filter(tmp_path):
     assert main([str(tmp_path)]) == 0
 
 
+def test_a_branch_filter_that_omits_the_integration_branch_is_not_coverage(tmp_path):
+    tree(tmp_path, ["check_a.py"],
+         [("a.yml", "on:\n  pull_request:\n    branches: [release]\n" + JOBS + RUN_A)])
+    errors, _ = scan_and_check(tmp_path)
+    assert len(errors) == 1, errors
+    assert "branches: release" in errors[0], errors[0]
+    assert "no pull request into `main` triggers it" in errors[0], errors[0]
+
+
+def test_a_branch_pattern_that_matches_the_integration_branch_still_gates(tmp_path):
+    tree(tmp_path, ["check_a.py"],
+         [("a.yml", "on:\n  pull_request:\n    branches: ['ma*', 'release/*']\n" + JOBS + RUN_A)])
+    assert main([str(tmp_path)]) == 0
+
+
+def test_branches_listed_as_a_block_are_read_the_same_way(tmp_path):
+    tree(tmp_path, ["check_a.py"],
+         [("a.yml", "on:\n  pull_request:\n    branches:\n      - release\n      - staging\n"
+                    + JOBS + RUN_A)])
+    errors, _ = scan_and_check(tmp_path)
+    assert len(errors) == 1, errors
+    assert "branches: release, staging" in errors[0], errors[0]
+
+
+def test_branches_ignore_that_excludes_every_branch_is_not_coverage(tmp_path):
+    # The sharp shape: it fires for no pull request at all, and was read as coverage.
+    tree(tmp_path, ["check_a.py"],
+         [("a.yml", "on:\n  pull_request:\n    branches-ignore: ['**']\n" + JOBS + RUN_A)])
+    errors, _ = scan_and_check(tmp_path)
+    assert len(errors) == 1, errors
+    assert "branches-ignore: **" in errors[0], errors[0]
+
+
+def test_branches_ignore_that_leaves_the_integration_branch_alone_still_gates(tmp_path):
+    tree(tmp_path, ["check_a.py"],
+         [("a.yml", "on:\n  pull_request:\n    branches-ignore: ['docs/**']\n" + JOBS + RUN_A)])
+    assert main([str(tmp_path)]) == 0
+
+
+def test_a_push_branch_filter_does_not_disqualify_the_pr_trigger(tmp_path):
+    # `push: branches: [main]` is the shape every workflow in this tree writes, and
+    # it sits beside `pull_request:`, not under it.
+    tree(tmp_path, ["check_a.py"],
+         [("a.yml", "on:\n  push:\n    branches: [release]\n  pull_request:\n"
+                    + JOBS + RUN_A)])
+    assert main([str(tmp_path)]) == 0
+
+
 def test_a_push_path_filter_does_not_disqualify_the_pr_trigger(tmp_path):
     tree(tmp_path, ["check_a.py"],
          [("a.yml", "on:\n  push:\n    paths:\n      - 'docs/**'\n  pull_request:\n"

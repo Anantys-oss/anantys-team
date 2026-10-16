@@ -39,6 +39,22 @@ while the branch is still a branch":
   unfiltered workflow, or drop the filter. Fail closed: the alternative is
   certifying a gate that never once ran on the tree it guards.
 
+- `branches:` / `branches-ignore:` sit under `pull_request:` beside `paths:` and
+  were read as neither, so every branch filter counted as coverage. That is the
+  right answer for `branches: [main]` — a branch filter is not a path filter, and
+  a test says so — but the reasoning does not generalise, and two filters it
+  certified fire for no pull request into `main` at all:
+
+      on:                        on:
+        pull_request:              pull_request:
+          branches: [release]        branches-ignore: ['**']
+
+  The second is the sharp one. It fires for zero pull requests, on any branch,
+  and the verdict was that the wiring could block a merge. Unlike `paths:`, this
+  axis is readable — the filter lists base branches, and which base matters is
+  `main` — so it is decided rather than failed closed: a `branches:` list has to
+  admit `main`, a `branches-ignore:` list has to not exclude it.
+
 Both shapes are the failure this checker exists to catch, dressed as coverage.
 
 All of which assumes the trigger being read is `pull_request` at all, and that
@@ -234,7 +250,15 @@ Exit 1 on errors, 0 otherwise.
 
 import re
 import sys
+from fnmatch import fnmatchcase
 from pathlib import Path
+
+# The branch a pull request has to be gated *into*. Hard-named, the way
+# `check_plugins` and `check_version_bump` hard-name their `origin/main` fallback:
+# a `branches:` filter is a claim about base branches, and which base matters is a
+# fact about the repo, not about the workflow. GitHub's `*` does not cross `/`;
+# `fnmatchcase`'s does, which can only differ for a base branch holding a `/`.
+INTEGRATION = "main"
 
 # `run: python3 scripts/foo.py` — a step that names one script. Deliberately
 # does not match `unittest discover -s scripts`: discovery runs test modules,
@@ -433,6 +457,14 @@ def blocking(text):
             if re.match(r"^\s*paths(-ignore)?:", ln):
                 return ("fires on pull_request only for selected paths, which may exclude "
                         "what the gate reads")
+            if base := re.match(r"^\s*(branches(?:-ignore)?):\s*(.*)$", ln):
+                key, raw = base.group(1), base.group(2) or " ".join(nested(inner, n))
+                listed = {p for p in re.split(r"[\s,\[\]'\"]+", raw.replace("- ", " ")) if p}
+                admits = any(fnmatchcase(INTEGRATION, p) for p in listed)
+                if admits is (key == "branches-ignore"):
+                    return (f"fires on pull_request with {key}: "
+                            f"{', '.join(sorted(listed)) or 'nothing'} — "
+                            f"no pull request into `{INTEGRATION}` triggers it")
             if kinds := re.match(r"^\s*types:\s*(.*)$", ln):
                 listed = set(re.findall(r"[\w-]+", kinds.group(1))) or set(
                     re.findall(r"[\w-]+", " ".join(nested(inner, n)))
