@@ -409,6 +409,35 @@ class VersionBumpCase(unittest.TestCase):
         self.commit("edit + patch bump")
         self.assertEqual(self.check().returncode, 0)
 
+    # --- the base ref is the caller's answer, not the first of several guesses ----
+
+    def base(self, ref: str) -> subprocess.CompletedProcess:
+        return subprocess.run(
+            [sys.executable, "scripts/check_version_bump.py", ref],
+            cwd=self.repo,
+            capture_output=True,
+            text=True,
+        )
+
+    def test_a_base_ref_that_resolves_to_nothing_is_an_error(self) -> None:
+        """Not a fallback to `main`: nothing the caller asked about was compared."""
+        self.branch()
+        self.write(f"{PLUGIN}/skills/demo/SKILL.md", "---\nname: demo\n---\n\nrewritten\n")
+        self.commit("edit without a bump")
+        done = self.base("main-typo")
+        self.assertEqual(done.returncode, 1)
+        self.assertIn("main-typo", done.stderr)
+        self.assertIn("nothing was compared", done.stderr)
+
+    def test_the_fallback_does_not_answer_for_the_ref_that_was_asked_for(self) -> None:
+        """The quiet direction: measuring `main` instead would have exited 0 as if asked."""
+        self.branch()
+        self.write(f"{PLUGIN}/skills/demo/SKILL.md", "---\nname: demo\n---\n\nrewritten\n")
+        self.write_plugin("0.1.1")
+        self.commit("edit + patch bump")
+        self.assertEqual(self.base("main").returncode, 0)  # the ref that exists agrees
+        self.assertEqual(self.base("main-typo").returncode, 1)  # the typo may not pass as it
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -896,5 +896,29 @@ class AnOmittedCatalogFieldIsNotDrift(DeletingTheContractIsNotAnAbsentContract):
         self.assertIn("description drift", error)
 
 
+class TreeArgument(Harness):
+    """`main` took no argument at all, so a tree named on the command line was dropped.
+
+    Pointed at a checkout whose `marketplace.json` listed nothing — the state
+    `check_unlisted` exists to error on — it printed this tree's own warnings and
+    exited 0, a verdict about a tree the caller never named.
+    """
+
+    def test_a_foreign_tree_is_refused(self) -> None:
+        other = Path(tempfile.mkdtemp()).resolve()
+        self.addCleanup(subprocess.run, ("rm", "-rf", str(other)))
+        (other / ".claude-plugin").mkdir()
+        (other / ".claude-plugin/marketplace.json").write_text('{"plugins": []}')
+        with self.assertRaises(SystemExit) as caught:
+            cp.main([str(other)])
+        self.assertIn(str(other), str(caught.exception))
+        self.assertEqual(cp.errors, [])  # nothing was measured, so nothing is claimed
+
+    def test_an_argument_naming_this_tree_gets_past_the_guard(self) -> None:
+        """`gate_matrix.py` overlays these scripts and runs them in the tree they land in."""
+        with self.assertRaises(FileNotFoundError):  # reached the catalog read
+            cp.main([str(cp.ROOT)])
+
+
 if __name__ == "__main__":
     unittest.main()

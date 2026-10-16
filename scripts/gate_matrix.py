@@ -111,8 +111,13 @@ def run(tree: Path, head: str, names: list[str]) -> dict[str, Cell]:
     # gate that raises is a finding of its own, so a traceback must not stop the sweep.
     cells = {}
     for gate in names:
+        # No positional. The eight gates do not agree on what one *means* — four read a
+        # root, one reads a base ref, three read none — so a `"."` passed to all eight is
+        # the tree to four of them and the ref `.` to `check_version_bump`, which resolved
+        # to no commit. The overlay already roots every gate twice over: `cwd` is the head
+        # and these scripts were copied into it, so `ROOT` is the head too.
         done = subprocess.run(
-            (sys.executable, str(tree / "scripts" / f"{gate}.py"), "."),
+            (sys.executable, str(tree / "scripts" / f"{gate}.py")),
             cwd=tree,
             capture_output=True,
             text=True,

@@ -172,6 +172,26 @@ class RunIsTheSeamThatTalksToGit(unittest.TestCase):
         self.assertEqual(sorted(cells), sorted(names))
         self.assertTrue(all(isinstance(code, int) for code in cells.values()))
 
+    def test_no_gate_rules_on_the_invocation_rather_than_the_head(self) -> None:
+        """A cell must report the head's content, never this tool's command line.
+
+        The gates do not agree on what a positional *means* — four read a root, one
+        reads a base ref, three read none — so the `"."` this once passed to all of
+        them was the tree to some and the unresolvable ref `.` to `check_version_bump`.
+        The overlay roots every gate twice already: `cwd` is the head and these scripts
+        were copied into it. A refusal message in a cell means the argument came back.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            tree = Path(tmp) / "head"
+            gm.git("worktree", "add", "--detach", str(tree), "HEAD")
+            try:
+                cells = gm.run(tree, "HEAD", gm.gates())
+            finally:
+                gm.git("worktree", "remove", "--force", str(tree))
+        for gate, cell in cells.items():
+            for refusal in ("unrecognised argument", "cannot be pointed at", "no commit"):
+                self.assertNotIn(refusal, cell.why, f"{gate} ruled on its argument")
+
 
 class HeadsComeFromTheRepositoryNotFromANamingConvention(unittest.TestCase):
     def test_the_sweep_is_not_restricted_to_one_branch_prefix(self) -> None:

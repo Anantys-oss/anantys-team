@@ -87,8 +87,22 @@ def git(*args: str) -> str:
 
 
 def resolve_base(argv: list[str]) -> str | None:
-    """First ref that exists among: the argument, CI's base branch, main."""
-    candidates = [*argv[1:2]]
+    """First ref that exists among: CI's base branch, main — or the argument, exactly.
+
+    An argument and an environment default are not the same claim. The fallbacks are
+    guesses this file makes about where the branch came from, so trying the next one
+    is right; a ref the caller typed is the answer, so a typo in it is not a reason to
+    measure against `origin/main` and print a verdict as if it were the one asked for.
+    """
+    for ref in argv[1:2]:
+        try:
+            return git("merge-base", ref, "HEAD")
+        except subprocess.CalledProcessError:
+            sys.exit(
+                f"error: base ref {ref!r} resolves to no commit — nothing was compared. "
+                f"Pass a ref this checkout has, or pass none and the fallbacks apply"
+            )
+    candidates = []
     if ref := os.environ.get("GITHUB_BASE_REF"):
         candidates += [f"origin/{ref}", ref]
     candidates += ["origin/main", "main"]

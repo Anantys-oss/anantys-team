@@ -391,5 +391,35 @@ class AskTheLoader(unittest.TestCase):
         self.assertEqual(len(cp.warnings), 1)
 
 
+class Argv(unittest.TestCase):
+    """`--strict` was read by membership, so every other argument was dropped."""
+
+    def setUp(self) -> None:
+        cp.errors.clear()
+        cp.warnings.clear()
+        self.tmp = tempfile.TemporaryDirectory()
+        cp.ROOT = Path(self.tmp.name).resolve()
+        self.addCleanup(self.tmp.cleanup)
+
+    def test_a_mistyped_strict_flag_is_refused(self) -> None:
+        """Dropped, it ran unstrict and exited 0 on the warnings it was asked to gate."""
+        with self.assertRaises(SystemExit) as caught:
+            cp.main(["--stict"])
+        self.assertIn("--stict", str(caught.exception))
+
+    def test_a_foreign_tree_is_refused(self) -> None:
+        other = Path(tempfile.mkdtemp())
+        self.addCleanup(subprocess.run, ("rm", "-rf", str(other)))
+        with self.assertRaises(SystemExit) as caught:
+            cp.main([str(other)])
+        self.assertIn(str(other), str(caught.exception))
+
+    def test_strict_and_this_tree_get_past_the_guard(self) -> None:
+        """`gate_matrix.py` overlays these scripts and runs them in the tree they land in."""
+        with mock.patch("shutil.which", return_value="/usr/bin/claude"):
+            self.assertEqual(cp.main(["--strict", str(cp.ROOT)]), 1)  # no plugins to find
+        self.assertEqual(cp.errors, [])
+
+
 if __name__ == "__main__":
     unittest.main()

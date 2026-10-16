@@ -221,5 +221,24 @@ class TrackedIgnored(Harness):
         self.assertIn("0 error(s), 0 warning(s)", out)
 
 
+class TreeArgument(Harness):
+    """This gate reads `ROOT`, so a tree named on the command line is unreadable."""
+
+    def test_a_foreign_tree_is_refused(self) -> None:
+        other = Path(tempfile.mkdtemp())
+        self.addCleanup(subprocess.run, ("rm", "-rf", str(other)))
+        with self.assertRaises(SystemExit) as caught:
+            cti.main([str(other)])
+        self.assertIn(str(other), str(caught.exception))
+
+    def test_an_argument_naming_this_tree_is_not_refused(self) -> None:
+        """Else the overlay in `gate_matrix.py`, which passes its own root, would fail."""
+        self.track(".gitignore", "__pycache__/\n")
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(cti.main([str(self.root)]), 0)
+        self.assertIn("0 error(s)", out.getvalue())
+
+
 if __name__ == "__main__":
     unittest.main()

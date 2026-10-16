@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Ask the loader, then cover what the loader does not answer.
+r"""Ask the loader, then cover what the loader does not answer.
 
 Every other checker in `scripts/` compares the repo to itself — the marketplace
 against the manifest, the prose against the tool grants, one branch against
@@ -308,6 +308,16 @@ def check_component(path: Path, known: frozenset[str], tools_key: str) -> None:
 
 
 def main(argv: list[str]) -> int:
+    # `--strict` is read by membership and everything else in `argv` was dropped: a
+    # mistyped `--stict` ran the gate unstrict and exited 0 on the very warnings the
+    # flag was asked to gate, and a tree named here was never opened — `ROOT` is the
+    # tree this file sits in. Both readings rule on something the caller did not name.
+    if stray := [a for a in argv if a != "--strict" and Path(a).resolve() != ROOT]:
+        sys.exit(
+            f"error: unrecognised argument {stray[0]!r} — this gate takes `--strict` and "
+            f"checks {ROOT}, the tree its own file is in. Overlay these scripts onto "
+            f"another head with scripts/gate_matrix.py"
+        )
     strict = "--strict" in argv
     have_cli = shutil.which("claude") is not None
     if not have_cli:

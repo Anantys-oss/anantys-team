@@ -611,7 +611,16 @@ def check_unlisted(marketplace: dict) -> None:
             )
 
 
-def main() -> int:
+def main(argv: list[str] = ()) -> int:
+    # This gate reads `ROOT` — the tree its own file sits in. An argument naming any
+    # other tree cannot be honoured, and discarding one silently makes every line
+    # below a sentence about a tree the caller did not name. Say so and stop.
+    if stray := [a for a in argv if Path(a).resolve() != ROOT]:
+        sys.exit(
+            f"error: this gate checks {ROOT}, the tree its own file is in — it cannot be "
+            f"pointed at {stray[0]!r}. Overlay these scripts onto another head with "
+            f"scripts/gate_matrix.py, which is what that tool is for"
+        )
     global BASE
     BASE = merge_base()
     marketplace = json.loads((ROOT / ".claude-plugin/marketplace.json").read_text())
@@ -742,4 +751,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(main(sys.argv[1:]))
