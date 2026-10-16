@@ -1,0 +1,29 @@
+name: validate
+
+# The repo's first check. Eight checkers in `scripts/` were written to gate this
+# marketplace and every one of them lives on an unmerged branch, so `main` is
+# validated by nothing: a malformed `marketplace.json`, a plugin whose `source:`
+# points at a directory that was moved, or a role whose frontmatter no longer
+# parses all merge green today.
+#
+# This file deliberately runs no checker of ours. `claude plugin validate` is the
+# loader itself — the same code that decides whether a user's `/plugin install`
+# succeeds — so it is the one gate that cannot drift from the thing it checks.
+# It reads local files only: no auth, no network, no credential.
+#
+# Not --strict: the marketplace has carried a missing-author warning since before
+# this file existed, and reddening every PR over it teaches people to ignore the
+# check. Errors fail the job; warnings are printed.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: npm install -g @anthropic-ai/claude-code
+      - run: claude plugin validate .
