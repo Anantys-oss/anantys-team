@@ -465,6 +465,33 @@ class Parse(unittest.TestCase):
         p = self._write("---\nallowed-tools: Bash, Read\n---\nbody\n")
         self.assertEqual(c.parse(p), (["Bash", "Read"], "body\n"))
 
+    def test_block_sequence_indented_under_the_key(self):
+        p = self._write("---\ntools:\n  - Bash\n  - Read\n---\nbody\n")
+        self.assertEqual(c.parse(p), (["Bash", "Read"], "body\n"))
+
+    def test_block_sequence_bulleted_at_the_key_indentation(self):
+        """Same list to the loader, and `check_platform` reads it as one."""
+        p = self._write("---\ntools:\n- Bash\n- Read\n---\nbody\n")
+        self.assertEqual(c.parse(p), (["Bash", "Read"], "body\n"))
+
+    def test_a_block_item_holding_a_space_stays_one_grant(self):
+        p = self._write("---\nallowed-tools:\n  - Bash(git diff:*)\n---\nbody\n")
+        self.assertEqual(c.parse(p), (["Bash(git diff:*)"], "body\n"))
+
+    def test_the_block_read_stops_at_the_next_key(self):
+        p = self._write("---\ntools:\n  - Bash\nmodel: opus\n---\nbody\n")
+        self.assertEqual(c.parse(p), (["Bash"], "body\n"))
+
+    def test_a_block_sequence_does_not_read_as_an_ungranted_role(self):
+        """The verdict, not the parse: `[]` claims the role holds nothing, so
+        every command its prose runs comes back ungranted. Respelling a grant
+        list may not invent errors."""
+        grants, body = c.parse(
+            self._write("---\ntools:\n  - Bash(git diff:*)\n---\nRun `git diff --stat`.\n")
+        )
+        errors, _ = c.check(Path("role.md"), grants, body, set())
+        self.assertEqual(errors, [])
+
     def test_missing_frontmatter(self):
         self.assertIsNone(c.parse(self._write("no frontmatter here\n")))
 

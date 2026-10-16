@@ -46,6 +46,7 @@ Exit 1 on undeclared errors, 0 on warnings and declared ones.
 import re
 import shlex
 import sys
+from itertools import takewhile
 from pathlib import Path
 
 # Grants that are inherently generic — never reported as unreferenced.
@@ -106,17 +107,42 @@ BASH_FENCE = re.compile(r"```(?:bash|sh|shell)\n(.*?)```", re.S)
 INLINE_CODE = re.compile(r"`([a-z][\w./-]*(?: [^`\n]*)?)`")
 FRONTMATTER = re.compile(r"\A---\n(.*?)\n---\n(.*)\Z", re.S)
 REFERENCE_LINK = re.compile(r"`(reference/[\w.-]+\.md)`")
+BLOCK_ITEM = re.compile(r"\A\s*-\s*(.+?)\s*\Z")
 
 
 def parse(path):
-    """Return (grants, body) or None when the file has no frontmatter."""
+    """Return (grants, body) or None when the file has no frontmatter.
+
+    The grant list continues past the key line. YAML writes a sequence as a
+    flow list on the key (what the agents here do today) or as a block
+    sequence under it, in *either* indentation — `  - Bash` and `- Bash` are
+    the same list to the loader. Reading the key line alone yields `[]` for
+    both block forms, and `[]` is not "no grants declared" to the checks
+    below: it is the claim that the role holds nothing. `check()` then reports
+    every command the prose runs as ungranted, and drops the role from the
+    bare-`Bash` census in the same pass.
+
+    That is a verdict this tree's other two readers of the same key already
+    disagree with. `check_platform.check_component` matches the key's
+    continuation lines, `check_delegation_grants.parse` takes the block items;
+    respelling a live agent's `tools:` into a block sequence turns this gate
+    from exit 0 into exit 1 with two errors while both siblings stay silent.
+    Three parsers of one field may not answer three different things about it.
+
+    Still `[]` here: a key declared with nothing under it, and an absent key.
+    Both load as every tool the session holds, so `[]` understates them — but
+    `check_platform` errors on exactly that state, by name, and a second
+    diagnosis for one edit is the failure this suite exists to avoid.
+    """
     m = FRONTMATTER.match(path.read_text(encoding="utf-8"))
     if not m:
         return None
-    field = None
-    for line in m.group(1).splitlines():
+    field, lines = None, m.group(1).splitlines()
+    for i, line in enumerate(lines):
         if line.startswith(("allowed-tools:", "tools:")):
-            field = line.split(":", 1)[1].strip()
+            items = [it.group(1) for it in
+                     takewhile(bool, map(BLOCK_ITEM.match, lines[i + 1:]))]
+            field = line.split(":", 1)[1].strip() or ",".join(items)
     if field is None:
         return [], m.group(2)
     # agents use tools: ["Bash", "Read"]; skills use a bare comma-separated list
