@@ -91,11 +91,69 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 
-# The loader's own vocabulary, read off its validation messages.
+# The loader's own vocabulary, read off its frontmatter schemas in the 2.1.278
+# binary — not off `claude plugin validate`'s messages, which this file's own
+# docstring measures as reporting missing component metadata and nothing else. An
+# instrument that stays quiet on `model: gpt-4` cannot enumerate a vocabulary, and
+# the seven-key reading it produced dropped `disallowed-tools` while keeping
+# `allowed-tools`, and `disable-model-invocation` while dropping the
+# `user-invocable` it pairs with.
+#
+# Narrower than the loader is the wrong direction for the same reason it was for
+# `TOOL_SHAPE` above: this check reports a key the session *reads* as a key that
+# "is ignored at load time", which is the sentence it exists to say about the
+# opposite case. `disallowed-tools` is the only field on a skill that removes a
+# tool, so the error asks an author to delete the narrowing and calls that the fix.
+#
+# `@internal` keys are included. The question this check asks is whether the
+# loader reads the key, and it does; who the key is *for* is a different gate's.
 SKILL_KEYS = frozenset(
-    {"name", "description", "allowed-tools", "model", "shell", "hooks", "disable-model-invocation"}
+    {
+        "name",
+        "description",
+        "model",
+        "allowed-tools",
+        "disallowed-tools",
+        "disallowedTools",  # canonical alias of `disallowed-tools`
+        "argument-hint",
+        "argumentHint",
+        "disable-model-invocation",
+        "user-invocable",
+        "effort",
+        "shell",
+        "when_to_use",
+        "paths",
+        "hooks",
+        "context",
+        "agent",
+        "background",
+        "metadata",
+    }
 )
-AGENT_KEYS = frozenset({"name", "description", "tools", "model", "color"})
+AGENT_KEYS = frozenset(
+    {
+        "name",
+        "description",
+        "model",
+        "tools",
+        "disallowedTools",
+        "color",
+        "effort",
+        "permissionMode",
+        "mcpServers",
+        "hooks",
+        "maxTurns",
+        "skills",
+        "initialPrompt",
+        "memory",
+        "background",
+        "omitClaudeMd",
+        "isolation",
+        "observer",
+        "observerMessage",
+        "observeSubagents",
+    }
+)
 
 # `Read`, `Bash(git:*)`, `mcp__claude-in-chrome__navigate`,
 # `mcp__plugin_anantys-team-agents_claude-in-chrome__navigate`,

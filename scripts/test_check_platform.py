@@ -192,6 +192,63 @@ class CheckPlatform(unittest.TestCase):
         )
         self.assertTrue(any("`mcp_bad` is not a well-formed" in e for e in found), found)
 
+    def test_disallowed_tools_is_the_live_shape_and_is_read(self) -> None:
+        # `koan/the-field-that-withholds` adds exactly this line to three skills.
+        # It is the only field on a skill that *removes* a tool, so reporting it as
+        # "ignored at load time" asks an author to delete a narrowing and calls
+        # that the remedy — this gate's own sentence, pointed the wrong way.
+        withheld = "disallowed-tools: Bash(git commit:*), Bash(git push:*)"
+        self.assertEqual(
+            self.check(GOOD_SKILL.replace("---\n\nbody", f"{withheld}\n---\n\nbody")), []
+        )
+
+    def test_every_key_in_the_loader_schema_is_recognized(self) -> None:
+        # Read off the 2.1.278 frontmatter schema, in its declaration order. A
+        # vocabulary narrower than the loader's turns each of these into an error
+        # whose text is false: the loader reads the key.
+        for key, value in (
+            ("disallowedTools", "Bash(git push:*)"),
+            ("argument-hint", "<path>"),
+            ("user-invocable", "false"),
+            ("effort", "high"),
+            ("when_to_use", "When the app misbehaves."),
+            ("paths", '["src/**"]'),
+            ("context", "fork"),
+            ("agent", "anantys.debug"),
+            ("background", "false"),
+            ("metadata", "{tier: internal}"),
+        ):
+            with self.subTest(key=key):
+                cp.errors.clear()
+                line = f"{key}: {value}"
+                self.assertEqual(
+                    self.check(GOOD_SKILL.replace("---\n\nbody", f"{line}\n---\n\nbody")), []
+                )
+
+    def test_a_misspelled_key_is_still_charged(self) -> None:
+        # The widening must not reach the case the check exists for: a key one
+        # character off a real one loads as nothing, and the loader says nothing.
+        for key in ("disallowed_tools", "when-to-use", "allowedTools"):
+            with self.subTest(key=key):
+                cp.errors.clear()
+                found = self.check(GOOD_SKILL.replace("---\n\nbody", f"{key}: Read\n---\n\nbody"))
+                self.assertTrue(
+                    any(f"unrecognized frontmatter key `{key}`" in e for e in found), found
+                )
+
+    def test_the_two_schemas_stay_two(self) -> None:
+        # Different objects in the binary, and the overlap is partial: an agent
+        # takes `tools`/`disallowedTools`/`permissionMode`, a skill takes
+        # `allowed-tools`/`disallowed-tools`/`shell`. One merged set would certify
+        # each file against the other's vocabulary.
+        self.assertNotIn("allowed-tools", cp.AGENT_KEYS)
+        self.assertNotIn("disallowed-tools", cp.AGENT_KEYS)
+        self.assertNotIn("permissionMode", cp.SKILL_KEYS)
+        self.assertNotIn("shell", cp.AGENT_KEYS)
+        for key in ("effort", "disallowedTools", "mcpServers", "maxTurns", "isolation"):
+            with self.subTest(key=key):
+                self.assertIn(key, cp.AGENT_KEYS)
+
     def test_agent_keys_differ_from_skill_keys(self) -> None:
         path = cp.ROOT / "agent.md"
         path.write_text(
