@@ -1,0 +1,720 @@
+#!/usr/bin/env python3
+"""Tests for check_ci_coverage. Run: python3 scripts/test_check_ci_coverage.py"""
+
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent))
+from check_ci_coverage import (  # noqa: E402
+    COMMENT,
+    check,
+    commands,
+    main,
+    scan,
+    steps,
+    unloadable,
+    yieldless,
+)
+
+ON_PR = "on:\n  pull_request:\n\njobs:\n  j:\n    steps:\n"
+ON_PUSH = "on:\n  push:\n    branches: [main]\n\njobs:\n  j:\n    steps:\n"
+JOBS = "\njobs:\n  j:\n    steps:\n"
+RUN_A = "      - run: python3 scripts/check_a.py\n"
+DISCOVER = "      - run: python3 -m unittest discover -s scripts\n"
+
+
+# A test module the `unittest` loader can see. `tree`'s `#\n` stub is a module
+# that collects nothing, which `yieldless` now reports — correctly, but every
+# fixture here is about *wiring*, so the stub has to be the shape a real test
+# module is. Tests about collectability write their own body.
+COLLECTABLE = "import unittest\n\n\nclass T(unittest.TestCase):\n    def test_x(self):\n        pass\n"
+
+
+def tree(root, scripts=(), workflows=()):
+    (root / "scripts").mkdir()
+    for name in scripts:
+        (root / "scripts" / name).write_text(
+            COLLECTABLE if name.startswith("test_") else "#\n"
+        )
+    (root / ".github/workflows").mkdir(parents=True)
+    for name, text in workflows:
+        (root / ".github/workflows" / name).write_text(text)
+    return root
+
+
+def test_a_checker_run_on_pull_request_is_covered(tmp_path):
+    tree(tmp_path, ["check_a.py"], [("a.yml", ON_PR + "      - run: python3 scripts/check_a.py\n")])
+    assert main([str(tmp_path)]) == 0
+
+
+def test_a_checker_no_workflow_runs_is_an_error(tmp_path):
+    tree(tmp_path, ["check_a.py"], [("a.yml", ON_PR + "      - run: echo hi\n")])
+    assert main([str(tmp_path)]) == 1
+
+
+def test_a_checker_run_only_after_merge_is_an_error(tmp_path):
+    tree(tmp_path, ["check_a.py"], [("a.yml", ON_PUSH + "      - run: python3 scripts/check_a.py\n")])
+    errors, _ = scan_and_check(tmp_path)
+    assert len(errors) == 1, errors
+    assert "does not trigger" in errors[0], errors[0]
+
+
+def test_unittest_discovery_alone_does_not_cover_a_checker(tmp_path):
+    tree(tmp_path, ["check_a.py", "test_check_a.py"],
+         [("a.yml", ON_PR + "      - run: python3 -m unittest discover -s scripts\n")])
+    errors, _ = scan_and_check(tmp_path)
+    assert any("guards nothing" in e for e in errors), errors
+
+
+def test_a_workflow_naming_a_missing_script_is_an_error(tmp_path):
+    tree(tmp_path, ["check_a.py"],
+         [("a.yml", ON_PR + "      - run: python3 scripts/check_a.py\n"
+                            "      - run: python3 scripts/check_gone.py\n")])
+    errors, _ = scan_and_check(tmp_path)
+    assert len(errors) == 1, errors
+    assert "does not exist" in errors[0], errors[0]
+
+
+def test_a_test_module_needs_no_workflow_of_its_own(tmp_path):
+    tree(tmp_path, ["check_a.py", "test_check_a.py"],
+         [("a.yml", ON_PR + RUN_A + DISCOVER)])
+    assert main([str(tmp_path)]) == 0
+
+
+def test_a_test_module_nothing_discovers_is_an_error(tmp_path):
+    tree(tmp_path, ["check_a.py", "test_check_a.py"], [("a.yml", ON_PR + RUN_A)])
+    errors, _ = scan_and_check(tmp_path)
+    assert len(errors) == 1, errors
+    assert "unittest discover" in errors[0], errors[0]
+
+
+def test_discovery_that_reports_after_the_merge_does_not_count(tmp_path):
+    tree(tmp_path, ["check_a.py", "test_check_a.py"],
+         [("a.yml", ON_PR + RUN_A), ("late.yml", ON_PUSH + DISCOVER)])
+    errors, _ = scan_and_check(tmp_path)
+    assert any("unittest discover" in e for e in errors), errors
+
+
+def test_a_tree_with_no_test_modules_needs_no_discovery(tmp_path):
+    tree(tmp_path, ["check_a.py"], [("a.yml", ON_PR + RUN_A)])
+    assert main([str(tmp_path)]) == 0
+
+
+def test_any_pull_request_workflow_satisfies_coverage(tmp_path):
+    tree(tmp_path, ["check_a.py", "check_b.py"],
+         [("shared.yml", ON_PR + "      - run: python3 scripts/check_a.py\n"
+                                 "      - run: python3 scripts/check_b.py\n")])
+    assert main([str(tmp_path)]) == 0
+
+
+def test_pull_request_inside_an_expression_is_not_a_trigger(tmp_path):
+    tree(tmp_path, ["check_a.py"],
+         [("a.yml", ON_PUSH + "      - run: echo ${{ github.event.pull_request.number }}\n"
+                              "      - run: python3 scripts/check_a.py\n")])
+    assert main([str(tmp_path)]) == 1
+
+
+def test_types_that_exclude_the_open_pr_reports_too_late(tmp_path):
+    tree(tmp_path, ["check_a.py"],
+         [("a.yml", "on:\n  pull_request:\n    types: [closed]\n" + JOBS + RUN_A)])
+    errors, _ = scan_and_check(tmp_path)
+    assert len(errors) == 1, errors
+    assert "only for closed, all after the decision" in errors[0], errors[0]
+
+
+def test_types_listed_as_a_block_are_read_the_same_way(tmp_path):
+    tree(tmp_path, ["check_a.py"],
+         [("a.yml", "on:\n  pull_request:\n    types:\n      - closed\n      - labeled\n"
+                    + JOBS + RUN_A)])
+    assert main([str(tmp_path)]) == 1
+
+
+def test_types_that_include_a_preventive_event_still_gate(tmp_path):
+    tree(tmp_path, ["check_a.py"],
+         [("a.yml", "on:\n  pull_request:\n    types: [opened, synchronize, closed]\n"
+                    + JOBS + RUN_A)])
+    assert main([str(tmp_path)]) == 0
+
+
+def test_a_path_filtered_trigger_is_not_coverage(tmp_path):
+    tree(tmp_path, ["check_a.py"],
+         [("a.yml", "on:\n  pull_request:\n    paths:\n      - 'docs/**'\n" + JOBS + RUN_A)])
+    errors, _ = scan_and_check(tmp_path)
+    assert len(errors) == 1, errors
+    assert "selected paths" in errors[0], errors[0]
+
+
+def test_paths_ignore_is_a_filter_too(tmp_path):
+    tree(tmp_path, ["check_a.py"],
+         [("a.yml", "on:\n  pull_request:\n    paths-ignore:\n      - '**.md'\n" + JOBS + RUN_A)])
+    assert main([str(tmp_path)]) == 1
+
+
+def test_a_branch_filter_on_the_pr_target_is_not_a_path_filter(tmp_path):
+    tree(tmp_path, ["check_a.py"],
+         [("a.yml", "on:\n  pull_request:\n    branches: [main]\n" + JOBS + RUN_A)])
+    assert main([str(tmp_path)]) == 0
+
+
+def test_a_branch_filter_that_omits_the_integration_branch_is_not_coverage(tmp_path):
+    tree(tmp_path, ["check_a.py"],
+         [("a.yml", "on:\n  pull_request:\n    branches: [release]\n" + JOBS + RUN_A)])
+    errors, _ = scan_and_check(tmp_path)
+    assert len(errors) == 1, errors
+    assert "branches: release" in errors[0], errors[0]
+    assert "no pull request into `main` triggers it" in errors[0], errors[0]
+
+
+def test_a_branch_pattern_that_matches_the_integration_branch_still_gates(tmp_path):
+    tree(tmp_path, ["check_a.py"],
+         [("a.yml", "on:\n  pull_request:\n    branches: ['ma*', 'release/*']\n" + JOBS + RUN_A)])
+    assert main([str(tmp_path)]) == 0
+
+
+def test_branches_listed_as_a_block_are_read_the_same_way(tmp_path):
+    tree(tmp_path, ["check_a.py"],
+         [("a.yml", "on:\n  pull_request:\n    branches:\n      - release\n      - staging\n"
+                    + JOBS + RUN_A)])
+    errors, _ = scan_and_check(tmp_path)
+    assert len(errors) == 1, errors
+    assert "branches: release, staging" in errors[0], errors[0]
+
+
+def test_branches_ignore_that_excludes_every_branch_is_not_coverage(tmp_path):
+    # The sharp shape: it fires for no pull request at all, and was read as coverage.
+    tree(tmp_path, ["check_a.py"],
+         [("a.yml", "on:\n  pull_request:\n    branches-ignore: ['**']\n" + JOBS + RUN_A)])
+    errors, _ = scan_and_check(tmp_path)
+    assert len(errors) == 1, errors
+    assert "branches-ignore: **" in errors[0], errors[0]
+
+
+def test_branches_ignore_that_leaves_the_integration_branch_alone_still_gates(tmp_path):
+    tree(tmp_path, ["check_a.py"],
+         [("a.yml", "on:\n  pull_request:\n    branches-ignore: ['docs/**']\n" + JOBS + RUN_A)])
+    assert main([str(tmp_path)]) == 0
+
+
+def test_a_push_branch_filter_does_not_disqualify_the_pr_trigger(tmp_path):
+    # `push: branches: [main]` is the shape every workflow in this tree writes, and
+    # it sits beside `pull_request:`, not under it.
+    tree(tmp_path, ["check_a.py"],
+         [("a.yml", "on:\n  push:\n    branches: [release]\n  pull_request:\n"
+                    + JOBS + RUN_A)])
+    assert main([str(tmp_path)]) == 0
+
+
+def test_a_push_path_filter_does_not_disqualify_the_pr_trigger(tmp_path):
+    tree(tmp_path, ["check_a.py"],
+         [("a.yml", "on:\n  push:\n    paths:\n      - 'docs/**'\n  pull_request:\n"
+                    + JOBS + RUN_A)])
+    assert main([str(tmp_path)]) == 0
+
+
+def test_the_flow_sequence_form_of_on_is_a_pull_request_trigger(tmp_path):
+    tree(tmp_path, ["check_a.py"], [("a.yml", "on: [push, pull_request]\n" + JOBS + RUN_A)])
+    assert main([str(tmp_path)]) == 0
+
+
+def test_a_quoted_on_key_is_still_the_trigger_block(tmp_path):
+    tree(tmp_path, ["check_a.py"], [("a.yml", '"on":\n  pull_request:\n' + JOBS + RUN_A)])
+    assert main([str(tmp_path)]) == 0
+
+
+def test_pull_request_target_is_not_matched_as_pull_request(tmp_path):
+    tree(tmp_path, ["check_a.py"],
+         [("a.yml", "on:\n  pull_request_target:\n    types: [closed]\n" + JOBS + RUN_A)])
+    assert main([str(tmp_path)]) == 1
+
+
+def test_a_neighbouring_event_in_the_flow_form_is_not_pull_request(tmp_path):
+    """The same rejection as above, written as a flow sequence instead of a key.
+
+    `pull_request_target` and `pull_request_review` contain `pull_request` as a
+    substring. The nested branch rejects them because it matches a key; the flow
+    branch used containment, so the verdict on one wiring depended on which YAML
+    style spelled it.
+    """
+    for n, on in enumerate(("on: [push, pull_request_target]\n",
+                            "on: pull_request_review\n",
+                            "on: [pull_request_review_comment]\n")):
+        root = tmp_path / str(n)
+        root.mkdir()
+        tree(root, ["check_a.py"], [("a.yml", on + JOBS + RUN_A)])
+        assert main([str(root)]) == 1, on
+
+
+def test_pull_request_review_only_never_runs_while_the_branch_is_pushed(tmp_path):
+    """`on: pull_request_review` fires when a human submits a review — never on
+    open or synchronize. A gate wired only there has not run when the merge
+    button becomes available, which is the one thing this checker measures."""
+    tree(tmp_path, ["check_a.py"], [("a.yml", "on: pull_request_review\n" + JOBS + RUN_A)])
+    errors, _ = scan_and_check(tmp_path)
+    assert len(errors) == 1, errors
+    assert "does not trigger on pull_request" in errors[0], errors[0]
+
+
+def test_no_workflows_at_all_orphans_every_checker(tmp_path):
+    tree(tmp_path, ["check_a.py", "check_b.py"])
+    errors, _ = scan_and_check(tmp_path)
+    assert len(errors) == 2, errors
+
+
+def test_a_tree_with_no_checkers_is_clean(tmp_path):
+    tree(tmp_path, [], [("a.yml", ON_PR + "      - run: echo hi\n")])
+    assert main([str(tmp_path)]) == 0
+
+
+def test_a_comment_naming_a_deleted_step_is_not_coverage(tmp_path):
+    tree(tmp_path, ["check_a.py"],
+         [("a.yml", ON_PR + "      # we used to run scripts/check_a.py here\n"
+                            "      - run: echo hi\n")])
+    errors, _ = scan_and_check(tmp_path)
+    assert any("guards nothing" in e for e in errors), errors
+
+
+def test_a_comment_does_not_make_a_missing_script_an_error_either(tmp_path):
+    tree(tmp_path, ["check_a.py"],
+         [("a.yml", ON_PR + "      # scripts/check_gone.py was dropped in #12\n" + RUN_A)])
+    assert main([str(tmp_path)]) == 0
+
+
+def test_a_step_named_after_a_gate_does_not_run_it(tmp_path):
+    tree(tmp_path, ["check_a.py"],
+         [("a.yml", ON_PR + "      - name: scripts/check_a.py\n"
+                            "        run: echo skipping for now\n")])
+    errors, _ = scan_and_check(tmp_path)
+    assert any("guards nothing" in e for e in errors), errors
+
+
+def test_a_name_citing_a_deleted_script_is_not_an_error_either(tmp_path):
+    tree(tmp_path, ["check_a.py"],
+         [("a.yml", ON_PR + "      - name: replaces scripts/check_gone.py\n"
+                            "        run: python3 scripts/check_a.py\n")])
+    assert main([str(tmp_path)]) == 0
+
+
+def test_an_env_value_naming_a_gate_is_not_coverage(tmp_path):
+    tree(tmp_path, ["check_a.py"],
+         [("a.yml", ON_PR + "      - env:\n"
+                            "          GATE: scripts/check_a.py\n"
+                            "        run: echo noop\n")])
+    errors, _ = scan_and_check(tmp_path)
+    assert any("guards nothing" in e for e in errors), errors
+
+
+def test_a_gate_inside_a_block_scalar_is_coverage(tmp_path):
+    tree(tmp_path, ["check_a.py"],
+         [("a.yml", ON_PR + "      - run: |\n"
+                            "          python3 scripts/check_a.py\n")])
+    assert main([str(tmp_path)]) == 0
+
+
+def test_a_block_scalar_does_not_swallow_the_next_step_key(tmp_path):
+    tree(tmp_path, ["check_a.py"],
+         [("a.yml", ON_PR + "      - run: |\n"
+                            "          echo noop\n"
+                            "        env:\n"
+                            "          GATE: scripts/check_a.py\n")])
+    errors, _ = scan_and_check(tmp_path)
+    assert any("guards nothing" in e for e in errors), errors
+
+
+def test_discovery_only_counts_when_a_run_line_performs_it(tmp_path):
+    tree(tmp_path, ["check_a.py", "test_check_a.py"],
+         [("a.yml", ON_PR + "      - name: unittest discover -s scripts\n"
+                            "        run: python3 scripts/check_a.py\n")])
+    errors, _ = scan_and_check(tmp_path)
+    assert any("nothing runs the tests" in e for e in errors), errors
+
+
+def test_a_hash_that_opens_no_comment_is_not_stripped(tmp_path):
+    tree(tmp_path, ["check_a.py"],
+         [("a.yml", ON_PR + "      - run: python3 scripts/check_a.py --tag=v1#rc2\n")])
+    assert main([str(tmp_path)]) == 0
+
+
+def test_continue_on_error_on_the_step_is_not_coverage(tmp_path):
+    tree(tmp_path, ["check_a.py"],
+         [("a.yml", ON_PR + RUN_A + "        continue-on-error: true\n")])
+    errors, _ = scan_and_check(tmp_path)
+    assert len(errors) == 1, errors
+    assert "step that cannot fail" in errors[0], errors[0]
+
+
+def test_continue_on_error_false_still_gates(tmp_path):
+    tree(tmp_path, ["check_a.py"],
+         [("a.yml", ON_PR + RUN_A + "        continue-on-error: false\n")])
+    assert main([str(tmp_path)]) == 0
+
+
+def test_an_if_on_the_step_fails_closed(tmp_path):
+    tree(tmp_path, ["check_a.py"],
+         [("a.yml", ON_PR + "      - if: github.actor != 'dependabot[bot]'\n"
+                            "        run: python3 scripts/check_a.py\n")])
+    errors, _ = scan_and_check(tmp_path)
+    assert len(errors) == 1, errors
+    assert "step that cannot fail" in errors[0], errors[0]
+
+
+def test_a_job_level_guard_disqualifies_the_whole_workflow(tmp_path):
+    tree(tmp_path, ["check_a.py", "check_b.py"],
+         [("a.yml", "on:\n  pull_request:\n\njobs:\n  j:\n    continue-on-error: true\n"
+                    "    steps:\n      - run: python3 scripts/check_a.py\n"
+                    "      - run: python3 scripts/check_b.py\n")])
+    errors, _ = scan_and_check(tmp_path)
+    assert len(errors) == 2, errors
+    assert all("job that cannot fail" in e for e in errors), errors
+
+
+def test_a_guarded_step_does_not_disqualify_its_neighbour(tmp_path):
+    tree(tmp_path, ["check_a.py", "check_b.py"],
+         [("a.yml", ON_PR + RUN_A + "        continue-on-error: true\n"
+                            "      - run: python3 scripts/check_b.py\n")])
+    errors, _ = scan_and_check(tmp_path)
+    assert len(errors) == 1, errors
+    assert "check_a.py" in errors[0], errors[0]
+
+
+def test_a_gate_whose_failure_is_swallowed_by_or_true_is_not_coverage(tmp_path):
+    tree(tmp_path, ["check_a.py"],
+         [("a.yml", ON_PR + "      - run: python3 scripts/check_a.py || true\n")])
+    errors, _ = scan_and_check(tmp_path)
+    assert len(errors) == 1, errors
+    assert "discards its exit status" in errors[0], errors[0]
+
+
+def test_a_gate_piped_to_a_log_is_not_coverage(tmp_path):
+    tree(tmp_path, ["check_a.py"],
+         [("a.yml", ON_PR + "      - run: python3 scripts/check_a.py | tee gate.log\n")])
+    errors, _ = scan_and_check(tmp_path)
+    assert len(errors) == 1, errors
+    assert "discards its exit status" in errors[0], errors[0]
+
+
+def test_a_backgrounded_gate_is_not_coverage(tmp_path):
+    tree(tmp_path, ["check_a.py"],
+         [("a.yml", ON_PR + "      - run: python3 scripts/check_a.py &\n")])
+    errors, _ = scan_and_check(tmp_path)
+    assert len(errors) == 1, errors
+    assert "discards its exit status" in errors[0], errors[0]
+
+
+def test_a_gate_chained_with_and_still_gates(tmp_path):
+    """`a && b` fails the step when `a` fails — the status is not discarded."""
+    tree(tmp_path, ["check_a.py", "check_b.py"],
+         [("a.yml", ON_PR + "      - run: python3 scripts/check_a.py && "
+                            "python3 scripts/check_b.py\n")])
+    assert scan_and_check(tmp_path) == ([], [])
+
+
+def test_a_gate_followed_by_a_semicolon_still_gates(tmp_path):
+    """GitHub runs `bash -e`, which stops at the failing command."""
+    tree(tmp_path, ["check_a.py"],
+         [("a.yml", ON_PR + "      - run: python3 scripts/check_a.py; echo done\n")])
+    assert scan_and_check(tmp_path) == ([], [])
+
+
+def test_one_discarded_line_does_not_disqualify_its_neighbour_line(tmp_path):
+    tree(tmp_path, ["check_a.py", "check_b.py"],
+         [("a.yml", ON_PR + "      - run: |\n"
+                            "          python3 scripts/check_a.py || true\n"
+                            "          python3 scripts/check_b.py\n")])
+    errors, _ = scan_and_check(tmp_path)
+    assert len(errors) == 1, errors
+    assert "check_a.py" in errors[0], errors[0]
+
+
+def test_a_pipe_elsewhere_in_the_body_does_not_uncover_the_gate(tmp_path):
+    tree(tmp_path, ["check_a.py"],
+         [("a.yml", ON_PR + "      - run: |\n"
+                            "          ls | wc -l\n"
+                            "          python3 scripts/check_a.py\n")])
+    assert scan_and_check(tmp_path) == ([], [])
+
+
+def test_discovery_whose_failure_is_swallowed_does_not_run_the_tests(tmp_path):
+    tree(tmp_path, ["check_a.py", "test_check_a.py"],
+         [("a.yml", ON_PR + RUN_A
+                    + "      - run: python3 -m unittest discover -s scripts || true\n")])
+    errors, _ = scan_and_check(tmp_path)
+    assert len(errors) == 1, errors
+    assert "unittest discover" in errors[0], errors[0]
+
+
+def test_discovery_in_a_step_that_cannot_fail_does_not_run_the_tests(tmp_path):
+    tree(tmp_path, ["check_a.py", "test_check_a.py"],
+         [("a.yml", ON_PR + RUN_A + DISCOVER + "        continue-on-error: true\n")])
+    errors, _ = scan_and_check(tmp_path)
+    assert len(errors) == 1, errors
+    assert "unittest discover" in errors[0], errors[0]
+
+
+def test_a_tab_indented_workflow_is_not_coverage(tmp_path):
+    tree(tmp_path, ["check_a.py"], [("a.yml", ON_PR.replace("  j:", "\tj:") + RUN_A)])
+    errors, _ = scan_and_check(tmp_path)
+    assert len(errors) == 1, errors
+    assert "tab" in errors[0], errors[0]
+
+
+def test_an_unquoted_colon_in_a_plain_scalar_is_not_coverage(tmp_path):
+    tree(tmp_path, ["check_a.py"],
+         [("a.yml", ON_PR + "      - name: gate: the gates\n" + RUN_A)])
+    errors, _ = scan_and_check(tmp_path)
+    assert len(errors) == 1, errors
+    assert "plain scalar" in errors[0], errors[0]
+
+
+def test_a_tab_inside_a_run_body_is_still_coverage(tmp_path):
+    tree(tmp_path, ["check_a.py"],
+         [("a.yml", ON_PR + "      - run: |\n          if x; then\n"
+                            "          \techo y\n          fi\n" + RUN_A)])
+    assert scan_and_check(tmp_path) == ([], [])
+
+
+def test_a_colon_inside_a_run_body_is_still_coverage(tmp_path):
+    tree(tmp_path, ["check_a.py"],
+         [("a.yml", ON_PR + "      - run: |\n          echo note: skipped\n" + RUN_A)])
+    assert scan_and_check(tmp_path) == ([], [])
+
+
+def test_a_tab_indented_comment_is_still_coverage(tmp_path):
+    tree(tmp_path, ["check_a.py"], [("a.yml", ON_PR + "\t# why this job exists\n" + RUN_A)])
+    assert scan_and_check(tmp_path) == ([], [])
+
+
+def test_a_quoted_value_may_hold_a_colon(tmp_path):
+    tree(tmp_path, ["check_a.py"],
+         [("a.yml", ON_PR + '      - name: "gate: the gates"\n' + RUN_A)])
+    assert scan_and_check(tmp_path) == ([], [])
+
+
+def test_an_expression_value_may_hold_a_colon(tmp_path):
+    tree(tmp_path, ["check_a.py"],
+         [("a.yml", ON_PR + "      - if: ${{ matrix.os == 'linux' }}\n" + RUN_A + DISCOVER)])
+    errors, _ = scan_and_check(tmp_path)
+    assert all("plain scalar" not in e for e in errors), errors
+
+
+def test_discovery_in_an_unloadable_workflow_does_not_run_the_tests(tmp_path):
+    tree(tmp_path, ["check_a.py", "test_check_a.py"],
+         [("a.yml", ON_PR.replace("  j:", "\tj:") + RUN_A + DISCOVER)])
+    errors, _ = scan_and_check(tmp_path)
+    assert any("unittest discover" in e for e in errors), errors
+
+
+def test_a_wrapped_pipeline_discards_the_gates_status(tmp_path):
+    """A physical line is not a command: the `|` rides the continuation."""
+    tree(tmp_path, ["check_a.py"],
+         [("a.yml", ON_PR + "      - run: |\n"
+                            "          python3 scripts/check_a.py --root . \\\n"
+                            "            --verbose | tee gate.log\n")])
+    errors, _ = scan_and_check(tmp_path)
+    assert len(errors) == 1, errors
+    assert "discards its exit status" in errors[0], errors[0]
+
+
+def test_a_wrapped_gate_with_no_neuter_still_gates(tmp_path):
+    tree(tmp_path, ["check_a.py"],
+         [("a.yml", ON_PR + "      - run: |\n"
+                            "          python3 scripts/check_a.py --root . \\\n"
+                            "            --verbose\n")])
+    assert scan_and_check(tmp_path) == ([], [])
+
+
+def test_a_flag_continuation_does_not_open_a_new_step(tmp_path):
+    """`--root .` is a bullet to a `- ` pattern and to nothing else."""
+    tree(tmp_path, ["check_a.py"],
+         [("a.yml", ON_PR + "      - run: |\n"
+                            "          python3 scripts/check_a.py \\\n"
+                            "            --root .\n"
+                            "        continue-on-error: true\n")])
+    errors, _ = scan_and_check(tmp_path)
+    assert len(errors) == 1, errors
+    assert "cannot fail the check" in errors[0], errors[0]
+
+
+def test_steps_written_level_with_their_key_are_coverage(tmp_path):
+    """A block sequence may sit at the indentation of the key that owns it."""
+    tree(tmp_path, ["check_a.py"],
+         [("a.yml", "on:\n  pull_request:\n\njobs:\n  j:\n    steps:\n"
+                    "    - run: python3 scripts/check_a.py\n")])
+    assert scan_and_check(tmp_path) == ([], [])
+
+
+def test_activity_types_written_level_with_their_key_are_read(tmp_path):
+    tree(tmp_path, ["check_a.py"],
+         [("a.yml", "on:\n  pull_request:\n    types:\n    - opened\n    - synchronize\n"
+                    + JOBS + RUN_A)])
+    assert scan_and_check(tmp_path) == ([], [])
+
+
+def test_late_activity_types_written_level_with_their_key_are_not_coverage(tmp_path):
+    tree(tmp_path, ["check_a.py"],
+         [("a.yml", "on:\n  pull_request:\n    types:\n    - closed\n" + JOBS + RUN_A)])
+    errors, _ = scan_and_check(tmp_path)
+    assert len(errors) == 1, errors
+    assert "closed, all after the decision" in errors[0], errors[0]
+
+
+def test_a_workflow_with_no_trigger_at_all_is_not_coverage(tmp_path):
+    """Neuter this return and the suite stayed green: no case reached it."""
+    tree(tmp_path, ["check_a.py"], [("a.yml", "jobs:\n  j:\n    steps:\n" + RUN_A)])
+    errors, _ = scan_and_check(tmp_path)
+    assert len(errors) == 1, errors
+    assert "does not trigger on pull_request" in errors[0], errors[0]
+
+
+def test_a_blank_line_in_a_run_body_does_not_expose_its_shell_to_the_tab_scan(tmp_path):
+    """The exemption for shell is a verbatim subtraction, so the blank must survive it."""
+    tree(tmp_path, ["check_a.py"],
+         [("a.yml", ON_PR + "      - run: |\n          if x; then\n"
+                            "\n"
+                            "          \techo y\n          fi\n" + RUN_A)])
+    assert scan_and_check(tmp_path) == ([], [])
+
+
+def test_a_blank_line_in_a_guarded_step_does_not_move_the_guard_to_the_job(tmp_path):
+    """One step's `continue-on-error:` may not condemn another step's gate."""
+    tree(tmp_path, ["check_a.py", "check_b.py"],
+         [("a.yml", ON_PR + "      - run: |\n"
+                            "          python3 scripts/check_b.py --soft\n"
+                            "\n"
+                            "          python3 scripts/check_b.py --report\n"
+                            "        continue-on-error: true\n"
+                            + RUN_A)])
+    errors, _ = scan_and_check(tmp_path)
+    assert all("check_a.py" not in e for e in errors), errors
+    assert len(errors) == 1, errors
+    assert "in a step that cannot fail the check" in errors[0], errors[0]
+
+
+def test_a_blank_line_before_a_jobs_guard_still_reads_it_as_job_level(tmp_path):
+    """The buffer flushes only on an interior line: a trailing blank ends the block."""
+    tree(tmp_path, ["check_a.py"],
+         [("a.yml", ON_PR.replace("    steps:", "    if: github.actor != 'bot'\n    steps:")
+                    + RUN_A)])
+    errors, _ = scan_and_check(tmp_path)
+    assert len(errors) == 1, errors
+    assert "in a job that cannot fail the check" in errors[0], errors[0]
+
+
+def test_a_blank_line_does_not_extend_a_step_past_the_next_key(tmp_path):
+    """A run of blanks between a `run:` body and the following key is not body."""
+    tree(tmp_path, ["check_a.py"],
+         [("a.yml", ON_PR + "      - run: |\n          python3 scripts/check_a.py\n"
+                            "\n"
+                            "        name: the gate\n")])
+    assert scan_and_check(tmp_path) == ([], [])
+
+
+def test_the_repos_own_workflows_load(tmp_path):
+    root = Path(__file__).resolve().parent.parent
+    for workflow in sorted((root / ".github/workflows").glob("*.y*ml")):
+        text = COMMENT.sub("", workflow.read_text(encoding="utf-8"))
+        why = unloadable(text, [commands(b) for b in steps(text)])
+        assert why is None, f"{workflow.name}: {why}"
+
+
+BARE = "def test_a():\n    assert False\n"
+ADAPTED = BARE + "\n\ndef load_tests(loader, tests, pattern):\n    return tests\n"
+
+
+def test_a_testcase_subclass_is_collectable():
+    assert yieldless(COLLECTABLE) is None
+
+
+def test_a_subclass_of_a_local_testcase_alias_is_collectable():
+    assert yieldless("class T(Base, unittest.TestCase):\n    pass\n") is None
+
+
+def test_bare_functions_alone_collect_nothing():
+    why = yieldless(BARE)
+    assert why and "test_a" in why and "load_tests" in why
+
+
+def test_a_load_tests_hook_makes_bare_functions_collectable():
+    assert yieldless(ADAPTED) is None
+
+
+def test_a_module_with_no_tests_at_all_collects_nothing():
+    assert yieldless("import unittest\n\n\ndef helper():\n    pass\n")
+
+
+def test_a_commented_out_hook_is_not_a_hook():
+    assert yieldless(BARE + "\n# def load_tests(loader, tests, pattern):\n")
+
+
+def test_an_indented_def_is_a_closure_not_a_case():
+    assert yieldless("class T:\n    def test_x(self):\n        pass\n")
+
+
+def test_a_bare_module_reached_by_discovery_is_an_error(tmp_path):
+    tree(tmp_path, ["check_a.py"], [("a.yml", ON_PR + RUN_A + DISCOVER)])
+    (tmp_path / "scripts/test_check_a.py").write_text(BARE)
+    errors, _ = scan_and_check(tmp_path, collectability=True)
+    assert len(errors) == 1 and "test_check_a.py" in errors[0]
+
+
+def test_the_same_module_with_the_adapter_is_clean(tmp_path):
+    tree(tmp_path, ["check_a.py"], [("a.yml", ON_PR + RUN_A + DISCOVER)])
+    (tmp_path / "scripts/test_check_a.py").write_text(ADAPTED)
+    assert scan_and_check(tmp_path, collectability=True) == ([], [])
+
+
+def test_no_discovery_step_reports_the_wiring_not_the_module(tmp_path):
+    """One error, about the missing step. The module is uncollectable *and*
+    unreached; naming both reads as two defects over one cause, and fixing the
+    wiring is what makes the second one true."""
+    tree(tmp_path, ["check_a.py"], [("a.yml", ON_PR + RUN_A)])
+    (tmp_path / "scripts/test_check_a.py").write_text(BARE)
+    errors, _ = scan_and_check(tmp_path, collectability=True)
+    assert len(errors) == 1 and "unittest discover" in errors[0]
+
+
+def test_this_repos_own_test_modules_are_all_collectable():
+    root = Path(__file__).resolve().parent
+    for module in sorted(root.glob("test_*.py")):
+        why = yieldless(module.read_text(encoding="utf-8"))
+        assert why is None, f"{module.name}: {why}"
+
+
+def scan_and_check(root, collectability=False):
+    checkers, named, gating, why, discovers = scan(root)
+    present = {p.name for p in (root / "scripts").glob("*.py")}
+    sources = {
+        p.name: p.read_text(encoding="utf-8")
+        for p in sorted((root / "scripts").glob("test_*.py"))
+    } if collectability else None
+    return check(checkers, named, gating, present, why, discovers, sources)
+
+
+def load_tests(loader, tests, pattern):
+    """Expose the bare `test_*` functions above to `unittest discover`.
+
+    The repo's CI step is `python3 -m unittest discover -s scripts`, which
+    collects TestCase subclasses only. A module of bare functions collects
+    *zero* tests and reports OK — a green wall in front of an empty room. This
+    adapter registers each one and supplies the temp directory pytest would
+    have injected as `tmp_path`, so one suite runs under both runners.
+    """
+    suite = unittest.TestSuite()
+    for name, fn in sorted(globals().items()):
+        if not name.startswith("test_") or not callable(fn):
+            continue
+
+        def run(case, fn=fn):
+            if fn.__code__.co_argcount:
+                with tempfile.TemporaryDirectory() as d:
+                    fn(Path(d))
+            else:
+                fn()
+
+        suite.addTest(type(name, (unittest.TestCase,), {name: run})(name))
+    return suite
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)
