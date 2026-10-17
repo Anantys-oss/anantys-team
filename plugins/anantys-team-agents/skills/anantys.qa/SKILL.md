@@ -120,8 +120,10 @@ Then ask the operator only what you could not infer, in one batch:
   checks whose failure would waste a whole campaign, **how that environment reports the code it is
   serving** (a `/version` or `/healthz` endpoint, a deployed-SHA banner, a `docker inspect` — the
   build-identity check `run` uses to enforce a plan's `**Under test:**` line; it is per environment,
-  since staging lags `main` between deploys), test credentials, and any known drift that must not
-  be filed as a defect.
+  since staging lags `main` between deploys), test credentials, **the steps a browser agent cannot
+  perform there** (`### Agent limits` — a signup CAPTCHA, an emailed verification code, a viewport
+  below the browser's clamp, each with the human step that unblocks it), and any known drift that
+  must not be filed as a defect.
 - **`local` only:** the reset procedure for a fresh test subject, and a payment sandbox instrument
   (test card / token) if any journey touches money — without one, every checkout case is BLOCKED.
 - **`shared` only:** how the operator's signed-in browser session is made available to you, whether
@@ -242,6 +244,13 @@ legacy file included — is driven by the operator's connected browser.
   production **by construction** — reason "unsafe on production" — never walked.
 - The pre-write confirmation below is mandatory (it applies to every `shared` env).
 
+**A `shared` block with no `Production:` line reads as `Production: yes`** — both guards apply, and
+say so when you select it, so the operator can add the missing line. Every other field this skill
+reads has a stated fallback, and this is the only one whose two readings are not symmetric: reading
+an undeclared env as non-production is what charges a real card, mails a real person, or records a
+real consent, while reading it as production only over-reports `BLOCKED` — loud, and fixed by one
+line in the contract.
+
 Select one with `--env <name>` on any action that reads or writes results — `run`, `retest`,
 `note`, `status`, `report` (`/anantys.qa run --env staging`). With none:
 
@@ -359,6 +368,13 @@ operator's go before any write.
    reports only at the end is one where a bad reset costs you the whole run.
 5. **Append a run section to `qa-runs.md`**, its header naming the environment and the mode —
    never overwrite prior runs. Prior runs are how a later reader recognises a re-occurrence.
+   Create the file with its `# Run log` heading if this is the first run. Then **rewrite the
+   `> Status as of run <n>, per environment:` block** at the top of the file (`templates/qa-plan.md`)
+   from the plan's current per-environment results — every environment that has any, not only the
+   selected one. That block is a summary, not history: the run *sections* are append-only, and the
+   summary above them is overwritten every run, exactly as `qa-report.md` is. Left unrewritten it
+   keeps reporting run 1's blockers under run 9's log, which is the first thing a reader of the file
+   sees and the one line they will quote.
 6. Update the per-assertion status in `qa-plan.md` **for the selected environment only**, and only
    for the assertions this run walked; then refresh that environment's progress table.
 7. **Finish:** write `qa-report.md` as `report` does — every run, both modes, so a defect this run
