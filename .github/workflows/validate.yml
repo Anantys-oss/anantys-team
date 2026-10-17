@@ -55,3 +55,19 @@ jobs:
               if [ -d "$s/$c" ]; then claude plugin validate "$s/$c"; fi
             done
           done
+
+      # `validate` answers whether a component parses. It never reports a
+      # *name*, so the defect a user meets first — typing an advertised command
+      # and getting nothing — is outside its reach, on every target above.
+      #
+      # This step is not the hand-written checker the header rules out. It boots
+      # the same loader against this tree in a throwaway HOME and reads the
+      # names off the session's own init event, so it cannot drift from the
+      # thing it checks either. `apiKeySource` on that event is `none` with the
+      # credentials unset, which is why it belongs in CI next to `validate`
+      # rather than in a job holding a secret.
+      - name: hold the tree to the names the loader actually exposes
+        run: python3 scripts/check_exposed_names.py .
+
+      - name: run the tests behind that checker
+        run: python3 -m unittest discover -s scripts
