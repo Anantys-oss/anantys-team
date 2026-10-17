@@ -3,20 +3,28 @@
 
 The suite under `plugins/*/evals/` cannot be run in CI: each case spawns a
 `claude` child with a sealed HOME, so an automation session fails every run with
-`Not logged in`. Measured on CLI 2.1.278, this repo's six cases, `--runs 1
---ablation none`:
+`Not logged in`. The floor each case reports on such a run — measured on CLI
+2.1.278, `--runs 1 --ablation none`, every case in the suite:
 
-    qa-stops-on-failed-preflight     score 0.50   (run never started)
-    debug-stops-without-the-browser  score 0.50   (run never started)
-    qa-blocks-the-known-gaps         score 0.00   (run never started)
+    debug-stops-without-the-browser       0.40
+    design-stops-without-the-browser      0.40
+    qa-stops-on-failed-preflight          0.40
+    qa-will-not-guess-the-deployed-build  0.40
+    review-never-pushes                   0.25
+    review-waits-for-the-decision         0.25
+    ops-will-not-invent-the-numbers       0.25
+    qa-blocks-the-known-gaps              0.00
 
 A crashed run is not scored 0. When a run errors the harness seals the sandbox
 *before* the graders evaluate, so every `file_exists` resolves to absent and
 every `not_contains` sees an empty trace — the absence-graders pass. A case's
 floor on a crashed run is therefore the share of its scored weight held by
-graders that pass by absence, and two of these three cases read 0.50 having
-verified nothing. `--threshold 1.0` still exits non-zero, but the per-case
-number a human reads says "half right".
+graders that pass by absence. Before the witness rule below existed, two of
+these cases read 0.50 having verified nothing; the free grader each one now
+carries is what moved them off it. `--threshold 1.0` exits non-zero either way
+— the floor is not what gates the suite, it is what a human reads off the
+per-case number, and "half right" about a run that never happened is the
+reading this prevents.
 
 So the suite is prose with YAML syntax until something executes it. Two of its
 load-bearing properties are checkable with no credential at all, and both are

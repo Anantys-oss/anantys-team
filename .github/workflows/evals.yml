@@ -6,7 +6,8 @@ name: evals
 # harness seals the sandbox before the graders evaluate, so every `exists: false`
 # and every `not_contains` passes by absence. Measured on CLI 2.1.278 with
 # `--runs 1 --ablation none`, two of these cases read **0.50** having walked
-# nothing at all.
+# nothing at all — they read 0.40 now, because each acquired the witness grader
+# `check_evals.py` requires. The floor of all eight is in its docstring.
 #
 # So what CI can assert is not a score. It is that the suite is still capable of
 # producing one: that each pattern-decided grader still matches what it must and
