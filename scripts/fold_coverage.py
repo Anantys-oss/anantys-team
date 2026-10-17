@@ -27,6 +27,32 @@ Hence `--absent`, which prints the lines a head is missing so that grep is one
 copy-paste away, and hence no exit code: this ranks heads for a human to read,
 it does not rule on them.
 
+A score answers *what* the fold is missing and says nothing about the cost of
+adding it, which is the question the fold's reviewer actually has — and the two
+are independent. So the `merge` column prices the remedy: the conflicted paths
+from merging the head into the fold, performed in memory by `merge-tree`. It
+splits the low scorers into the two cases that look identical in the score
+alone. A 0% head that merges clean is a head the fold simply predates: one
+`git merge` carries it, and the fold's claim survives. A 0% head that conflicts
+is a head the fold *overwrote* — its prose and the fold's occupy the same lines,
+so there is no merge to run and carrying it means re-authoring the fold's
+version of that rule by hand.
+
+The second case is what gives a fold a shelf life, and the shelf life is the
+number this column exists to expose. Measured on this queue on 2026-10-17, the
+fold at `koan/the-product-without-the-scaffolding` (authored 2026-10-13) carried
+24 of 41 heads at 75-100% and 12 at exactly 0% — and every one of those 12
+conflicts with it, 1 to 5 files each. None of them can be merged in. A fold
+reviewed slower than the queue produces product PRs is therefore not a landing
+strategy but a recurring re-authoring, and the score alone reads as if four
+days of drift were four `git merge` calls away.
+
+The follow-up section is scoped to the 0% rows on purpose. A head carried at
+98% with one line absent and a conflicting file is a rewording, which is the
+documented floor doing its job; listing it as "cannot merge" is the same false
+row the scope rules exist to avoid. Only a head the fold carries *nothing* of
+makes the clean/conflicting distinction load-bearing.
+
 Scope follows the fold's own declaration. A fold that advertises itself as the
 product *without the scaffolding* is not failing when it omits an eval suite or
 a checker, so `evals/` and any line naming `scripts/` are out of the comparison.
@@ -38,6 +64,7 @@ Exit 0 always — this is an operator report, not a gate.
 """
 
 import argparse
+import itertools
 import json
 import subprocess
 import sys
@@ -97,6 +124,37 @@ def changed(head):
     return in_scope(line.split("\t")[2] for line in numstat.splitlines())
 
 
+def conflicted(output):
+    """The paths ``git merge-tree --name-only`` reports as conflicted.
+
+    Its output is the merged tree's oid, then one path per conflicted file,
+    then a blank line and git's own prose. Stopping at the blank line is what
+    keeps `CONFLICT (content): Merge conflict in <path>` out of the count — it
+    names every one of those same paths a second time.
+    """
+    return list(itertools.takewhile(str.strip, output.splitlines()[1:]))
+
+
+def cost(fold, head):
+    """The paths that conflict when ``head`` is merged into ``fold``.
+
+    `merge-tree --write-tree` performs the merge in memory, so this prices the
+    remedy without touching the working tree. Exit 0 is a clean merge, 1 is
+    conflicts; anything else is git failing to answer and must not read as
+    "clean".
+    """
+    done = subprocess.run(("git", "merge-tree", "--write-tree", "--name-only",
+                           fold, f"origin/{head}"), capture_output=True, text=True)
+    if done.returncode > 1:
+        raise RuntimeError(f"merge-tree {fold} origin/{head}: {done.stderr.strip()}")
+    return conflicted(done.stdout) if done.returncode else []
+
+
+def remedy(blocked):
+    """How the ``merge`` column reads a head's conflict list."""
+    return "clean" if not blocked else f"{len(blocked)} file(s)"
+
+
 def open_prs(limit):
     out = run("gh", "pr", "list", "--state", "open", "--limit", str(limit),
               "--json", "number,headRefName,createdAt")
@@ -104,7 +162,7 @@ def open_prs(limit):
 
 
 def measure(fold, prs):
-    """``(carried, total, pr, head, opened, absent)`` per head that adds product lines."""
+    """``(carried, total, pr, head, opened, absent, blocked)`` per contributing head."""
     held = corpus(fold)
     rows = []
     for pr in prs:
@@ -119,7 +177,7 @@ def measure(fold, prs):
             continue
         missing = absent(want, held)
         rows.append((len(want) - len(missing), len(want), pr["number"], head,
-                     pr["createdAt"][:10], missing))
+                     pr["createdAt"][:10], missing, cost(fold, head)))
     rows.sort(key=lambda row: (row[0] / row[1], -row[1]))
     return rows
 
@@ -134,13 +192,24 @@ def main():
 
     rows = measure(args.fold, open_prs(args.limit))
     print(f"Fold: {args.fold}   heads adding product lines: {len(rows)}\n")
-    print(f"{'carried':>7}  {'lines':>12}  {'pr':<6} {'opened':<11} head")
-    for held, total, number, head, opened, _ in rows:
-        print(f"{held / total:7.0%}  {held:5d}/{total:<6d} #{number:<5d} {opened}  {head}")
+    print(f"{'carried':>7}  {'lines':>12}  {'merge':<9} "
+          f"{'pr':<6} {'opened':<11} head")
+    for held, total, number, head, opened, _, blocked in rows:
+        print(f"{held / total:7.0%}  {held:5d}/{total:<6d} {remedy(blocked):<9} "
+              f"#{number:<5d} {opened}  {head}")
+
+    stuck = [row for row in rows if row[0] == 0 and row[6]]
+    if stuck:
+        print(f"\n{len(stuck)} head(s) carried at 0% that also conflict — the "
+              f"fold overwrote these, so carrying them is re-authoring, not a "
+              f"merge:")
+        for _, total, number, head, _, _, blocked in stuck:
+            print(f"  #{number} {head}: {total} line(s), none carried; "
+                  f"conflicts in {', '.join(blocked)}")
 
     if not args.absent:
         return
-    for held, total, number, head, _, missing in rows:
+    for held, total, number, head, _, missing, _ in rows:
         if not missing:
             continue
         print(f"\n--- #{number} {head}: {len(missing)} of {total} absent verbatim")

@@ -91,5 +91,48 @@ class Absent(unittest.TestCase):
         self.assertEqual(f.absent([LONG], set()), [LONG])
 
 
+OID = "7fc53fc41c74c74b262b5894a6aafe900a413158"
+
+CONFLICTS = (f"{OID}\n"
+             "plugins/p/skills/a/SKILL.md\n"
+             "plugins/p/skills/b/SKILL.md\n"
+             "\n"
+             "Auto-merging plugins/p/skills/a/SKILL.md\n"
+             "CONFLICT (content): Merge conflict in plugins/p/skills/a/SKILL.md\n"
+             "Auto-merging plugins/p/skills/b/SKILL.md\n"
+             "CONFLICT (content): Merge conflict in plugins/p/skills/b/SKILL.md\n")
+
+
+class Conflicted(unittest.TestCase):
+    def test_names_each_conflicted_path_once(self):
+        # git prints every path twice — once as the list, once in its own
+        # prose. Counting both doubles the price of every blocked head.
+        self.assertEqual(f.conflicted(CONFLICTS),
+                         ["plugins/p/skills/a/SKILL.md",
+                          "plugins/p/skills/b/SKILL.md"])
+
+    def test_a_clean_merge_is_the_oid_alone(self):
+        self.assertEqual(f.conflicted(f"{OID}\n"), [])
+
+    def test_the_oid_is_never_a_path(self):
+        # It leads both outputs, so a parser that forgets to drop it prices
+        # every clean merge as one conflicted file.
+        self.assertNotIn(OID, f.conflicted(CONFLICTS))
+
+    def test_prose_after_the_blank_line_is_not_a_path(self):
+        self.assertEqual([p for p in f.conflicted(CONFLICTS) if " " in p], [])
+
+
+class Remedy(unittest.TestCase):
+    def test_no_conflicts_reads_as_clean(self):
+        # The actionable case: the fold merely predates the head, so one
+        # `git merge` carries it. Separating this from the next row is the
+        # whole reason the column exists.
+        self.assertEqual(f.remedy([]), "clean")
+
+    def test_conflicts_are_counted_by_file(self):
+        self.assertEqual(f.remedy(["a/SKILL.md", "b/SKILL.md"]), "2 file(s)")
+
+
 if __name__ == "__main__":
     unittest.main()
