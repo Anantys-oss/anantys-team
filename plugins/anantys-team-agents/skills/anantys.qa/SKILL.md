@@ -22,8 +22,8 @@ Invoked as `/anantys.qa <action> [args]`. If no action is given, infer it: no `.
 |---|---|
 | `init` | Interview the operator and write `.anantys/qa.md` — the project's environment contract |
 | `plan` | Derive `qa-plan.md` from the feature source: a spec-kit dir, a `--brief <file.md>`, `--from linear:<SKU-…>`, or `--from pr:<url>` |
-| `run` | Execute the plan in a browser — `--env <name>` targets a deployed environment (staging / preview); default is the environment marked default — recording results and appending to `qa-runs.md`. Runs **autonomous** (whole plan, report at the end) or **interactive** (stop at the first DEFECT, print the fix brief) — asked once per session, or `--mode <autonomous\|interactive>` |
-| `retest` | Re-run only what is unresolved plus the regression-risk cases around each fix (`--env <name>` as for `run`) |
+| `run` | Execute the plan in a browser — `--env <name>` targets a deployed environment (staging / preview); default is the environment marked default — recording results and appending to `qa-runs.md`. Runs **autonomous** (whole plan, report at the end) or **interactive** (stop at the first *new* DEFECT, print the fix brief) — asked once per session, or `--mode <autonomous\|interactive>` |
+| `retest` | Re-run only what is unresolved plus the regression-risk cases around each fix (`--env <name>` and `--mode <…>` as for `run`) |
 | `note` | Record an operator adjudication into the plan so it is never re-filed — scoped to one environment (`--env <name>`) or to `--env all` |
 | `report` | Emit `qa-report.md` — a fix brief to paste into a dev session (`--env <name>`; default: the last run's environment) |
 | `status` | Summarize coverage and remaining blockers without running anything (`--env` as for `report`) |
@@ -279,10 +279,6 @@ deployed to staging but not the local stack, or the reverse):
   per-environment. A ruling applies only to its own environment, or to all of them when scoped
   `all`.
 
-Testing a shipped feature on `staging` is often easier than reproducing its data locally —
-but the `shared` rules above are not optional, because the blast radius of a reset or a stray write
-there is real data, not a fixture.
-
 ## `run` — execute the campaign
 
 Preconditions: `.anantys/qa.md` exists, `qa-plan.md` exists — and, if `qa-plan.md` carries an
@@ -290,10 +286,22 @@ Preconditions: `.anantys/qa.md` exists, `qa-plan.md` exists — and, if `qa-plan
 
 ### Run mode — asked once per session
 
-The first `run` or `retest` of a Claude session asks the operator which mode to use, before
-preflight — one `AskUserQuestion`, both options described. Reuse that answer for every later `run` /
-`retest` in the same session without asking again; `--mode autonomous|interactive` skips the
-question and overrides the remembered answer for that call. Never pick a mode yourself.
+The first `run` or `retest` of a Claude session **that is not given `--mode`** asks the operator
+which mode to use, before preflight — one `AskUserQuestion`, both options described. The answer is
+remembered for the session: reuse it for every later `run` / `retest` without asking again. With an
+operator in the loop, never pick a mode yourself.
+
+`--mode autonomous|interactive` skips the question and applies to that call only — **only the
+question records a remembered answer**. So a session whose first call carried `--mode` still has
+none, and the next bare `run` / `retest` asks.
+
+**With no operator in the loop — dispatched through `Task`, headless (`claude --print`), or
+scheduled — do not ask: run `autonomous`, and say the mode was defaulted because the session could
+not be asked.** `AskUserQuestion` is interactive-only; the modes differ only in where the
+operator's **attention** goes, so with nobody watching there is nothing to route. This default
+covers only this question: the `shared` pre-write go, the unverified-build stop and a missing
+credential authorise a risk to real data instead, so a session that cannot ask stops at those
+rather than assuming them.
 
 - **Autonomous** — walk the **whole** plan without stopping on a defect. Record every DEFECT as it
   is found, and at the end write `qa-report.md` exactly as `report` does.
