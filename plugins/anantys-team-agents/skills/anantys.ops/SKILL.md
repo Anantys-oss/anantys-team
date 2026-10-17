@@ -49,12 +49,34 @@ If no prior data exists, note this is the first audit and skip comparisons. When
 Navigate to the hub/landing URL the user gave. Screenshot it, then extract (via `get_page_text` + JS) and evaluate:
 
 - Title (`document.title`) — 50-60 chars ideal — and meta description — 150-160 chars ideal.
+  **These are the strings you authored, not the ones the search engine shows.** Record them as
+  `as-authored` and leave the verdict open until Phase 4 reads the SERP (below).
 - Heading hierarchy (single H1, logical H2/H3).
 - Internal & external link counts and destinations.
 - Structured data (`<script type="application/ld+json">`), canonical URL, Open Graph / Twitter Card tags, mobile viewport meta.
 - Content depth and keyword coverage.
 
 Record all findings.
+
+**Authored is not displayed, and only one of them earns the click.** A search engine routinely
+replaces a `<title>` with an H1, an anchor text or a site name, and writes its own snippet from the
+passage matching the query rather than from your meta description. So a verdict reached here is a
+verdict on a string that may appear nowhere: *tightening a title the engine is already discarding
+is the most common wasted action in this whole report*, and it looks like a quick win every time.
+The DOM is a store; the SERP is the behaviour. Judge the behaviour.
+
+You already have it — Phase 4 navigates the SERP for each target query, and a prior audit's entry
+holds the last one. So:
+
+- Carry the authored title and description forward **unjudged** into Phase 5.
+- In Phase 5, set each against what Phase 4 actually observed for that page, and report both.
+- **A rewrite is a finding of its own**, and a different one: an engine substituting its own title
+  is saying the authored one did not answer the query. That is a relevance problem, not a length
+  problem, and a character count cannot see it. Name it as the finding and say which string is
+  earning the impressions.
+- No SERP observation for a page — it ranks for no target query, or Phase 4 did not run — then its
+  title and description are **unjudged**, and the report says so. A length verdict is not a
+  fallback for a missing observation; it is the thing this section exists to stop.
 
 ## Phase 1b: Top Page Deep-Dive
 
