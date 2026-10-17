@@ -560,5 +560,58 @@ class Parse(unittest.TestCase):
         self.assertIsNone(c.parse(self._write("no frontmatter here\n")))
 
 
+class AgentScopes(unittest.TestCase):
+    """An agent's `tools:` is a toolset — see docs/a-scope-the-loader-drops.md."""
+
+    def test_a_scoped_bash_grant_on_an_agent_is_an_error(self):
+        errors, _ = agent(["Bash(git diff:*)", "Read"], "Run `git diff --stat`.")
+        self.assertIn("`Bash(git diff:*)` scopes nothing", errors[0])
+
+    def test_the_same_grant_on_a_skill_is_clean(self):
+        """The whole point: one spelling, two fields, two meanings."""
+        errors, _ = role(["Bash(git diff:*)"], "Run `git diff --stat`.")
+        self.assertEqual(errors, [])
+
+    def test_a_scoped_agent_grant_is_measured_as_the_bare_tool(self):
+        """Not just reported — the role really does hold all of `Bash`, so the
+        command check may not go on rejecting what the runtime permits."""
+        errors, _ = agent(["Bash(git diff:*)"], "```bash\nrm -rf build\n```")
+        self.assertEqual(len(errors), 1)
+        self.assertIn("scopes nothing", errors[0])
+
+    def test_two_scopes_on_one_tool_report_twice_and_grant_once(self):
+        errors, warnings = agent(
+            ["Bash(git diff:*)", "Bash(gh pr view:*)"], "```bash\ngit push\n```"
+        )
+        self.assertEqual(len(errors), 2)
+        self.assertEqual(warnings, [])
+
+    def test_task_keeps_its_scope(self):
+        """`ruleContent` is read for exactly one tool: it is the list of
+        subagent types the agent may spawn."""
+        errors, warnings = agent(["Task(sub)", "Read"], "Dispatch with `Task`.")
+        self.assertEqual(errors, [])
+        self.assertEqual(warnings, [])
+
+    def test_a_scoped_task_grant_still_covers_a_dispatch(self):
+        errors, _ = agent(["Task(other)"], "Dispatch other for this.", agents=("other",))
+        self.assertEqual(errors, [])
+
+    def test_an_unscoped_agent_grant_list_is_untouched(self):
+        errors, _ = agent(["Bash", "Read", "Glob", "Grep"], "Run `git diff --stat`.")
+        self.assertEqual(errors, [])
+
+    def test_the_bare_bash_census_sees_a_widened_grant(self):
+        """`main` counts roles holding unrestricted shell. An agent whose only
+        Bash is scoped belongs in that census — it holds the same tool."""
+        self.assertEqual(c.agent_scopes(["Bash(git diff:*)"])[1], ["Bash"])
+
+
+def agent(grants, body, agents=()):
+    return c.check(
+        Path("a.md"), grants, body, {"navigate", "tabs_context_mcp"}, agents, True
+    )
+
+
 if __name__ == "__main__":
     unittest.main()

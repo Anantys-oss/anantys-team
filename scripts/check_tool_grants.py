@@ -36,6 +36,15 @@ genuinely need, so `main` prices it instead: one per-tree warning naming the
 roles it cannot speak about. What it does forbid is a prefix sitting *beside*
 bare `Bash`, where the audit records a restriction the same frontmatter voids.
 
+All of the above reads one field under two names, and the loader does not. A
+skill's `allowed-tools` is a *permission* list: a `Tool(scope)` entry becomes an
+allow rule and the scope binds. An agent's `tools:` is a *toolset* list: the
+loader splits each entry into a tool name and a rule body, looks the tool up by
+the bare name, and keeps only the tool. The scope is parsed and thrown away. So
+`Bash(git diff:*)` on an agent is bare `Bash` spelled at length — every command,
+not just `git diff` — and the narrowing exists only in the reader's head. See
+`agent_scopes`, and `docs/a-scope-the-loader-drops.md` for the measurement.
+
 Errors that predate this gate are declared in `tool-grants-baseline.txt` rather
 than fixed here — see `baseline()` for why the gate may not fix its own subject.
 
@@ -58,6 +67,8 @@ GENERIC = {"Bash", "Read", "Write", "Edit", "Glob", "Grep"}
 # `git x` is two calls, both inside `Bash(git:*)`, and `git fetch <url>` reaches
 # the network. Naming a subcommand escapes this set on purpose: the hatches are
 # themselves subcommands, so `Bash(git diff:*)` rejects `git config` already.
+# All of that is about a *skill*: on an agent no prefix bounds anything at all,
+# which `agent_scopes` reports before this set is ever consulted.
 UNBOUNDED = {
     "bash",
     "docker",
@@ -236,11 +247,13 @@ def bash_commands(body, heads=frozenset(), known_mcp=frozenset()):
     """Every command the prose runs: bash-fenced lines, plus inline code spans.
 
     Each line is split into its commands by `segments`, and each is kept whole
-    from its first word on, because a grant may name a subcommand:
-    `Bash(git diff:*)` permits `git diff --stat` and nothing else `git`.
-    Truncating to the first word would compare `git` against `git diff` and
-    reject every narrowed grant — pushing authors to `Bash(git:*)`, which
-    `UNBOUNDED` rejects.
+    from its first word on, because a skill's grant may name a subcommand:
+    `allowed-tools: Bash(git diff:*)` permits `git diff --stat` and nothing else
+    `git`. Truncating to the first word would compare `git` against `git diff`
+    and reject every narrowed grant — pushing authors to `Bash(git:*)`, which
+    `UNBOUNDED` rejects. On an agent the same spelling permits all of `git` and
+    everything else besides; `agent_scopes` strips it before this runs, so the
+    comparison here is always against grants that really do bound something.
 
     Inline spans are read too, because a fence is not where a role writes a
     one-off command. These roles write prose, not runbooks: of 37 fences in the
@@ -297,8 +310,51 @@ def permitted(command, prefixes):
     return any(command == p or command.startswith(p + " ") for p in prefixes)
 
 
-def check(path, grants, body, known_mcp, agents=()):
+def agent_scopes(grants):
+    """Report and strip the `(...)` an agent's `tools:` cannot keep.
+
+    Measured against the loader in Claude Code 2.1.278. Resolving an agent's
+    toolset walks the declared list, splits each entry into `{toolName,
+    ruleContent}`, and looks the *tool* up by the bare name; the resolved set
+    holds whole tools. `ruleContent` is read for exactly one tool — `Task`,
+    where it is the comma-separated list of subagent types the agent may spawn.
+    For every other tool it is discarded, and nothing re-adds it as a permission
+    rule: an agent's `tools:` never reaches the allow-rule table that a skill's
+    `allowed-tools` feeds.
+
+    So `tools: ["Bash(git diff:*)", "Read"]` resolves to the full `Bash` tool
+    and `Read`. That is not a weaker narrowing, it is none — `rm -rf` and
+    `git push` are inside it — while the frontmatter still reads to a reviewer
+    as a read-only grant, and every other check in this file reads it that way
+    too. Hence the strip: downstream, the role is measured against what it
+    actually holds.
+
+    The remedy is never "write a tighter scope", because no scope is kept.
+    Either grant the bare tool and say in prose what the role may run — an
+    agent is a prompt, and the prompt is the only place that restriction can
+    live — or drop the tool.
+    """
+    errors, widened = [], []
+    for grant in grants:
+        name, paren, _ = grant.partition("(")
+        if not paren or name == "Task":
+            widened.append(grant)
+            continue
+        errors.append(
+            f"`{grant}` scopes nothing — an agent's `tools:` is a toolset, not a "
+            f"permission list, so the loader keeps `{name}` and drops the rest; "
+            f"bound it in the prose or grant `{name}` plainly"
+        )
+        widened.append(name)
+    # Two scoped entries on one tool collapse to one grant, not two.
+    return errors, list(dict.fromkeys(widened))
+
+
+def check(path, grants, body, known_mcp, agents=(), is_agent=False):
     errors, warnings = [], []
+    if is_agent:
+        scope_errors, grants = agent_scopes(grants)
+        errors += scope_errors
     lowered = body.lower()
     dispatched = sorted(a for a in agents if a in body)
 
@@ -352,7 +408,10 @@ def check(path, grants, body, known_mcp, agents=()):
     # tool — so this direction is invisible to the mention check below. It is the
     # direction that matters most: a dispatched agent runs with the dispatcher's
     # grants, so `Task` is not one capability but the whole union, delegated.
-    if dispatched and "Task" not in grants:
+    # `Task(a,b)` is a held `Task`, narrowed to those agent types — the one
+    # scope an agent's `tools:` keeps, and the reason `agent_scopes` leaves it
+    # alone. A literal membership test reads it as a different tool entirely.
+    if dispatched and "Task" not in {g.partition("(")[0] for g in grants}:
         errors.append(f"prose dispatches {', '.join(dispatched)} but `Task` is not granted")
 
     # Browser primitives are used implicitly ("take a screenshot" is `computer`),
@@ -360,7 +419,13 @@ def check(path, grants, body, known_mcp, agents=()):
     for grant in grants:
         if grant in GENERIC or grant.startswith("mcp__"):
             continue
-        name = grant[5:-1].split(":", 1)[0] if grant.startswith("Bash(") else grant
+        # A `Bash(...)` prefix is answered by the command it names; any other
+        # scope is answered by the tool, since the prose names the tool.
+        name = (
+            grant[5:-1].split(":", 1)[0]
+            if grant.startswith("Bash(")
+            else grant.partition("(")[0]
+        )
         # Case-sensitively, on a word boundary. A case-folded substring test lets
         # an ordinary English word discharge a grant that shares its spelling:
         # `Task` was satisfied by "tasks.md", `Bash(ls:*)` by "tools". Those are
@@ -444,7 +509,9 @@ def main(root):
             failed = True
             continue
         body, orphans = prose_surface(path, p[1])
-        errors, warnings = check(path, p[0], body, known_mcp, agents)
+        errors, warnings = check(
+            path, p[0], body, known_mcp, agents, path.parent.name == "agents"
+        )
         warnings += orphans
         for e in errors:
             entry = f"{rel}: {e}"
