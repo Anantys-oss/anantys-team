@@ -212,9 +212,48 @@ class TestMutations(unittest.TestCase):
     def test_a_refusal_of_an_ungranted_tool_cannot_be_scored(self):
         errors = self.mutate("[Skill, Bash, Read, Write]", "[Skill, Bash, Read]")
         self.assertTrue(
-            any("refusal of Write, which the case does not grant" in e
+            any("verdict about Write, which the case does not grant" in e
                 for e in errors),
             errors,
+        )
+
+    def test_a_demanded_call_on_an_ungranted_tool_cannot_be_scored(self):
+        """The mirror of the refusal case: `min: 1` on a tool nobody granted.
+
+        The harness reports this one, but only against `--allow-tools`; a case
+        whose own `allowed_tools` withholds the tool passes its reachability
+        check and then holds a grader that can never be satisfied.
+        """
+        errors = self.mutate("    tool: Skill\n", "    tool: WebFetch\n")
+        self.assertTrue(
+            any("verdict about WebFetch, which the case does not grant" in e
+                for e in errors),
+            errors,
+        )
+
+    def test_exists_true_needs_a_tool_that_can_write_a_file(self):
+        errors = self.mutate("[Skill, Bash, Read, Write]", "[Skill, Read]")
+        self.assertTrue(
+            any("passes only if the run creates src/checkout.js" in e
+                for e in errors),
+            errors,
+        )
+
+    def test_exists_true_is_reachable_through_bash_alone(self):
+        """Write is not the only way a run puts a file on disk."""
+        errors = self.mutate("[Skill, Bash, Read, Write]", "[Skill, Bash, Read]")
+        self.assertFalse(
+            [e for e in errors if "passes only if the run creates" in e], errors
+        )
+
+    def test_exists_false_does_not_need_a_write_grant(self):
+        case = GOOD_CASE.replace(
+            "[Skill, Bash, Read, Write]", "[Skill, Read]"
+        ).replace("exists: true", "exists: false")
+        with SuiteFixture(case=case) as fixture:
+            errors = fixture.errors()
+        self.assertFalse(
+            [e for e in errors if "passes only if the run creates" in e], errors
         )
 
     def test_a_trace_grader_needs_bash(self):

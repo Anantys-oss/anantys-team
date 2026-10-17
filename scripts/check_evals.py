@@ -84,6 +84,13 @@ KINDS = {"regex", "tool_used", "file_exists", "llm", "baseline"}
 # A grader key this parser could not read. `check_suite` turns it into an error:
 # a dropped grader makes this gate the thing it exists to prevent.
 UNREADABLE = "__unreadable__"
+# The tools that can put a file on disk. A `file_exists exists: true` grader
+# asserts the run created one, so a case granting none of these holds a verdict
+# that is decided before the first turn. The harness computes the same
+# reachability but reads it off `--allow-tools` alone — a case whose own
+# `allowed_tools` withholds the tool is not what it checks, so this is the only
+# place that side is checked.
+WRITERS = {"Bash", "Edit", "Write"}
 
 
 def scalar(value: str) -> str:
@@ -302,23 +309,18 @@ def check_suite(evals_dir: pathlib.Path) -> list[str]:
 
             if gtype == "tool_used":
                 tool = grader.get("tool")
-                if grader.get("max") == "0":
-                    if grader.get("min") != "0":
-                        errors.append(
-                            f"{where}: grader '{gname}' has max: 0 without min: 0 — "
-                            f"min defaults to 1, so it asks for 1..0 and fails on a "
-                            f"correct refusal"
-                        )
-                    if tool not in allowed:
-                        errors.append(
-                            f"{where}: grader '{gname}' scores a refusal of {tool}, "
-                            f"which the case does not grant — a refusal only counts "
-                            f"when the action was available"
-                        )
-                if tool == "Skill" and "Skill" not in allowed:
+                if grader.get("max") == "0" and grader.get("min") != "0":
                     errors.append(
-                        f"{where}: grader '{gname}' asserts a Skill call, but the "
-                        f"case does not grant Skill"
+                        f"{where}: grader '{gname}' has max: 0 without min: 0 — "
+                        f"min defaults to 1, so it asks for 1..0 and fails on a "
+                        f"correct refusal"
+                    )
+                if tool not in allowed:
+                    errors.append(
+                        f"{where}: grader '{gname}' is a verdict about {tool}, "
+                        f"which the case does not grant — the model never sees "
+                        f"the tool, so no call and no refusal of one can occur "
+                        f"and the verdict is fixed before the run starts"
                     )
                 skill = grader.get("input_match")
                 if tool == "Skill" and skill:
@@ -338,8 +340,16 @@ def check_suite(evals_dir: pathlib.Path) -> list[str]:
                 errors += check_pattern(where, gname, grader, vectors)
                 documented.add(gname)
 
-            if gtype == "file_exists" and not grader.get("path"):
-                errors.append(f"{where}: grader '{gname}' has no path")
+            if gtype == "file_exists":
+                if not grader.get("path"):
+                    errors.append(f"{where}: grader '{gname}' has no path")
+                elif grader.get("exists") == "true" and not WRITERS & set(allowed):
+                    errors.append(
+                        f"{where}: grader '{gname}' passes only if the run "
+                        f"creates {grader['path']}, and the case grants no tool "
+                        f"that can write a file "
+                        f"({', '.join(sorted(WRITERS))}) — it can never pass"
+                    )
 
         if not witnesses(graders):
             errors.append(
