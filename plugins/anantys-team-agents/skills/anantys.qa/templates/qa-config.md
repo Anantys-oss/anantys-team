@@ -13,6 +13,8 @@ with no local stack. Each is one **kind**:
   additively; driven through the operator's already-signed-in browser. Has **no** Reset block — an
   explicit "Reset: NONE" instead. Says whether it is production (`Production: yes | no`); on
   production, scenarios that charge a card, record consent or notify a real person are BLOCKED.
+  **A `shared` block with no `Production:` line is read as `Production: yes`** — the guards apply
+  until the line is there, because the other reading is the one that charges a real card.
 
 Every environment says **what drives the browser** in its `Driven by:` line — the operator's
 connected browser, or a named local command. A `shared` env is always the operator's browser.
