@@ -15,6 +15,7 @@ from check_ci_coverage import (  # noqa: E402
     scan,
     steps,
     unloadable,
+    yieldless,
 )
 
 ON_PR = "on:\n  pull_request:\n\njobs:\n  j:\n    steps:\n"
@@ -24,10 +25,19 @@ RUN_A = "      - run: python3 scripts/check_a.py\n"
 DISCOVER = "      - run: python3 -m unittest discover -s scripts\n"
 
 
+# A test module the `unittest` loader can see. `tree`'s `#\n` stub is a module
+# that collects nothing, which `yieldless` now reports — correctly, but every
+# fixture here is about *wiring*, so the stub has to be the shape a real test
+# module is. Tests about collectability write their own body.
+COLLECTABLE = "import unittest\n\n\nclass T(unittest.TestCase):\n    def test_x(self):\n        pass\n"
+
+
 def tree(root, scripts=(), workflows=()):
     (root / "scripts").mkdir()
     for name in scripts:
-        (root / "scripts" / name).write_text("#\n")
+        (root / "scripts" / name).write_text(
+            COLLECTABLE if name.startswith("test_") else "#\n"
+        )
     (root / ".github/workflows").mkdir(parents=True)
     for name, text in workflows:
         (root / ".github/workflows" / name).write_text(text)
@@ -608,10 +618,77 @@ def test_the_repos_own_workflows_load(tmp_path):
         assert why is None, f"{workflow.name}: {why}"
 
 
-def scan_and_check(root):
+BARE = "def test_a():\n    assert False\n"
+ADAPTED = BARE + "\n\ndef load_tests(loader, tests, pattern):\n    return tests\n"
+
+
+def test_a_testcase_subclass_is_collectable():
+    assert yieldless(COLLECTABLE) is None
+
+
+def test_a_subclass_of_a_local_testcase_alias_is_collectable():
+    assert yieldless("class T(Base, unittest.TestCase):\n    pass\n") is None
+
+
+def test_bare_functions_alone_collect_nothing():
+    why = yieldless(BARE)
+    assert why and "test_a" in why and "load_tests" in why
+
+
+def test_a_load_tests_hook_makes_bare_functions_collectable():
+    assert yieldless(ADAPTED) is None
+
+
+def test_a_module_with_no_tests_at_all_collects_nothing():
+    assert yieldless("import unittest\n\n\ndef helper():\n    pass\n")
+
+
+def test_a_commented_out_hook_is_not_a_hook():
+    assert yieldless(BARE + "\n# def load_tests(loader, tests, pattern):\n")
+
+
+def test_an_indented_def_is_a_closure_not_a_case():
+    assert yieldless("class T:\n    def test_x(self):\n        pass\n")
+
+
+def test_a_bare_module_reached_by_discovery_is_an_error(tmp_path):
+    tree(tmp_path, ["check_a.py"], [("a.yml", ON_PR + RUN_A + DISCOVER)])
+    (tmp_path / "scripts/test_check_a.py").write_text(BARE)
+    errors, _ = scan_and_check(tmp_path, collectability=True)
+    assert len(errors) == 1 and "test_check_a.py" in errors[0]
+
+
+def test_the_same_module_with_the_adapter_is_clean(tmp_path):
+    tree(tmp_path, ["check_a.py"], [("a.yml", ON_PR + RUN_A + DISCOVER)])
+    (tmp_path / "scripts/test_check_a.py").write_text(ADAPTED)
+    assert scan_and_check(tmp_path, collectability=True) == ([], [])
+
+
+def test_no_discovery_step_reports_the_wiring_not_the_module(tmp_path):
+    """One error, about the missing step. The module is uncollectable *and*
+    unreached; naming both reads as two defects over one cause, and fixing the
+    wiring is what makes the second one true."""
+    tree(tmp_path, ["check_a.py"], [("a.yml", ON_PR + RUN_A)])
+    (tmp_path / "scripts/test_check_a.py").write_text(BARE)
+    errors, _ = scan_and_check(tmp_path, collectability=True)
+    assert len(errors) == 1 and "unittest discover" in errors[0]
+
+
+def test_this_repos_own_test_modules_are_all_collectable():
+    root = Path(__file__).resolve().parent
+    for module in sorted(root.glob("test_*.py")):
+        why = yieldless(module.read_text(encoding="utf-8"))
+        assert why is None, f"{module.name}: {why}"
+
+
+def scan_and_check(root, collectability=False):
     checkers, named, gating, why, discovers = scan(root)
     present = {p.name for p in (root / "scripts").glob("*.py")}
-    return check(checkers, named, gating, present, why, discovers)
+    sources = {
+        p.name: p.read_text(encoding="utf-8")
+        for p in sorted((root / "scripts").glob("test_*.py"))
+    } if collectability else None
+    return check(checkers, named, gating, present, why, discovers, sources)
 
 
 def load_tests(loader, tests, pattern):

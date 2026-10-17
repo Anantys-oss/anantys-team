@@ -14,7 +14,7 @@ whether or not any workflow runs the checker, so an orphaned gate shows a green
 tick next to its own name. The tests prove the script is correct about a fixture.
 Only a workflow step proves it ever read this repo.
 
-Two directions, both errors:
+Three directions, all errors:
 
 - a `scripts/check_*.py` that no pull-request-triggered workflow runs. Guarding
   nothing. A workflow that fires only `on: push: branches: [main]` does not
@@ -22,6 +22,12 @@ Two directions, both errors:
 - a workflow step naming a `scripts/*.py` that does not exist. This is the
   rename direction, and it is how a working gate becomes a missing one without
   anybody editing the gate.
+- a `scripts/test_*.py` that the discovery step reaches and collects nothing
+  from. Reaching a module is not the same as the module handing the loader a
+  case, and the gap between the two is this file's own subject one level in:
+  `unittest` sees `TestCase` subclasses and a `load_tests` hook, so a module of
+  bare `test_*` functions yields zero cases while `unittest discover` prints
+  `NO TESTS RAN` and exits 0. See `yieldless`.
 
 `push: branches: [main]` is one way a trigger fires too late, not the only one,
 and the others live *under* the `pull_request:` key rather than beside it. The
@@ -307,6 +313,44 @@ TABBED = re.compile(r"^ *\t", re.M)
 PLAIN_COLON = re.compile(
     r"""(?m)^\s*(?:-\s*)?[\w.-]+:[ ]+(?![-#|>&*!'"\[{])[^'"\n]*?:(?:[ ]|$)"""
 )
+# The two shapes `unittest`'s loader can see in a test module, and the shape it
+# cannot. All three anchored at column 0: a commented-out `#def load_tests` is
+# not a hook, and a nested `def test_x` is a closure, not a case.
+LOAD_TESTS = re.compile(r"(?m)^def load_tests\b")
+TEST_CASE = re.compile(r"(?m)^class\s+\w+\s*\([^)]*TestCase")
+BARE_TEST = re.compile(r"(?m)^def (test_\w+)")
+
+
+def yieldless(text):
+    """Why `unittest` collects nothing from this test module, or None.
+
+    `scan` establishes that a discovery step reaches `scripts/`. Reaching a
+    module is not the same as the module handing the loader a case: `unittest`
+    collects `TestCase` subclasses and a `load_tests` hook, and nothing else. A
+    module of bare `test_*` functions — the pytest dialect, which the two
+    largest suites here are written in — yields *zero* cases, and `unittest
+    discover` reports `NO TESTS RAN` and exits 0. Every gate stays green over a
+    suite whose every assertion is false.
+
+    Both such modules in this repo carry a hand-written `load_tests` adapter, so
+    the failure is one deletion and one new file away rather than live. That is
+    the whole reason to check it here: the adapter is duplicated prose that
+    nothing requires, and the gate asserting the suite runs is the only thing
+    that can make its absence loud.
+
+    Static on purpose. Executing the module to count its cases would make this
+    gate the thing it is checking — green because an import happened to work.
+    """
+    if LOAD_TESTS.search(text) or TEST_CASE.search(text):
+        return None
+    bare = BARE_TEST.findall(text)
+    if bare:
+        return (
+            f"defines {len(bare)} bare `test_*` function(s) ({bare[0]}, …) and neither a "
+            "`TestCase` subclass nor a `load_tests` hook — `unittest discover` collects "
+            "none of them and still exits 0"
+        )
+    return "hands `unittest discover` no `TestCase` subclass and no `load_tests` hook"
 
 
 def nested(lines, index):
@@ -515,8 +559,12 @@ def scan(root):
     return checkers, named, gating, why, discovers
 
 
-def check(checkers, named, gating, present, why, discovers):
-    """(errors, warnings) for one tree. `present` is every file in `scripts/`."""
+def check(checkers, named, gating, present, why, discovers, sources=None):
+    """(errors, warnings) for one tree. `present` is every file in `scripts/`.
+
+    `sources` maps a test module's name to its text; omit it to skip the
+    collectability check and assert wiring only.
+    """
     why = why or {}
     errors = []
     if not discovers and any(name.startswith("test_") for name in present):
@@ -524,6 +572,11 @@ def check(checkers, named, gating, present, why, discovers):
             "no pull-request workflow runs `unittest discover -s scripts` — the gates "
             "are wired, and nothing runs the tests that say they are right"
         )
+    if discovers:
+        for name, text in sorted((sources or {}).items()):
+            why_not = yieldless(text)
+            if why_not:
+                errors.append(f"scripts/{name}: {why_not}")
     for name in sorted(checkers - gating.keys()):
         where = named.get(name)
         errors.append(
@@ -544,7 +597,11 @@ def main(argv=None):
     root = Path((argv or sys.argv[1:] or ["."])[0]).resolve()
     checkers, named, gating, why, discovers = scan(root)
     present = {p.name for p in (root / "scripts").glob("*.py")}
-    errors, warnings = check(checkers, named, gating, present, why, discovers)
+    sources = {
+        p.name: p.read_text(encoding="utf-8")
+        for p in sorted((root / "scripts").glob("test_*.py"))
+    }
+    errors, warnings = check(checkers, named, gating, present, why, discovers, sources)
 
     for warning in warnings:
         print(f"warning: {warning}")
