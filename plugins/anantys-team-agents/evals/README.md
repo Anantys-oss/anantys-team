@@ -80,6 +80,29 @@ with `Not logged in · Please run /login`. Run the suite from a logged-in termin
 (or export an API key); the suite's structure, scaffolds and deterministic graders
 all load and score without one.
 
+### Asking the loader to read the suite, for free
+
+That last sentence has a command. `--max-cost-usd` is checked *before each run
+launches*, so a ceiling of zero stops the suite after discovery and schema
+validation and before the first child:
+
+```bash
+claude plugin eval ./plugins/anantys-team-agents \
+  --allow-tools Bash Edit Write --trust-plugin --no-publish --max-cost-usd 0
+```
+
+Zero runs, zero dollars, no credential — verified under `env -i` with a sealed
+`HOME`. What it still does is the loader's own reading of every `case.yaml`:
+the real schema, and each grader's reachability under the granted tools. CI runs
+it (`.github/workflows/evals.yml`), which is where the two gates' division of
+labour is written down.
+
+Two cautions. The exit code is a constant **2** — `partial: cost_ceiling` —
+whether the suite is clean or not, and `--json` records no diagnostics, so the
+verdict has to be read off the diagnostic stream. And `--allow-tools` must name
+every gated tool the cases ask for: pass fewer and the loader correctly reports
+graders as unreachable that are reachable under the invocation above.
+
 ## Checking the graders themselves
 
 Eight graders are decided by a regex — seven distinct patterns, one of them

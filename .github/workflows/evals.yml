@@ -14,6 +14,42 @@ name: evals
 # when nothing happened. `scripts/check_evals.py` executes the must-match /
 # must-not-match table in `evals/README.md` — vectors that were verified once,
 # by hand, at authoring time and that nothing re-ran until now.
+#
+# "The suite cannot run here" was true of the *agent runs* and was read as true
+# of the whole command. It is not: `claude plugin eval` discovers the cases,
+# validates each one against the real schema, and computes grader reachability
+# before it launches anything, and `--max-cost-usd 0` is checked *before each
+# run launches* — so the ceiling stops the suite at zero agent runs, zero
+# dollars and no credential at all (verified under `env -i` with a sealed HOME).
+# That layer is the loader's own reading of these files, and it is the one
+# reading that cannot drift from what actually runs them.
+#
+# Measured against `check_evals.py` over 15 single-mutation corruptions of this
+# suite, the two gates overlap on 3 and each sees five or six the other does not:
+#
+#   loader only (5)  runs: 0 · execution.max_turns: 0 · timeout_seconds: 0 ·
+#                    schema_version removed · execution.prompt removed
+#   both (3)         an unknown grader `type:` · `graders:` misspelled ·
+#                    a grader about a tool the case does not grant
+#   check_evals (6)  name != directory · input_match naming a skill the plugin
+#                    does not ship · a pattern that no longer compiles, or that
+#                    drifted from the README row verifying it · allowed_tools
+#                    emptied · `exists: true` with no write-capable grant ·
+#                    `max: 0` without `min: 0`
+#   neither (1)      a scaffold_script path outside its case directory. The
+#                    README says the harness refuses one; under the ceiling no
+#                    case launches, so nothing resolves the path. That claim is
+#                    still verified only by hand.
+#
+# The last two `check_evals` rows are the asymmetry worth naming: the loader
+# computes grader reachability too, but against `--allow-tools` alone. A case
+# whose own `allowed_tools` withholds the tool passes the loader's check and
+# still holds a grader whose verdict was decided before the first turn.
+#
+# The loader's exit code cannot carry the verdict — `--max-cost-usd 0` always
+# exits 2 ("partial: cost_ceiling"), clean suite or not — and `--json` records
+# no diagnostics. So the step reads the diagnostic stream, which is why the
+# strings it greps for are pinned to a CLI version here.
 
 on:
   push:
@@ -27,3 +63,22 @@ jobs:
       - uses: actions/checkout@v4
       - run: python3 -m unittest discover -s scripts
       - run: python3 scripts/check_evals.py
+
+      # `--allow-tools` has to name every gated tool the cases ask for, or the
+      # loader reports graders as unreachable that are reachable under the
+      # README's documented invocation. `--scaffold` is deliberately absent: no
+      # case launches under the ceiling, so no scaffold would run, and CI has no
+      # business being the place that proves it.
+      - run: npm install -g @anthropic-ai/claude-code@2.1.278
+      - name: the loader's own reading of the suite
+        run: |
+          out="$RUNNER_TEMP/loader.out"
+          # The ceiling makes the exit code a constant 2, so the pipeline's
+          # status is tee's and the verdict comes from the next line.
+          claude plugin eval ./plugins/anantys-team-agents \
+            --allow-tools Bash Edit Write \
+            --trust-plugin --no-publish --max-cost-usd 0 2>&1 | tee "$out"
+          # Every schema rejection is a `✗` line. The reachability finding is a
+          # `⚠`, which the loader also uses for advisories, so that one is
+          # matched by its wording.
+          ! grep -E '^✗ |cannot pass with the granted tools|not granted \(missing' "$out"
