@@ -33,6 +33,17 @@ a checker, so `evals/` and any line naming `scripts/` are out of the comparison.
 Judging a branch against a contract it disclaimed produces exactly the one false
 row that teaches a reader to skip the section.
 
+**A fold carries a prefix of the queue, so the report is split at its tip date.**
+A fold is written against the heads that existed when it was written; every head
+opened after it is content the fold never saw, and scores zero for a reason that
+is not a gap in its work. Ranked by score alone those rows interleave with the
+genuine misses and the structure is invisible. Ranked against the fold's own tip
+date they separate, and the two numbers answer different questions: the older
+group says how well the fold did its job, the newer group says how much of the
+queue is still live after it lands. Both decide the merge; neither substitutes
+for the other. The boundary is computed, never asserted in prose here — a fold
+updated today has a different cliff than the same fold had last week.
+
 Usage: python3 scripts/fold_coverage.py <fold-ref> [--limit N] [--absent N]
 Exit 0 always — this is an operator report, not a gate.
 """
@@ -47,6 +58,9 @@ import sys
 MIN_LEN = 40
 
 PRODUCT = ("plugins", "README.md")
+
+# Row layout from measure(): (carried, wanted, pr, head, opened, absent).
+OPENED = 4
 
 
 def run(*args):
@@ -97,6 +111,21 @@ def changed(head):
     return in_scope(line.split("\t")[2] for line in numstat.splitlines())
 
 
+def tip_date(ref):
+    """The day the fold last saw the queue — the committer date of its tip."""
+    return run("git", "show", "-s", "--format=%cs", ref).strip()
+
+
+def split_at(rows, cut):
+    """``(opened on or before cut, opened after cut)`` — the prefix and the tail."""
+    return ([r for r in rows if r[OPENED] <= cut], [r for r in rows if r[OPENED] > cut])
+
+
+def totals(rows):
+    """``(carried, wanted)`` summed over ``rows``."""
+    return sum(r[0] for r in rows), sum(r[1] for r in rows)
+
+
 def open_prs(limit):
     out = run("gh", "pr", "list", "--state", "open", "--limit", str(limit),
               "--json", "number,headRefName,createdAt")
@@ -133,10 +162,17 @@ def main():
     args = ap.parse_args()
 
     rows = measure(args.fold, open_prs(args.limit))
-    print(f"Fold: {args.fold}   heads adding product lines: {len(rows)}\n")
-    print(f"{'carried':>7}  {'lines':>12}  {'pr':<6} {'opened':<11} head")
+    cut = tip_date(args.fold)
+    print(f"Fold: {args.fold}   tip {cut}   "
+          f"heads adding product lines: {len(rows)}\n")
+    for label, group in zip(("the fold saw", "opened since"), split_at(rows, cut)):
+        held, total = totals(group)
+        share = f"{held / total:.0%}" if total else "n/a"
+        print(f"  {label}  {len(group):3d} heads  {held:5d}/{total:<6d} carried  {share:>4}")
+    print(f"\n{'carried':>7}  {'lines':>12}  {'pr':<6} {'opened':<11} {'':<4}head")
     for held, total, number, head, opened, _ in rows:
-        print(f"{held / total:7.0%}  {held:5d}/{total:<6d} #{number:<5d} {opened}  {head}")
+        age = "new " if opened > cut else "    "
+        print(f"{held / total:7.0%}  {held:5d}/{total:<6d} #{number:<5d} {opened}  {age}{head}")
 
     if not args.absent:
         return

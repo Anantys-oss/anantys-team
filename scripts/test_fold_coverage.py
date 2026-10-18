@@ -74,6 +74,41 @@ class InScope(unittest.TestCase):
                          ["plugins/p/skills/evals-guide.md"])
 
 
+def row(held, total, opened):
+    """A measure() row — only the fields the age split reads are meaningful."""
+    return (held, total, 1, "koan/head", opened, [])
+
+
+class SplitAt(unittest.TestCase):
+    def test_a_head_opened_on_the_tip_day_is_one_the_fold_saw(self):
+        # Same-day is inclusive: the fold's tip is the last state it could read.
+        seen, since = f.split_at([row(1, 1, "2026-10-11")], "2026-10-11")
+        self.assertEqual((len(seen), len(since)), (1, 0))
+
+    def test_a_head_opened_after_the_tip_is_content_the_fold_never_saw(self):
+        seen, since = f.split_at([row(0, 20, "2026-10-17")], "2026-10-11")
+        self.assertEqual((len(seen), len(since)), (0, 1))
+
+    def test_the_split_keeps_every_row_exactly_once(self):
+        rows = [row(1, 1, "2026-09-24"), row(0, 9, "2026-10-17")]
+        seen, since = f.split_at(rows, "2026-10-11")
+        self.assertEqual(seen + since, rows)
+
+    def test_dates_compare_as_iso_strings_across_a_month_boundary(self):
+        # Lexical order is chronological for YYYY-MM-DD, which is why no parsing.
+        seen, since = f.split_at([row(1, 1, "2026-09-30")], "2026-10-01")
+        self.assertEqual((len(seen), len(since)), (1, 0))
+
+
+class Totals(unittest.TestCase):
+    def test_sums_carried_and_wanted_over_the_group(self):
+        self.assertEqual(f.totals([row(3, 4, "x"), row(1, 6, "y")]), (4, 10))
+
+    def test_an_empty_group_totals_zero_rather_than_raising(self):
+        # The tail is empty for a fold nothing has been opened after.
+        self.assertEqual(f.totals([]), (0, 0))
+
+
 class Absent(unittest.TestCase):
     def test_a_carried_line_is_not_absent(self):
         self.assertEqual(f.absent([LONG], {LONG}), [])
