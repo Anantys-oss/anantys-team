@@ -74,9 +74,19 @@ General DS hygiene to enforce in every fix (adapt to the project's actual system
 
 Turn the user's requests into a tracked task list with `TaskCreate` (one task per distinct design issue). Keep it visible and update statuses as you go. This is required — the user wants to see progress and proof per item.
 
+The list is **every issue this session will fix**, not only the ones the user named. Work arrives from two sources:
+- **Given** — the issues in the user's request.
+- **Found** — violations the audit scan (step 5) returns. Each becomes its own task when it is found.
+
+If the user named no specific issues (just a URL, or "clean this up"), the list starts empty: open the tab (step 3), run the audit scan from step 5 against the baseline, and seed the list from what it returns. A session with no tasks has nothing to prove and nothing to report — do not proceed to the report with an empty list; say the scan found nothing.
+
 ### 3. Open the dev URL once
 
-Create a tab, navigate to the dev URL, take a baseline screenshot, and read the rules. Keep this tab for the whole session.
+Create a tab, navigate to the dev URL, and take a **baseline screenshot**. Keep this tab for the whole session.
+
+The baseline is not a formality — it has two consumers:
+- The **audit scan** (step 5), when the task list has to be seeded from what the page actually shows.
+- The **report**, as the before-state the final screenshot is compared against. State what changed between the two; if nothing visibly changed, say so rather than listing the fixes as proven.
 
 ### 4. Per-TODO loop (the core discipline)
 
@@ -207,6 +217,9 @@ zone.querySelectorAll('*').forEach(el => {
    contrastFailures: [...new Map(fails.map(o => [o.cls + o.txt, o])).values()].slice(0,30),
    greenTextForReview: [...new Map(semantic.map(o => [o.cls, o])).values()].slice(0,15) });
 ```
+An empty result (`[]`) is the goal. **Anything returned is a new task, not a loose fix**: `TaskCreate` it, then run it through step 4 like any other — diagnose, fix in source, reload, re-read the computed value, screenshot, mark completed. A fix made here and not proven there is exactly the unverified fix the Rules forbid, and it would never reach the report.
+
+Re-run the scan after the last of them closes. A fix that resolves one element can shift another into violation, and the scan is the only thing that looks.
 
 **Read `examined` before you read the verdict.** `contrastFailures: []` with `examined: 0` is a scan that walked no text — a wrong `zone` selector, not a clean page. Only `examined > 0` with an empty `contrastFailures` is a pass.
 
@@ -259,11 +272,11 @@ If relevant, resize to 360–390px (`resize_window`) and re-screenshot to confir
 
 ## Report
 
-End with a verification table — one row per TODO, with the proof:
+End with a verification table — one row per task, given and found alike, with the proof:
 
 ```
-| # | Issue | Proof (computed / screenshot) | Status |
-|---|-------|-------------------------------|--------|
+| # | Issue | Source (given / found) | Proof (computed / screenshot) | Status |
+|---|-------|------------------------|-------------------------------|--------|
 ```
 
 `Status` is `completed` or `blocked` — never `in_progress`. For a `blocked` row, the Proof column
