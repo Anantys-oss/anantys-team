@@ -73,6 +73,26 @@ Fourteen, including the two largest trees in the queue:
 neither is reachable from the pull request list. Any report that enumerates the
 queue by reading open pull requests is blind to all fourteen.
 
+## Prior art, and what is actually new here
+
+Issue #65 (2026-10-11) found three of these by hand, over a 38-pull-request
+queue: `#26` ≡ `#58`, `#45` versus `#6`, and `#47` versus `#11`. That reading
+missed nothing available to it. It is credited here because the point of this
+page is not to re-announce those rows.
+
+What the measurement adds, seven days and 25 pull requests later:
+
+- **`#5` ⊂ `#90`** and **`#77` ⊂ `#79`** — two new containments, both opened
+  after #65 was written.
+- **The `#26`/`#58` pair is now a four-deep chain** through `#78` into `#89`.
+  A two-row hand finding became a four-row one without anyone noticing.
+- **22 of 77 heads are contained**, not 3 — the hand pass read open pull
+  requests, and 14 heads have none.
+- **The loader-gate family is six heads**, where #65 named two pairs.
+- It is **re-runnable**. #65's rows were correct and went stale in a week; a
+  queue that grows faster than it is read needs the check to be a command, not
+  a reading.
+
 ## Why nothing caught this
 
 Each of these branches passes every gate in the queue, because a gate reads one
