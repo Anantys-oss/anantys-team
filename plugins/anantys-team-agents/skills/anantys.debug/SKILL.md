@@ -54,8 +54,6 @@ Hold the line in one place: **an observed signal is evidence about behaviour; it
 ### 1. Reproduce first
 
 - Drive the app to the failing state (navigate + interact, or run the failing command/test).
-- **Capture the failure signal** before touching anything: `read_console_messages` for JS errors, the network response for a bad call, the server log line, the assertion diff, a screenshot. This is your baseline — you'll compare against it.
-- **Redact as you capture, not before you report.** A console line, a request header, a response body and a cookie jar are the four places a live app hands you a bearer token, a session id, an API key or someone's personal data — and you are reading them out of the operator's own signed-in session. Quote the **shape**, never the value: `Authorization: Bearer <redacted, 214 chars, exp 2026-09-24T11:02Z>`, `sessionId: <redacted>`, `email: <redacted user 4812>`. This costs you nothing diagnostically — a credential's *content* is virtually never the bug; its presence, shape, staleness or absence is, and the shape is what you just wrote down.
 - **Capture the failure signal** before touching anything: `read_console_messages` for JS errors, `read_network_requests` for a bad call's status and response, the server log line, the assertion diff, a screenshot. This is your baseline — you'll compare against it.
 - If it doesn't reproduce, stop and widen the net (env, data, timing) rather than guessing at a fix.
 

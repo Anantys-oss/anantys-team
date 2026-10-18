@@ -218,12 +218,12 @@ Then **wait for the user's decision.** Do not act on Merge/Close until they conf
 ## Rules
 
 - **Check out the branch locally** — always `git checkout <branch>` into the working tree; never review off remote-ref diffs. The human reads the diff in their editor.
-- **One branch at a time** — never batch diffs or decisions. That bounds what you *read*, not what you *account for*: the verdict still has to name the queue the branch lands into (Step C2).
+- **One branch at a time** — never batch diffs or decisions. "One at a time" applies to the
+  **independent** heads: a queue presented without collapsing it first charges the human a review
+  per PR for a decision set that is smaller, often far smaller. And it bounds what you *read*,
+  not what you *account for* — the verdict still has to name the queue the branch lands into (Step C2).
 - **A Merge verdict names the base it was computed against** — report `git rev-parse <base>` with it. If the base moved after you said it, the verdict expired; re-run Step C2 before anyone acts on it.
 - **A Close verdict names what superseded it** — the PR or commit, and what of this branch it leaves undone. No name, no Close: recommend **Skip** (Step C3).
-- **One branch at a time** — never batch diffs or decisions. "One at a time" applies to the
-  **independent** heads; a queue presented without collapsing it first charges the human a review
-  per PR for a decision set that is smaller, often far smaller.
 - **Summarize the diff** — a readable table + assessment beats a wall of raw diff.
 - **Base wins on conflicts** — the branch adapts to the base.
 - **Show PR info before the verdict** — context first.
