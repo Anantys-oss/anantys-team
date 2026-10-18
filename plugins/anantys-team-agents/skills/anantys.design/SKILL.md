@@ -112,4 +112,5 @@ List the source files touched. Note anything deliberately left as-is (with reaso
 - **Prefer dedicated classes over `!important` wars** when CSS conflicts.
 - Respect the project's existing design system and tokens; never invent new color tokens, gradients, glows, or AI-cliché iconography.
 - **Never commit, push, or open a PR** unless the user explicitly asks — stop at validated local edits.
+- **A design pass still runs in someone's signed-in browser.** Pages behind a login show real names, emails and account data, and `getComputedStyle` diagnostics sit next to `document.cookie` in the same console. The proof you owe is a *style* fact — a computed value, a spacing, a contrast ratio. Quote that; never paste a DOM dump, a storage value, or a URL's query string into the verification table, and keep screenshots in the conversation rather than writing image files into the repo.
 - Report what the screenshot actually shows, not what you expect.
