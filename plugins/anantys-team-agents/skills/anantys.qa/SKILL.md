@@ -1,7 +1,7 @@
 ---
 name: anantys.qa
 description: Run a browser-driven QA campaign against a completed feature. Derives an executable test plan from a spec-kit tasks.md, a freeform feature brief (--brief), a set of tracker issues (--from linear:SKU-…), or one or more GitHub pull requests (--from pr:<url>), executes it in a real browser — against a local dev stack or a deployed environment (staging / a preview), selected with --env — recording PASS/FAIL/BLOCKED per assertion, accumulates operator adjudications so a defect is never re-filed twice, and emits a copy-pasteable fix brief for the dev agent. Environment specifics live in a project-local .anantys/qa.md, never in the skill. Use to QA a finished feature — however it was built — before release.
-allowed-tools: Bash, Read, Write, Edit, Glob, Grep, Task, TaskCreate, TaskUpdate, TaskList, AskUserQuestion
+allowed-tools: mcp__claude-in-chrome__tabs_context_mcp, mcp__claude-in-chrome__tabs_create_mcp, mcp__claude-in-chrome__navigate, mcp__claude-in-chrome__computer, mcp__claude-in-chrome__read_page, mcp__claude-in-chrome__get_page_text, mcp__claude-in-chrome__find, mcp__claude-in-chrome__form_input, mcp__claude-in-chrome__javascript_tool, mcp__claude-in-chrome__read_console_messages, Bash, Read, Write, Edit, Glob, Grep, Task, TaskCreate, TaskUpdate, TaskList, AskUserQuestion
 ---
 
 ## Mission
@@ -13,6 +13,34 @@ Three properties make this useful rather than ceremonial:
 1. **Assertion-level results.** Most features fail in exactly one place while looking fine everywhere else. Record PASS/FAIL/BLOCKED **per assertion**, never one verdict per scenario.
 2. **Adjudication memory.** Half of what a first run reports as a defect turns out to be intended behaviour, a known env drift, or a deliberate product decision. Every such ruling is written back into the plan so no future run re-diagnoses it from scratch. This is the single highest-value artifact the campaign produces.
 3. **No inferred passes.** A case you could not reach is `BLOCKED`. Never `PASS`.
+
+## Browser preflight (hard gate)
+
+Any action that observes the product — `run`, `retest` — starts by calling
+`mcp__claude-in-chrome__tabs_context_mcp`. If it is unavailable or returns nothing
+usable, **STOP** and tell the user this skill needs a connected browser. Never
+substitute reading the source for driving it: a result you did not observe is not a
+result, and a whole campaign of inferred passes is worse than no campaign.
+
+The `allowed-tools` list above is the hard gate — a browser MCP whose tools are not
+listed there is unreachable from this skill even when it is connected. This team targets
+**Claude-in-Chrome** by default. To drive a different browser MCP (Playwright,
+chrome-devtools, …), add its equivalent tools — tab context, navigate, click/type, read
+page, console — to `allowed-tools` first.
+
+An environment whose `Driven by:` is a named local command (a headless runner, a
+screenshot script) is exempt: that command is the observation channel, run through
+`Bash`. The gate applies to every environment driven by the operator's browser.
+
+**The grant is a tool allowlist, not a destination allowlist.** `allowed-tools` says which
+verbs you hold; nothing in it says where you may point them. When `Driven by:` is the
+operator's browser, that browser is signed into their whole working life — the tab next to
+yours is their mailbox, their billing console, their production admin. Your navigation
+scope is exactly the **Surfaces** table of the environment you selected, plus whatever
+origins a scenario's own steps traverse (an OAuth provider, a payment sandbox). Anything
+else is out of bounds: do not open it, do not read it, do not "just check" it. A surface a
+scenario needs and the environment does not declare is a `.anantys/qa.md` gap — say so and
+`BLOCKED` the case, rather than navigating there anyway.
 
 ## Actions
 
@@ -176,9 +204,16 @@ Then transform into scenarios (identical for every source):
   can only confirm what the model already did.
 - **Prioritise the money/legal/data paths.** Anything touching payment, consent, or overwriting
   existing user data goes in the blocker list.
-- **Mark what a browser agent cannot do** — CAPTCHA, emailed codes, real payment credentials,
-  true mobile viewports. These are `BLOCKED` by construction and need a named human step. Say so
-  in the plan rather than letting a run discover it.
+- **Mark what a browser agent cannot do — read it from the contract, never re-derive it.** Each
+  environment's `### Agent limits` block in `.anantys/qa.md` is the operator's own list (a signup
+  CAPTCHA, an emailed code, a viewport below the browser's clamp, a real payment credential). These
+  are `BLOCKED` by construction and need a named human step. `plan` takes no `--env`, so route
+  **every** declared environment's limits into §4 (Known gaps) — each item **naming the
+  environment(s) it applies to**, a limit being per environment like every other field of that
+  block — and mark the assertions they cover `BLOCKED`, exactly as an adjudication would. Re-deriving
+  them from a generic list leaves a declared limit for a run to discover mid-campaign; recording one
+  without its environment BLOCKs a case elsewhere that could have been walked. Add what the contract
+  missed, and say which items were yours.
 
 Write `qa-plan.md` following `templates/qa-plan.md`. Every assertion gets a stable id
 (`A1`, `B5`, …) — ids are referenced by runs, notes and reports forever, so **never renumber
@@ -254,8 +289,8 @@ Select one with `--env <name>` on any action that reads or writes results — `r
   **is a run on the default environment.**
 
 Always state which environment was selected, and how. Every surface URL, preflight check,
-build-identity check, reset step, credential and drift note then comes from **that** environment's
-block in `.anantys/qa.md`.
+build-identity check, reset step, credential, **agent limit** and drift note then comes from
+**that** environment's block in `.anantys/qa.md`.
 
 **A `.anantys/qa.md` with no `## Environment:` blocks** (written by an earlier `init`: flat
 `## Surfaces` / `## Preflight` / `## Reset` / `## Credentials` sections) **is a single `local`

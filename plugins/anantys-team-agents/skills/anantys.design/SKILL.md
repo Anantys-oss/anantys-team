@@ -18,8 +18,8 @@ The user typically provides a page/URL and a list of design issues to fix.
 
 ## Hard Preconditions (check BEFORE doing anything)
 
-1. **A browser MUST be available.** Call `mcp__claude-in-chrome__tabs_context_mcp` first. If the browser tools are not loaded/available in this session, STOP and tell the user this skill requires a connected browser (e.g. the Claude-in-Chrome extension) — do not proceed blind.
-2. **A dev URL MUST be provided** (e.g. `https://dev.example.com/some/page`). This is the surface that renders your local working-tree changes. If the user did not give one, ask for it. Do not validate against production or guess a URL.
+1. **A browser MUST be available.** Call `mcp__claude-in-chrome__tabs_context_mcp` first. If the browser tools are not loaded/available in this session, STOP and tell the user this skill requires a connected browser — do not proceed blind. The `allowed-tools` list above is the hard gate: a browser MCP whose tools are not listed there is unreachable from this skill even when it is connected. This team targets **Claude-in-Chrome** by default; to drive a different browser MCP (Playwright, chrome-devtools, …), add its equivalent tools — tab context, navigate, click/type, read page, resize — to `allowed-tools` first.
+2. **A dev URL MUST be provided** (e.g. `https://dev.example.com/some/page`). This is the surface that renders your local working-tree changes. If the user did not give one, ask for it. Do not validate against production or guess a URL. **That URL's origin is also your navigation scope** — the grant is a tool allowlist, not a destination allowlist, and the browser you are driving is the operator's own, signed into everything they use. Stay in your own tab, on that origin. A design problem that only reproduces elsewhere is a second dev URL to ask for, not a tab to go open.
 3. Confirm the dev URL actually serves your local file edits (CSS/template/component changes appear after a reload). If edits don't show up, surface it — do not keep editing into the void.
 
 ## Workflow

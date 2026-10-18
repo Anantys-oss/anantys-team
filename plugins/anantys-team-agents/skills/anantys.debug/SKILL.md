@@ -12,8 +12,8 @@ This is a **Ralf loop** — the model's limit is rarely the model; it's the feed
 
 ## Hard preconditions
 
-1. **A way to exercise the app live.** For web bugs, call `mcp__claude-in-chrome__tabs_context_mcp` first; if the browser tools aren't available, STOP and say so. For non-browser bugs, confirm you can run the failing path (a command, a test, a request) and read its output/logs.
-2. **A concrete repro.** Get the exact steps, URL, input, or failing test from the user. If you can't reproduce it, say so and gather more signal — never "fix" a bug you haven't seen fail.
+1. **A way to exercise the app live.** For web bugs, call `mcp__claude-in-chrome__tabs_context_mcp` first; if the browser tools aren't available, STOP and say so. The `allowed-tools` list above is the hard gate: a browser MCP whose tools are not listed there is unreachable from this skill even when it is connected. This team targets **Claude-in-Chrome** by default; to drive a different browser MCP (Playwright, chrome-devtools, …), add its equivalent tools — tab context, navigate, click/type, read page, console — to `allowed-tools` first. For non-browser bugs, confirm you can run the failing path (a command, a test, a request) and read its output/logs.
+2. **A concrete repro.** Get the exact steps, URL, input, or failing test from the user. If you can't reproduce it, say so and gather more signal — never "fix" a bug you haven't seen fail. **The repro's URL is also your navigation scope** — the grant is a tool allowlist, not a destination allowlist, and the browser is the operator's own, signed into everything they use. Drive your own tab, on the origins the repro names; a bug that only appears against production is one the operator points you at explicitly, never one you go find.
 
 ## Workflow
 
