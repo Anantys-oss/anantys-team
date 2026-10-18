@@ -1,6 +1,6 @@
 # QA environment contract — `.anantys/qa.md`
 
-Written by `/anantys-team-agents:anantys-qa init`, committed to the repo, read by every other action.
+Written by `/anantys-team-agents:anantys.qa init`, committed to the repo, read by every other action.
 It holds everything that is true of **this project's environments** and nothing that is true
 of the feature under test.
 
@@ -104,7 +104,7 @@ block below.
 ```markdown
 # QA environment — <project>
 
-_Last updated: <YYYY-MM-DD> — maintained by `/anantys-team-agents:anantys-qa init`._
+_Last updated: <YYYY-MM-DD> — maintained by `/anantys-team-agents:anantys.qa init`._
 
 Environments below. `run --env <name>` selects one; default is the one marked default.
 
