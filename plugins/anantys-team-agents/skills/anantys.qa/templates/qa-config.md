@@ -175,6 +175,10 @@ How to identify the test subject (ids, and how to find them when data is encrypt
 - Payment sandbox: `<test card / token>`
 
 ### Agent limits — steps a browser agent cannot perform
+Each entry names a step no fix reaches, so the assertions it covers are recorded
+`BLOCKED (out of reach)` and left out of every `retest` subset. The arrow is the only thing that
+clears one — write it, or the operator is asked for it again on every pass.
+
 - <signup CAPTCHA> → hand the tab to the operator, resume after
 - <viewports below the browser's clamp> → needs device emulation
 - <emailed verification code> → operator relays the code

@@ -12,7 +12,13 @@ Three properties make this useful rather than ceremonial:
 
 1. **Assertion-level results.** Most features fail in exactly one place while looking fine everywhere else. Record PASS/FAIL/BLOCKED **per assertion**, never one verdict per scenario.
 2. **Adjudication memory.** Half of what a first run reports as a defect turns out to be intended behaviour, a known env drift, or a deliberate product decision. Every such ruling is written back into the plan so no future run re-diagnoses it from scratch. This is the single highest-value artifact the campaign produces.
-3. **No inferred passes.** A case you could not reach is `BLOCKED`. Never `PASS`.
+3. **No inferred passes.** A case you could not reach is `BLOCKED`. Never `PASS`. One word, two
+   states a fix pass treats oppositely: a case that is blocked *today* — the screen would not load,
+   a backend half is not deployed yet — is exactly what `retest` exists to re-walk, while a case
+   **no fix on this environment can clear** (a CAPTCHA, an emailed code, a real card, a true mobile
+   viewport, anything unsafe on production) is re-walked forever for nothing. The second kind is
+   recorded `BLOCKED (out of reach)` and `retest` leaves it out of the subset — a qualifier on the
+   same status, never a sixth one.
 
 ## Browser preflight (hard gate)
 
@@ -57,7 +63,7 @@ Invoked as `/anantys.qa <action> [args]`. If no action is given, infer it: no `.
 | `plan` | Derive `qa-plan.md` from the feature source: a spec-kit dir, a `--brief <file.md>`, `--from linear:<SKU-…>`, or `--from pr:<url>` |
 | `run` | Execute the plan in a browser — `--env <name>` targets a deployed environment (staging / preview); default is the environment marked default — recording results and appending to `qa-runs.md`. Runs **autonomous** (whole plan, report at the end) or **interactive** (stop at the first DEFECT, print the fix brief) — asked once per session, or `--mode <autonomous\|interactive>` |
 | `retest` | Re-run only what is unresolved plus the regression-risk cases around each fix (`--env <name>` as for `run`) |
-| `note` | Record an operator adjudication into the plan so it is never re-filed — scoped to one environment (`--env <name>`) or to `--env all` |
+| `note` | Record an operator adjudication into the plan so it is never re-filed — scoped to one environment (`--env <name>`) or to `--env all`. Settles the FAIL it ruled on; never a BLOCKED |
 | `report` | Emit `qa-report.md` — a fix brief to paste into a dev session (`--env <name>`; default: the last run's environment) |
 | `status` | Summarize coverage and remaining blockers without running anything (`--env` as for `report`) |
 
@@ -196,9 +202,11 @@ Resolve the source (see "Locating the feature"), then read it for the two roles 
 - **`--brief` / `--from linear:` / `--from pr:`:** read the copied brief at `.anantys/qa/<slug>/brief.md`. Its
   **Requirements** section is the requirements role (the ids assertions cite); its **What shipped**
   section is the `tasks.md` role; and its **Not shipped / known gaps** section is load-bearing —
-  each item there is a case that is `BLOCKED`-by-construction (a backend half not deployed, a step a
+  each item there is a case that is `BLOCKED` by construction (a backend half not deployed, a step a
   browser cannot reach), **not a FAIL**. Route every such item into the plan's §4 (Known gaps) and
   mark the assertions it covers `BLOCKED` with that reason, exactly as an adjudication would —
+  qualified `BLOCKED (out of reach)` only for the items no fix clears (the step a browser cannot
+  reach), never for the ones a fix or a deploy does (the undeployed half, an open stacked PR) —
   skipping it makes the plan FAIL the very gaps it was told to expect, which is the case this whole
   section exists to prevent. There is no Polish phase to drop. If a requirement carries no stable
   id, assign one (`R1`, `R2`, …) and write it back into the **copy** (never the operator's original)
@@ -224,6 +232,11 @@ Then transform into scenarios (identical for every source):
   them from a generic list leaves a declared limit for a run to discover mid-campaign; recording one
   without its environment BLOCKs a case elsewhere that could have been walked. Add what the contract
   missed, and say which items were yours.
+- **Mark what a browser agent cannot do** — CAPTCHA, emailed codes, real payment credentials,
+  true mobile viewports. These are `BLOCKED (out of reach)` and need a named human step. Say so
+  in the plan rather than letting a run discover it, and name the step beside each — it is the only
+  thing that ever clears them, so a `retest` that re-attempts them instead asks the operator for the
+  same manual step on every pass, with no fix pending.
 
 Write `qa-plan.md` following `templates/qa-plan.md`. Every assertion gets a stable id
 (`A1`, `B5`, …) — ids are referenced by runs, notes and reports forever, so **never renumber
@@ -289,8 +302,10 @@ handful of `BLOCKED` assertions, being wrong the other way charges a real card o
 person. Production gets two extra guards:
 
 - **Never run on production:** any scenario that charges a real card, records a real consent, or
-  sends a notification (email, SMS, push) to a real person. Those assertions are `BLOCKED` on
-  production **by construction** — reason "unsafe on production" — never walked.
+  sends a notification (email, SMS, push) to a real person. Those assertions are
+  `BLOCKED (out of reach)` on production — reason "unsafe on production" — never walked, and so
+  never in a production `retest` subset either: "never walked" has to hold on the second pass as
+  well as the first, and the route to a result for them is another environment, not a fix.
 - The pre-write confirmation below is mandatory (it applies to every `shared` env).
 
 Select one with `--env <name>` on any action that reads or writes results — `run`, `retest`,
@@ -362,6 +377,11 @@ deployed to staging but not the local stack, or the reverse):
   run anywhere; the checkbox is checked only when every declared environment **it was permitted to
   run on** is PASS (see "a refusal is not a gap" below). A run updates only the selected
   environment's status, never another's.
+  run anywhere; the checkbox is checked only when every declared environment is PASS. A run
+  updates only the selected environment's status, never another's. **A qualifier rides on the
+  suffix** (`PASS (unstable)`, `BLOCKED (out of reach)`): every qualifier this skill gates an
+  action on is written there, because the plan is the only file a `note` ruling lands in, so a
+  qualifier recorded anywhere else can never be closed.
 - `retest`, `status` and `report` read only the results recorded for the selected environment and
   say which environment they describe. `status` and `report` also name every other environment
   that has results, so a defect recorded elsewhere is never silently out of view.
@@ -428,7 +448,9 @@ question and overrides the remembered answer for that call. Never pick a mode yo
 - **Interactive** — stop at the **first new DEFECT** and hand off: close the run (steps 5–6 below),
   write `qa-report.md` exactly as `report` does with the stopping defect listed first, and **print
   that defect's fix brief in full in your reply**, so the operator can paste it into a dev session
-  straight from the console. Then stop and wait; the next step is a fix and a `retest`.
+  straight from the console. Then stop and wait; the next step is a fix and a `retest`, which
+  confirms it **and resumes the walk from here** (`retest` step 1) — otherwise the plan is reachable
+  only by re-walking it from the top every cycle.
   A **new** DEFECT is one that was not already an open defect on this environment before the run.
   A known defect that still fails is recorded, stays in `qa-report.md`, and does not stop the walk —
   otherwise a `retest` would halt on the first unfixed case before reaching its regression-risk set.
@@ -467,7 +489,13 @@ operator's go before any write.
    - Record the observed branch/commit in the `qa-runs.md` run section, beside `Subject:`, so a
      later reader can tell which build a green run was green against.
 
-   The line is absent for a merged/deployed feature, and then there is nothing extra to check.
+   The line is absent for a merged/deployed feature, and then there is nothing to **enforce** — but
+   if the environment declares a build-identity check, **still run it and still record what it
+   returns.** Enforcement is conditional on the `**Under test:**` line; recording is not. The
+   recorded build is what dates every result this run produces, and the only thing a later run can
+   compare against to tell which of this campaign's PASSes still describe the code being served
+   (see "A PASS belongs to the build it was observed on"). A campaign on a merged feature is the
+   common case and the one that runs longest, so it is the last place to stop recording.
 
    **The same probe response also says which host answered — read it.** Compare it to the
    environment's `Answers as:` line (Environments). A match confirms this block's `kind:` and
@@ -516,10 +544,28 @@ operator's go before any write.
    reports only at the end is one where a bad reset costs you the whole run.
 5. **Append a run section to `qa-runs.md`**, its header naming the environment and the mode —
    never overwrite prior runs. Prior runs are how a later reader recognises a re-occurrence.
+4. **Record a one-line result after each scenario — to `qa-runs.md`, not only to the console.**
+   Open this run's section *before* the first scenario, header written and result table empty, and
+   append each assertion's row as you judge it. The operator is watching; a campaign that
+   reports only at the end is one where a bad reset costs you the whole run. A walk that is cut
+   short — a crashed browser, an exhausted session, a `^C` — writes nothing at all if its only
+   durable write is step 5, and the plan then still shows every walked assertion's *previous*
+   status. On a regression pass that previous status is PASS, so the artifact survives greener
+   than the run that produced it, and the FAILs never reach the log `retest` builds its subset
+   from.
+5. **Close the run section in `qa-runs.md`** — its header names the environment and the mode, and
+   its `⏳ in progress` marker becomes `✅ complete` only once steps 6–7 have run. Never overwrite
+   prior runs; prior runs are how a later reader recognises a re-occurrence. A section still
+   marked `⏳ in progress` when a later command reads the file is an **interrupted run**: the rows
+   it holds are real observations and carry their results, but the assertions below them were
+   never walked, and `qa-plan.md` and `qa-report.md` were never updated for it. Report those two
+   as stale, name the run that left them that way, and carry its FAILs forward like any other.
+   An interrupted run is a result — it is just not a verdict.
 6. Update the per-assertion status in `qa-plan.md` **for the selected environment only**, and only
    for the assertions this run walked; then refresh that environment's progress table.
 7. **Finish:** write `qa-report.md` as `report` does — every run, both modes, so a defect this run
-   saw PASS drops out of the brief. Interactive: you only reach this step if the walk met no new
+   saw PASS drops out of the brief. A defect that merely failed to reproduce has not become a PASS
+   and does not drop (see `retest`). Interactive: you only reach this step if the walk met no new
    DEFECT, so say so. End the reply with the progress table.
 
 ### Judging rules
@@ -538,6 +584,9 @@ operator's go before any write.
   or to `all`** before filing it. If it is already ruled intended or a known drift there, record it
   as PASS-with-note and move on. A ruling scoped to another environment never passes a FAIL here —
   file it, and mention the other env's ruling in the evidence so the operator can extend it.
+- **A ruling the operator gives you mid-walk lands in the plan**, exactly as `note` would: same
+  form, same status write, scoped to **this** environment. Left in the run section it suppresses
+  nothing — the check above reads only the plan.
 
 ## `retest` — the second pass after a fix
 
@@ -548,6 +597,15 @@ A full re-run after a fix pass is expensive and mostly re-confirms green. Instea
    **Except a refused one** (`BLOCKED — unsafe on production` and any other rule-refusal, see
    Environments): it is not a case a second pass can settle, and walking it is what the refusing
    rule forbids. Say it is excluded and why, with the environment that answers it if one does.
+1. Take from `qa-plan.md` — its status suffix is the authoritative record and the only place a
+   `note` ruling lands — every assertion whose status **on the selected environment** is FAIL,
+   BLOCKED, or `PASS (unstable)`, and **neither** one struck through as REMOVED **nor** one
+   qualified `BLOCKED (out of reach)`; `qa-runs.md` supplies that result's evidence, never the
+   selection. The run log knows nothing of the strike-through and keeps the dropped assertion's last
+   FAIL forever, so a subset chosen there re-walks behaviour the product deliberately dropped and
+   files a DEFECT that is outside the table's N. A result recorded on another environment neither
+   adds nor removes a case. Take, with them, every assertion with **no result at all** here: `not
+   run` is unresolved too, and a complete walk leaves none.
 2. Add the **regression-risk set** around each fix — the assertions the fix could plausibly have
    broken, especially the ones an *over-fix* would break. A guard added to stop a wrong behaviour
    very often also suppresses the right one; assert the right one explicitly.
@@ -555,7 +613,118 @@ A full re-run after a fix pass is expensive and mostly re-confirms green. Instea
 4. Run that subset with the same rules as `run` — run mode included — and append a run section
    marked `retest` with its environment.
 
-State the subset before running it, and say plainly what you are **not** re-testing.
+A subset containing only `PASS (unstable)` rows is a retest worth running: there is no fix to
+confirm, the point is the second trial the first run did not give them. Say that is what it is.
+
+**`retest` is also how an interactive walk resumes** — the reason step 1 takes the never-walked
+ones. An interactive `run` stops at the first new DEFECT and prescribes a fix and a `retest`, so a
+subset chosen from *results* alone confirms that fix and stops again: the tail is left to a fresh
+`run`, which on a `local` env resets and re-walks from scenario one every cycle — the cost
+interactive mode exists to avoid. Walk the never-run ones **in plan order, after** the
+fix-confirmation set, each scenario's precondition established as `run` step 3 requires — first
+walks, not re-checks. Say which they are. Stopping again at a new DEFECT is the loop working.
+
+State the subset before running it, and say plainly what you are **not** re-testing. The
+`BLOCKED (out of reach)` ids are part of that statement, each with the human step or the other
+environment that is the only thing which clears it — a fix pass cannot, so they are the one excluded
+class that leaves a coverage hole the operator has to decide about rather than wait out. Only the
+operator reopens one: naming its id on the `retest` call, after they have performed that step.
+
+### A green retest is a fix only when something names the change
+
+The subset is chosen *because* these assertions failed, and nothing that passed is re-run — so
+every retest is a one-sided trial. An intermittent defect needs to go green **once** to be closed
+and to fail **every** retest to stay open, which is precisely backwards: a race, a timing-dependent
+redirect or a cache that is warm this time produces a green result on an unfixed build half the
+time. Before recording a FAIL → PASS transition as `FIXED` in `qa-runs.md`, **name what changed** —
+the commit that addressed it, or the operator's statement of the fix. If nothing can be named, the
+assertion did not **reproduce**, which is not the same as fixed:
+
+- **Keep its FAIL status** on that environment and say in the run section that it did not reproduce
+  on this build. Never write `FIXED`, and never write `do not re-file`.
+- It **stays in the retest subset** and stays in `qa-report.md`, the non-reproduction recorded as
+  part of its evidence. An assertion that answers differently on the same build has been verified
+  neither way, and FAIL is the side a release verdict must be wrong on.
+- The way out is the operator's: they rule on it with `note` — a known environment race, a harness
+  timing artifact — and it becomes PASS-with-note like every other adjudication.
+
+### A PASS is a single observation too
+
+"Nothing that passed is re-run" is not a remark about this subset — it is step 1's definition of it,
+and it makes the green side one-sided in the harder direction. A FAIL gets a second trial by
+construction. A PASS gets none, ever: it leaves no row for step 1 to select, step 2's regression-risk
+set is derived from the fix rather than from how any result was obtained, and step 3 is the
+*operator's* channel, not the walker's. So for an assertion that went green on a timing-dependent
+redirect or a warm cache, the campaign's first observation is also its last — and the rule above,
+which exists for exactly that defect class, can never fire on it, because the assertion never
+reaches a retest.
+
+Judging rules already forbid re-walking a flow to confirm a result: state you created yourself
+invalidates it. That is right, and it means the only evidence of instability a campaign will ever
+hold is what the walk noticed on the way to the green — a wait that had to be extended, a reload
+before the screen settled, a step re-driven past a transient error, an assertion that read FAIL and
+then PASS inside one scenario. Record it rather than discard it:
+
+- A PASS that took **more than one observation** to obtain is written `PASS (unstable)` in the run
+  section, naming what was retried and what the earlier observation showed. Silently re-driving a
+  step until the assertion goes green is the one move that destroys this evidence — a retry that
+  changes the answer *is* the observation.
+- **The qualifier is carried into the plan's suffix too**, not left in the run log: `` `local`:
+  PASS (unstable) ``. It is not a new status — it counts as PASS everywhere a count is taken — but
+  `retest` selects from the plan (step 1) and a ruling lands there, so a qualifier held only in
+  `qa-runs.md` is invisible to the first and unclosable by the second. That is the REMOVED bug on
+  the green side.
+- It **joins the retest subset** (step 1) — the only channel by which a shaky green gets a second
+  trial. The run section keeps what the run log is for: the *evidence*, naming what was retried and
+  what the earlier observation showed.
+- A PASS still unstable after a second run is the operator's to rule on with `note`, exactly like a
+  FAIL that would not reproduce. What they must not have to do is notice it themselves from a
+  progress table reading 100% green.
+
+The retest subset is not enough on its own, because it is a channel that only opens when something
+*else* failed. An unstable PASS keeps its PASS status everywhere a status is counted — correctly: it
+did pass — so a campaign whose only shaky result is this one produces a green table, an empty
+defect list, and no reason for anyone to invoke `retest`. The run log holds the evidence and nothing
+reads it. **So an unstable PASS is carried, by id, on every surface that answers "can this ship?"** —
+the progress table, `status` and `qa-report.md`'s release verdict (each says how below), and it makes
+a `retest` due even when nothing failed. Not as a status and not as a column: a `PASS (unstable)` is
+a PASS whose evidence disagrees with itself, which is a sentence the counts cannot hold.
+
+### A PASS belongs to the build it was observed on
+
+The two sections above are about results that disagree. This one is about the result nobody looked
+at again. `retest` re-walks the unresolved subset plus the regression-risk set, and **nothing
+else** — that is the whole economy of the action. So the moment a fix is deployed, every PASS
+outside that subset describes a build the environment no longer serves. The campaign then answers
+"can this ship?" from results gathered across two or three different builds and says nothing about
+it: the blockers read PASS, the never-observed list is empty, and the money path was last walked
+before the code changed. "No inferred passes" is this skill's third founding property, and a PASS
+inherited across a build change is inferred — from a build that is gone.
+
+The fact is already recorded and already unread: each `qa-runs.md` section carries
+`Build observed:`, so the build behind any result is the one named by the run that produced it, and
+the build now is what the environment's build-identity check returns. An assertion whose latest
+result on this environment came from a run naming a **different** build is **carried**. It is not a
+status and takes no suffix — unlike instability, nobody rules on it, and it recomputes itself every
+time the build moves.
+
+**`retest` does not pull carried results into its subset.** That is the full re-run the action
+exists to avoid, and step 2's regression-risk set is the judgement-based answer to the same risk.
+What changes is that the residual stops being silent:
+
+- **Blockers are the gate**, so a carried **blocker** is named by id wherever "can this ship?" is
+  answered — `status` and the release verdict — each with the build it was last observed on. Only
+  blockers: after any fix nearly everything is carried, and a warning that fires every time tells
+  the operator nothing.
+- The rest is a count, not a list (see "Progress table").
+- Re-walking the carried blockers is the operator's call, and the one worth recommending: name
+  their ids on the `retest` call. A dev agent cannot make this decision, which is why it is not in
+  the fix brief's defect list.
+
+**A campaign with no build identity has no build axis at all** — no `Under test:` line and an
+environment with no build-identity check, so no run recorded a build. Then nothing is carried and
+nothing is fresh either: say that once in the verdict, rather than report an empty carried list,
+which reads as a clean bill it has not earned.
 
 ## `note` — record an operator adjudication
 
@@ -580,6 +749,18 @@ environment only — except a **REMOVED** strike-through, which is a product dec
 `env: all`. Scoping it to the default env would re-file the dropped behaviour as a defect on every
 other environment.
 
+A ruling on a **qualified** status drops the qualifier and keeps the annotation as the reason:
+`PASS (unstable)` becomes `PASS`, `BLOCKED (out of reach)` stays BLOCKED but is no longer out of
+reach once the operator has performed the named step. The qualifier is what the selection and the
+warning lines read, so a ruling that leaves it in place closes nothing.
+
+**A ruling also writes the status it ruled on**, or it closes nothing — every reader downstream keys
+on the suffix, not the annotation. Per environment in scope: a recorded `FAIL` becomes
+`PASS-with-note`; `BLOCKED` and `not run` are left alone, since a ruling settles an observation and
+passing an unreached case is the inferred PASS this skill refuses. `--env all` converts the FAILs and
+nothing else. Then rewrite `qa-report.md` as `report` does, and say in the reply which statuses
+changed on which environments — none, when the campaign never observed what was ruled on.
+
 Two rules make these annotations durable:
 
 - **Narrow the assertion, never delete it.** An adjudication says which failures are real, so the
@@ -588,10 +769,12 @@ Two rules make these annotations durable:
   run; "the wizard *is* the AI surface here, a second one is an attention conflict" does not.
 
 An assertion the product deliberately dropped is struck through and marked REMOVED — keep the line,
-so its absence is never re-reported as a defect.
+so its absence is never re-reported as a defect — it lives in `qa-plan.md` only, which is why
+`retest` selects from the plan and not from the run log.
 
 After any ruling, refresh **every** progress table in `qa-plan.md` — a REMOVED assertion leaves N
-for all environments (see "Progress table").
+for all environments (see "Progress table") — and rewrite `qa-report.md` for the ruling's
+environment, since the brief's defect list has just changed.
 
 ## `report` — the fix brief
 
@@ -622,6 +805,20 @@ as a non-gap ships a money path nobody tested.
 the selected environment orders the brief and is named at the top, it does not filter it. *What a fix
 must not break* likewise spans every environment's passing assertions. The release verdict stays
 per environment — it answers "can this ship *here*".
+that were never observed, plus the ones recorded `PASS (unstable)` on this environment and not yet
+adjudicated. Those two groups answer different questions and both belong here: one was never
+observed, the other was observed twice and disagreed. **Passing every blocker is not the same as
+having tested everything**; say which gaps a green list is hiding. Split the never-observed group by
+whether a retest will ever reach it: the plain `BLOCKED` ones are waiting on the fix pass this brief
+is asking for, the `BLOCKED (out of reach)` ones are not and will still be open after it — those are
+a decision for the operator (perform the named step, test on another environment, or ship without
+them), and a brief that lists them together asks a dev agent to fix what no fix reaches.
+
+Name the **carried blockers** there too — a blocker whose latest result came from a run naming a
+different build than the environment now serves — each with that build, and the count of carried
+non-blockers (see "A PASS belongs to the build it was observed on"). They are not defects and not
+the dev agent's to act on; they are the part of a green blocker list that was true of an earlier
+build. If the campaign recorded no build at all, say so instead.
 
 Tell the operator the file is ready to paste into a dev session. Do not open issues or PRs.
 
@@ -632,6 +829,12 @@ For the selected environment (`--env <name>`, else the most recent run's — say
 (PASS / DEFECT / BLOCKED / Not run), the blocker list with each blocker's status, the open
 defects, and the never-observed gaps — split unreached from refused, as `report` does. One short
 table, then the single sentence that answers "can this ship?".
+defects, the never-observed gaps — the `BLOCKED (out of reach)` ones named apart, since no fix pass
+will shorten that list — the un-adjudicated `PASS (unstable)` assertions, and the carried blockers
+with the build each was last observed on. One short
+table, then the single sentence that answers "can this ship?" — which cannot be an unqualified yes
+while an unstable PASS or a carried blocker is open: name them there, and say what closes each — a
+retest or a `note` for the unstable, a retest naming the ids for the carried.
 
 ---
 
@@ -643,7 +846,8 @@ under its header. Which tables, and who writes them:
 - `plan` writes the **default** environment's table (all Not run), and keeps any existing ones —
   recomputed, since a regeneration can change N.
 - `run` / `retest` add or refresh the **selected** environment's table.
-- `note` refreshes **every** table: a REMOVED assertion changes N for all of them. `note --env all`
+- `note` refreshes **every** table: a REMOVED assertion changes N for all of them, and a ruling on a
+  FAIL moves a count from 🔴 DEFECT to 🟢 PASS on each environment it settled. `note --env all`
   prints them all; `note --env <name>` prints that environment's.
 - `status` / `report` print the selected environment's table; they write nothing to the plan.
 
@@ -659,11 +863,37 @@ they are computed from `qa-plan.md`, never estimated.
 ```
 
 **DEFECT** counts the assertions whose status on this environment is FAIL; a PASS-with-note counts
-as PASS. **Done** = has a result on this environment (PASS, DEFECT or BLOCKED). The identities hold for the
+as PASS. A `BLOCKED (out of reach)` counts as BLOCKED — an untested case is untested however it got
+that way, and a qualifier that lightened the column would hide exactly the gap this skill refuses to
+round off. **Done** = has a result on this environment (PASS, DEFECT or BLOCKED). The identities hold for the
 **counts** — Done = PASS + DEFECT + BLOCKED, Done + Not run = N — never for the rounded
 percentages, so never adjust a count to make the percentages add up. Round each percentage to a
 whole number on its own; show a non-zero value below 1% as `<1%` (never `0%`) and a value above
 99% but short of 100% as `>99%` (never `100%`).
+
+A `PASS (unstable)` counts as PASS here too, so the table alone cannot show one (see "A PASS is a
+single observation too"). When the selected environment carries any un-adjudicated one, follow the
+table with exactly one line naming them — read, like every count above it, from `qa-plan.md`:
+
+```markdown
+⚠️ Unstable: A7, A12 — passed on a retry, verified neither way. `retest` or `note` closes them.
+```
+
+Not a column and not a status: a sixth column would break `Done = PASS + DEFECT + BLOCKED`, and the
+assertion genuinely passed. The line is what stops a green table from being the whole answer.
+
+**Done** says a result exists, never that it is current. When the environment is serving a build
+other than the one some results were observed on, add one more line — a count and the two builds,
+never a list of ids, because after a fix nearly every row is carried and a list that long is read
+as decoration. The carried **blockers** are named by `status` and the release verdict, not here:
+
+```markdown
+⚠️ Carried: 14 of 18 results observed on `a1b2c3d`, not the `e4f5g6h` now served. Blockers: A1, A2.
+```
+
+This line is **never written into `qa-plan.md`** with the table — unlike every count above it, it
+is not a property of the plan but a comparison against whatever the environment happens to serve at
+the moment of reading, and a stored copy is wrong by the next deploy.
 
 ---
 
@@ -687,10 +917,12 @@ whole number on its own; show a non-zero value below 1% as `<1%` (never `0%`) an
   seen on a `shared` env. The assertion is what failed, never who was logged in when it did.
 - **Assertion ids are permanent.** Never renumber. Runs, notes and reports reference them for the
   life of the feature.
-- **Append runs, never overwrite them.** The history is what stops a fixed defect from being
-  re-diagnosed six weeks later.
 - **BLOCKED is a real result.** Report it as loudly as a FAIL — an unreachable case is untested,
   and a green blocker list that quietly contains one is worse than a red one. A `BLOCKED` this
   skill **refused** to walk is answered by another environment's PASS, not by a louder report
   (see Environments).
+  and a green blocker list that quietly contains one is worse than a red one. Qualify the ones no
+  fix on this environment reaches as `BLOCKED (out of reach)`: it is what keeps `retest` from
+  re-walking them on every pass, and what tells the operator which part of the gap is theirs to
+  close rather than the dev agent's.
 - Report what you actually observed. Never a PASS you inferred.
