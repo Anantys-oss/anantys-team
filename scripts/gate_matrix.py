@@ -95,16 +95,15 @@ def finding(out: str, err: str) -> str:
     return tail[-1] if tail else ""
 
 
-def run(tree: Path, head: str, names: list[str]) -> dict[str, Cell]:
-    """Exit code per gate for one head's content. Empty when the head will not check out."""
-    for name in OVERLAY:  # a head that tracks these would conflict with the checkout
-        subprocess.run(("rm", "-rf", str(tree / name)), check=False)
-    if subprocess.run(
-        ("git", "checkout", "--detach", head, "--quiet"), cwd=tree, capture_output=True
-    ).returncode:
-        return {}
-    git("checkout", "--", ".", cwd=tree)
-    for name in OVERLAY:  # the head's own copies lose to ours, on purpose
+def check(tree: Path, names: list[str]) -> dict[str, Cell]:
+    """Overlay these gates onto whatever `tree` currently holds, and run them there.
+
+    Split out of `run` so a caller that builds its subject some other way than a
+    checkout gets the same instrument. `pair_gates.py` assembles its tree with two
+    merges, and a second copy of the overlay-then-run dance is a second place for the
+    exit code to be read wrong — which is the one bug this sweep has already had.
+    """
+    for name in OVERLAY:  # the subject's own copies lose to ours, on purpose
         subprocess.run(("rm", "-rf", str(tree / name)), check=False)
         subprocess.run(("cp", "-R", str(ROOT / name), str(tree / name)), check=False)
     # `check=False` and the returncode read together: a gate is allowed to fail, and a
@@ -127,6 +126,18 @@ def run(tree: Path, head: str, names: list[str]) -> dict[str, Cell]:
             done.returncode, finding(done.stdout, done.stderr) if done.returncode else ""
         )
     return cells
+
+
+def run(tree: Path, head: str, names: list[str]) -> dict[str, Cell]:
+    """Exit code per gate for one head's content. Empty when the head will not check out."""
+    for name in OVERLAY:  # a head that tracks these would conflict with the checkout
+        subprocess.run(("rm", "-rf", str(tree / name)), check=False)
+    if subprocess.run(
+        ("git", "checkout", "--detach", head, "--quiet"), cwd=tree, capture_output=True
+    ).returncode:
+        return {}
+    git("checkout", "--", ".", cwd=tree)
+    return check(tree, names)
 
 
 def table(rows: dict[str, dict[str, int]], names: list[str]) -> str:
