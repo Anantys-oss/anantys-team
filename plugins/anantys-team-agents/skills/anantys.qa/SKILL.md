@@ -513,7 +513,16 @@ Preconditions: `.anantys/qa.md` exists, `qa-plan.md` exists — and, if `qa-plan
 The first `run` or `retest` of a Claude session asks the operator which mode to use, before
 preflight — one `AskUserQuestion`, both options described. Reuse that answer for every later `run` /
 `retest` in the same session without asking again; `--mode autonomous|interactive` skips the
-question and overrides the remembered answer for that call. Never pick a mode yourself.
+question and overrides the remembered answer for that call. With an operator in the loop, never
+pick a mode yourself.
+
+**With no operator in the loop — dispatched through `Task`, headless (`claude --print`), or
+scheduled — do not ask: run `autonomous`, and say the mode was defaulted because the session could
+not be asked.** `AskUserQuestion` is interactive-only; the modes differ only in where the
+operator's **attention** goes, so with nobody watching there is nothing to route. This default
+covers only this question: the `shared` pre-write go, the unverified-build stop and a missing
+credential authorise a risk to real data instead, so a session that cannot ask stops at those
+rather than assuming them.
 
 - **Autonomous** — walk the **whole** plan without stopping on a defect. Record every DEFECT as it
   is found, and at the end write `qa-report.md` exactly as `report` does.
