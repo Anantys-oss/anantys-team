@@ -1,4 +1,4 @@
-# Feature brief — the `--brief` / `--from linear:` / `--from pr:` source for `/anantys.qa plan`
+# Feature brief — the `--brief` / `--from linear:` / `--from pr:` source for `/anantys-team-agents:anantys.qa plan`
 
 The universal, non-spec-kit input to `plan`. It plays the two roles a spec-kit dir plays —
 **requirements** (what each assertion cites) and **what shipped** (what was actually built) — in
@@ -8,6 +8,12 @@ or let `--from linear:SKU-…` / `--from pr:<url>` assemble one for you to confi
 > Same discipline as spec-kit: assertions cite **requirement ids**, never the diff. Give every
 > requirement a stable id here; `plan` will assign `R1`, `R2`, … to any that lack one and write
 > them back, and runs / notes / reports reference those ids for the life of the feature.
+>
+> **Give the id yourself if you can.** An id you write here lives in the source: a regeneration
+> re-reads it, and a requirement you delete takes its id with it. An id `plan` mints lives only in
+> its copy of this brief — the file the next `plan` overwrites — so it is carried forward by
+> matching requirement text, and an unmatched one becomes a `BLOCKED` case for you to rule on
+> rather than a requirement quietly dropped.
 
 ---
 
@@ -43,8 +49,12 @@ PR / change, enough to know which requirement it serves and where in the UI it l
 ## Not shipped / known gaps
 
 Anything a requirement implies that is NOT in yet — a backend endpoint a UI calls, a deferred
-follow-up. These are `BLOCKED`-by-construction cases, **not FAILs**: say so here so a run does not
-file the missing half as a defect.
+follow-up. These are `BLOCKED` by construction, **not FAILs**: say so here so a run does not
+file the missing half as a defect. Mark each with whether a fix or a deploy clears it — the ones no
+fix reaches become `BLOCKED (out of reach)` and leave every `retest` subset, so name the step that
+would clear them instead.
 
 - <e.g. the cost-tasks endpoint is not deployed → its tab renders an empty state, which is EXPECTED>
+  — clears on deploy
+- <e.g. the signup flow's CAPTCHA> — out of reach: <the human step that clears it>
 ```
