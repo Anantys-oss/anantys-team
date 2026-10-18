@@ -169,6 +169,9 @@ declares no such check *and* the plan has no **Under test:** line>. Path walked:
 build now served to tell which of this campaign's PASSes are still statements about live code; a
 section that omits it leaves its rows undatable forever.
 
+Fix under test: <the `--fixed` ref and the files it changed — a `retest` only; write `not named —
+regression set inferred from the failing assertions only` when it was run without `--fixed`>.
+
 | ID | Result | Evidence |
 |----|--------|----------|
 | A1 | ✅ | <observation> |

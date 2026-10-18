@@ -66,6 +66,7 @@ Invoked as `/anantys-team-agents:anantys-qa <action> [args]`. If no action is gi
 | `note` | Record an operator adjudication into the plan so it is never re-filed — scoped to one environment (`--env <name>`) or to `--env all`. Settles the FAIL it ruled on; never a BLOCKED |
 | `run` | Execute the plan in a browser — `--env <name>` targets a deployed environment (staging / preview); default is the environment marked default — recording results and appending to `qa-runs.md`. Runs **autonomous** (whole plan, report at the end) or **interactive** (stop at the first *new* DEFECT, print the fix brief) — asked once per session, or `--mode <autonomous\|interactive>` |
 | `retest` | Re-run only what is unresolved plus the regression-risk cases around each fix (`--env <name>` and `--mode <…>` as for `run`) |
+| `retest` | Re-run only what is unresolved plus the regression-risk cases around each fix — name the fix with `--fixed <commit-range>` or `--fixed pr:<url>` so that set is read off the diff instead of guessed (`--env <name>` as for `run`) |
 | `note` | Record an operator adjudication into the plan so it is never re-filed — scoped to one environment (`--env <name>`) or to `--env all` |
 | `report` | Emit `qa-report.md` — a fix brief to paste into a dev session (`--env <name>`; default: the last run's environment) |
 | `status` | Summarize coverage and remaining blockers without running anything (`--env` as for `report`) |
@@ -728,9 +729,13 @@ A full re-run after a fix pass is expensive and mostly re-confirms green. Instea
 2. Add the **regression-risk set** around each fix — the assertions the fix could plausibly have
    broken, especially the ones an *over-fix* would break. A guard added to stop a wrong behaviour
    very often also suppresses the right one; assert the right one explicitly.
+2. Add the **regression-risk set** — the assertions the fix could plausibly have broken, especially
+   the ones an *over-fix* would break. A guard added to stop a wrong behaviour very often also
+   suppresses the right one; assert the right one explicitly. Derive this set from the fix itself
+   (below), never from the defect list alone.
 3. Add any assertion the operator flagged in `note` for this environment or for `all`.
 4. Run that subset with the same rules as `run` — run mode included — and append a run section
-   marked `retest` with its environment.
+   marked `retest` with its environment, naming the fix it was run against.
 
 A subset containing only `PASS (unstable)` rows is a retest worth running: there is no fix to
 confirm, the point is the second trial the first run did not give them. Say that is what it is.
@@ -845,6 +850,36 @@ environment with no build-identity check, so no run recorded a build. Then nothi
 nothing is fresh either: say that once in the verdict, rather than report an empty carried list,
 which reads as a clean bill it has not earned.
 
+### `--fixed` — name the change the retest is testing
+
+The fix happened in a session that was not yours: you filed the defects, someone else changed the
+code. So the regression-risk set has to be read off the **change**, not off the symptoms. Name it:
+
+- `--fixed <commit-range>` — `abc123..HEAD`, a single commit, or a branch. Read it with
+  `git diff --name-only <range>` (`git log --oneline <range>` for the intent).
+- `--fixed pr:<url|#42|owner/repo#42>` — read it with `gh pr diff <ref> --name-only`, the same
+  adapter `plan --from pr:` uses.
+
+Then map the changed files onto the plan's journeys:
+
+- A changed file that **more than one journey depends on** — a shared component, a layout, a
+  middleware, an auth or pricing module — widens the set to every journey that reaches it. Find
+  those with `grep`/`rg` for the file's importers; do not reason about it from the filename. This
+  is the case the defect list can never produce, and the one over-fixes actually ship in.
+- A changed file **no journey in the plan reaches** is a coverage gap, not a green light. Say which
+  files those are: the retest cannot speak for them, and `report` must carry that as a never-observed
+  gap.
+- A fix range that touches **nothing** any open defect depends on means the fix is not in the code
+  you are about to test — a different branch, or not deployed yet. **Stop** and tell the operator
+  rather than re-confirming the same FAIL.
+
+**With no `--fixed`, say so in one line before running** — the regression set is then inferred from
+the failing assertions alone, and an over-fix in a journey that never failed will not be caught.
+That is a usable retest, not an equivalent one; do not present it as one.
+
+Record the fix ref in the run section (`Fix under test:`) and in each FIXED row's evidence, so a
+later reader can tell a green retest apart from a green that never met the fix at all.
+
 ## `note` — record an operator adjudication
 
 `/anantys-team-agents:anantys-qa note A4 --env local known dev-env price drift, do not file`
@@ -948,6 +983,9 @@ build. If the campaign recorded no build at all, say so instead.
 here. On a `Production: yes` environment that is most of §3 by design — money, consent and
 notification are exactly what is unsafe there — so a production campaign clears a release verdict
 for no one. Say which environment can.
+that were never observed, plus any file a `--fixed` retest found the plan does not reach.
+**Passing every blocker is not the same as having tested everything**; say which gaps a green list
+is hiding.
 
 Tell the operator the file is ready to paste into a dev session. Do not open issues or PRs.
 
