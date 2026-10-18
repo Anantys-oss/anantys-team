@@ -64,6 +64,9 @@ Invoked as `/anantys.qa <action> [args]`. If no action is given, infer it: no `.
 | `run` | Execute the plan in a browser — `--env <name>` targets a deployed environment (staging / preview); default is the environment marked default — recording results and appending to `qa-runs.md`. Runs **autonomous** (whole plan, report at the end) or **interactive** (stop at the first DEFECT, print the fix brief) — asked once per session, or `--mode <autonomous\|interactive>` |
 | `retest` | Re-run only what is unresolved plus the regression-risk cases around each fix (`--env <name>` as for `run`) |
 | `note` | Record an operator adjudication into the plan so it is never re-filed — scoped to one environment (`--env <name>`) or to `--env all`. Settles the FAIL it ruled on; never a BLOCKED |
+| `run` | Execute the plan in a browser — `--env <name>` targets a deployed environment (staging / preview); default is the environment marked default — recording results and appending to `qa-runs.md`. Runs **autonomous** (whole plan, report at the end) or **interactive** (stop at the first *new* DEFECT, print the fix brief) — asked once per session, or `--mode <autonomous\|interactive>` |
+| `retest` | Re-run only what is unresolved plus the regression-risk cases around each fix (`--env <name>` and `--mode <…>` as for `run`) |
+| `note` | Record an operator adjudication into the plan so it is never re-filed — scoped to one environment (`--env <name>`) or to `--env all` |
 | `report` | Emit `qa-report.md` — a fix brief to paste into a dev session (`--env <name>`; default: the last run's environment) |
 | `status` | Summarize coverage and remaining blockers without running anything (`--env` as for `report`) |
 
@@ -510,11 +513,14 @@ Preconditions: `.anantys/qa.md` exists, `qa-plan.md` exists — and, if `qa-plan
 
 ### Run mode — asked once per session
 
-The first `run` or `retest` of a Claude session asks the operator which mode to use, before
-preflight — one `AskUserQuestion`, both options described. Reuse that answer for every later `run` /
-`retest` in the same session without asking again; `--mode autonomous|interactive` skips the
-question and overrides the remembered answer for that call. With an operator in the loop, never
-pick a mode yourself.
+The first `run` or `retest` of a Claude session **that is not given `--mode`** asks the operator
+which mode to use, before preflight — one `AskUserQuestion`, both options described. The answer is
+remembered for the session: reuse it for every later `run` / `retest` without asking again. With an
+operator in the loop, never pick a mode yourself.
+
+`--mode autonomous|interactive` skips the question and applies to that call only — **only the
+question records a remembered answer**. So a session whose first call carried `--mode` still has
+none, and the next bare `run` / `retest` asks.
 
 **With no operator in the loop — dispatched through `Task`, headless (`claude --print`), or
 scheduled — do not ask: run `autonomous`, and say the mode was defaulted because the session could
