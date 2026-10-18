@@ -59,11 +59,17 @@ Say which of these you used. If you could establish **none** of them, run only t
 
 ## Output
 
+The buckets rank by **consequence**, not by hunt item. Any of the six items can land in
+any bucket — a swallowed exception on a payment path is must-fix, a missing debug log is
+not — so tag every finding with the item it came from and place it by what breaking it
+costs. The parentheticals below are the common case, never the permitted set: a finding
+with no parenthetical that names it still goes in the bucket its consequence earns.
+
 ```
 ## Blind-Spot Audit — <scope>
 
-### 🔴 Must-fix before merge   (broken contracts, security, data integrity)
-- [file:line] <what's missing> — evidence: <grep/caller proof> — why it matters
+### 🔴 Must-fix before merge   (usually: broken contracts, security, data integrity)
+- [file:line] (hunt N) <what's missing> — evidence: <grep/caller proof> — why it matters
 
 ### 🟡 Should-fix              (convention violations, test gaps, anchored edge cases)
 - [file:line] <what's missing> — anchor: <requirement id | caller | canonical impl | pre-change code>
@@ -74,6 +80,11 @@ Say which of these you used. If you could establish **none** of them, run only t
 ### ⬛ Outside this change      (pre-existing — disclosed, not ranked, no fix demanded)
 - [file:line] <what you saw while rebuilding the perimeter> — reached via: <which source led you there>
 - Write "none seen" when you saw none. An empty section and an absent section are different claims.
+### 🟡 Should-fix              (usually: edge cases, conventions, test gaps, observability)
+- ...
+
+### ⚪ Worth a human look       (suspected, unverified — any item, any consequence)
+- ...
 
 ### Implicit perimeter recovered
 Enumerate it as a list, each item citing where it came from. An item with no source does not go in
