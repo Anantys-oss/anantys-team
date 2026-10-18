@@ -1,0 +1,36 @@
+name: validate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check-plugins:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The default shallow checkout has no origin/main, so the clause check would
+          # have no baseline to compare this PR's contract against.
+          fetch-depth: 0
+      # `check_cost` reads `claude plugin details` — the loader's own token table — so
+      # without the CLI it degrades to a warning and the two token budgets go
+      # unmeasured, which is the "checker nothing runs" failure `gates.yml` names.
+      # No credential is needed: the table is tokenized locally, not fetched.
+      - run: npm install -g @anthropic-ai/claude-code
+      - run: claude plugin validate .
+      - run: python3 scripts/check_plugins.py
+      # Runs here because a `.gitignore` arriving on another branch is what makes this
+      # class silent, and `validate` is the job every pull_request already triggers.
+      - run: python3 scripts/check_tracked_ignored.py
+      # `validate` answers whether a component parses; it never reports a *name*, so
+      # the defect a user meets first — typing an advertised command and getting
+      # nothing — is outside its reach. This boots the same loader in a throwaway
+      # HOME and reads the names off the session's init event, so it shares the
+      # `npm install` above and cannot drift from the thing it checks either.
+      - run: python3 scripts/check_exposed_names.py .
+      # The suite that says these gates decide correctly runs once, in `gates`. It
+      # discovers every scripts/test_*.py, so a copy here asserts nothing a failing
+      # `gates` would not already have said — and a second copy can only disagree
+      # with the first by running a different tree, which is not a thing to test.
