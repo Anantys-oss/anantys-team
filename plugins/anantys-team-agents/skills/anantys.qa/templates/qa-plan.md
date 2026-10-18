@@ -147,6 +147,11 @@ recognises a re-occurrence instead of re-diagnosing it from scratch. A run's sec
 **before** its first scenario and each result row appended as it is judged, so a walk that is cut
 short still leaves what it observed.
 
+Two parts, two rules. The `## Run <n>` **sections** are append-only. The `> Status as of run <n>`
+**block above them is a summary**, rewritten by every `run` / `retest` from the plan's current
+results, for every environment that has any (SKILL.md, `run` step 5). A summary nothing rewrites
+reports the first run's blockers under the last run's log.
+
 ```markdown
 # Run log — <feature>
 
