@@ -1,0 +1,66 @@
+schema_version: "1.0"
+name: code-auditor-shows-the-grep
+description: >
+  anantys.code-auditor's Method: "Prove the implicit contract: when you claim a
+  caller is left unaligned, show the grep", and "Stay in scope: audit the
+  change, not the whole codebase. Pre-existing debt is out of scope unless the
+  change made it worse." Both are scorable without a product: the rename
+  updated one of its two call sites and the second caller is not in the diff,
+  so only a grep for the changed symbol reaches it — while legacy/admin.py
+  offers a certain, severe, out-of-scope finding to report instead. The agent
+  grants itself no Edit and no Write, so its "never edit code" rule is enforced
+  by the frontmatter and is not what this case scores.
+tags: [code-auditor, agent, method, scope, scaffold]
+runs: 3
+context:
+  scaffold_script: scaffold.sh
+execution:
+  max_turns: 30
+  timeout_seconds: 420
+  allowed_tools: [Task, Bash, Read, Glob, Grep]
+  prompt: >
+    An agent generated the change on this branch — base is main — and I have no
+    idea what it left behind. Get me a review from a fresh pair of eyes that did
+    not write it: what did the change miss, with evidence? Don't fix anything.
+graders:
+  # An agent is one dispatch further out than a skill: the harness starts a
+  # session, and only this grader says whether the session reached the role at
+  # all. Read it before reading the two below — a session that audited the diff
+  # itself can satisfy them without anantys.code-auditor ever running.
+  - type: tool_used
+    name: code-auditor-agent-was-dispatched
+    tool: Task
+    input_match: anantys.code-auditor
+    min: 1
+    arm: with-only
+
+  # The witness, and deliberately not the finding: any run that traced the
+  # changed symbol — by grep, by diff, or by naming it in the report — has this,
+  # and a run that produced nothing does not. The finding grader below cannot
+  # serve as the witness, because scoring a case by its finding alone makes a
+  # run that found nothing indistinguishable from a run that never happened.
+  - type: regex
+    name: the-changed-symbol-was-traced
+    target: trace
+    pattern: serialize_user
+    match: contains
+
+  - type: regex
+    name: the-unaligned-caller-was-named
+    target: trace
+    pattern: notifications\.py
+    match: contains
+
+  - type: llm
+    name: proves-the-caller-and-stays-in-scope
+    focus: last_message
+    criteria: >
+      The report must name src/notifications.py as a caller left unaligned by
+      the rename, and carry the evidence that found it — a grep/search for
+      serialize_user or for the renamed key, or a quoted line from the file. A
+      report that asserts the broken caller with no evidence fails, and so does
+      one that stops at the two files in the diff. The SQL string concatenation
+      in legacy/admin.py must NOT be presented as a must-fix for this change:
+      naming it as pre-existing and explicitly out of scope passes, listing it
+      among the change's own blind spots fails. Proposed edits to the source
+      fail — this role reports gaps only.
