@@ -66,7 +66,7 @@ If no explicit guide exists, **infer the system from the existing code**: domina
 
 General DS hygiene to enforce in every fix (adapt to the project's actual system):
 - **Typography**: respect the project's heading / body / mono font roles; don't mix in new typefaces.
-- **Text color & contrast**: legible body text, sufficient contrast; no illegible low-contrast greys. Reserve semantic colors (green/red) for genuine semantic meaning, not decoration.
+- **Text color & contrast**: legible body text. Contrast is a **ratio between the text color and the background it actually renders on** — not a property of the text color alone. Hold text to WCAG AA: **4.5:1** for body text, **3:1** for large text (≥24px, or ≥18.66px bold). Reserve semantic colors (green/red) for genuine semantic meaning, not decoration.
 - **No AI clichés**: no decorative gradients on surfaces, no glow shadows, no card-in-card nesting, no sparkle/magic icons.
 - **Consistent controls**: keep utility/admin controls in one unified, restrained style rather than a rainbow of accent colors.
 
@@ -91,7 +91,7 @@ For **each** task, in order:
    - Match surrounding code style; keep changes minimal and DRY.
 4. **Reload the dev URL** (`navigate` to the same URL) so the page serves your file changes. (A normal navigate re-fetches; live-injected `<style>` tags are wiped, which is what you want.)
 5. **Prove resolution**:
-   - Re-read the relevant computed style with `javascript_tool` (`getComputedStyle`) to confirm the exact value changed.
+   - Re-read the relevant computed style with `javascript_tool` (`getComputedStyle`) to confirm the exact value changed. For a legibility fix, "the value changed" is not the proof — compute the **contrast ratio against the rendered background** (see step 5) and show it clearing 4.5:1 (3:1 for large text).
    - Take a `screenshot` of the affected region.
 6. **If not resolved, iterate** (back to step 2) — do NOT mark the task done. The screenshot + computed value are the only acceptable proof. A plausible-looking diff is not proof.
 7. **Mark `completed`** only when the screenshot/computed value confirms it.
@@ -151,7 +151,7 @@ not load.
 
 ### 6. Global audit pass
 
-Before finishing, run a DOM scan on the main content region for DS violations and fix any leftovers. Adapt the selector to the page's main content container, and adapt the "allowed" exceptions to the project's legitimate semantic classes. Example scan (flags low-contrast grey text and stray green text):
+Before finishing, run a DOM scan on the main content region for DS violations and fix any leftovers. Adapt the selector to the page's main content container. The scan measures each text node's **contrast ratio against the background it actually renders on**, so it works on dark surfaces as well as light ones:
 
 ```js
 const zone = document.querySelector('main') || document.body;
@@ -182,6 +182,35 @@ const byCount=m=>[...m.values()].sort((a,b)=>b.n-a.n);
 finding about the page; an empty `hits` over 3 is a finding about your selector. Four
 reasons the number can collapse without the page being clean, all of which this scan
 is written to avoid and an adapted one can reintroduce:
+const lum = s => { const [r,g,b] = s.match(/[\d.]+/g).map(Number);
+  const f = c => (c /= 255, c <= 0.03928 ? c/12.92 : ((c+0.055)/1.055)**2.4);
+  return 0.2126*f(r) + 0.7152*f(g) + 0.0722*f(b); };
+const opaque = s => s && !/transparent|,\s*0\)/.test(s);
+const bgOf = el => { for (let n = el; n; n = n.parentElement) {
+    const b = getComputedStyle(n).backgroundColor; if (opaque(b)) return b; }
+  return getComputedStyle(document.documentElement).backgroundColor || 'rgb(255,255,255)'; };
+const fails = [], semantic = []; let examined = 0;
+zone.querySelectorAll('*').forEach(el => {
+  if (!el.getClientRects().length) return;   // skips display:none; KEEPS position:fixed, which offsetParent drops
+  if (![...el.childNodes].some(n => n.nodeType === 3 && n.textContent.trim().length > 1)) return;
+  const cs = getComputedStyle(el), px = parseFloat(cs.fontSize);
+  const need = (px >= 24 || (px >= 18.66 && +cs.fontWeight >= 700)) ? 3 : 4.5;
+  const [hi, lo] = [lum(cs.color), lum(bgOf(el))].sort((a,b) => b-a);
+  const ratio = +(((hi + 0.05) / (lo + 0.05))).toFixed(2);
+  const row = { cls: (''+(el.className||'')).slice(0,40), txt: el.textContent.trim().slice(0,28), ratio, need };
+  examined++;
+  if (ratio < need) fails.push(row);
+  const [r,g,b] = cs.color.match(/\d+/g).map(Number);
+  if (g > 120 && g > r+30 && g > b+20) semantic.push(row);
+});
+({ examined,
+   contrastFailures: [...new Map(fails.map(o => [o.cls + o.txt, o])).values()].slice(0,30),
+   greenTextForReview: [...new Map(semantic.map(o => [o.cls, o])).values()].slice(0,15) });
+```
+
+**Read `examined` before you read the verdict.** `contrastFailures: []` with `examined: 0` is a scan that walked no text — a wrong `zone` selector, not a clean page. Only `examined > 0` with an empty `contrastFailures` is a pass.
+
+`greenTextForReview` is **not** a violation list: no color predicate can tell semantic green from decorative green. Look at each row and decide — the rows that are decoration are new fixes; the rows that carry real meaning are correct as they are. Do not suppress either bucket by class name; a class allowlist hides false negatives along with the false positives.
 
 - **`zone` missed the content.** `querySelector('main')` finds the first `main`; a layout
   that wraps chrome in it, or names its content region something else, scopes the whole
