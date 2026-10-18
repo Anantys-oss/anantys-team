@@ -69,7 +69,8 @@ anantys-team/
         │   ├── anantys.debug/SKILL.md
         │   ├── anantys.review/SKILL.md
         │   └── anantys.qa/
-        │       ├── SKILL.md
+        │       ├── SKILL.md             # router: mission, actions, invariants
+        │       ├── reference/           # per-action procedure, read on demand
         │       └── templates/           # qa-config.md, qa-plan.md, feature-brief.md
         └── agents/                     # dispatched as isolated subagents
             ├── anantys.code-auditor.md
