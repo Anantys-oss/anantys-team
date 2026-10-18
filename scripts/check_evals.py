@@ -15,6 +15,13 @@ The suite under `plugins/*/evals/` cannot be run in CI: each case spawns a
     ops-will-not-invent-the-numbers       0.25
     qa-blocks-the-known-gaps              0.00
 
+The two agent cases carry no absence-grader at all — every scored verdict is a
+`contains` the empty trace fails, or an `llm` — so their floor is 0.00 *by
+construction*, derived from the grader composition rather than measured:
+
+    code-auditor-shows-the-grep                 0.00  (derived)
+    spec-tester-asserts-the-spec-not-the-code   0.00  (derived)
+
 A crashed run is not scored 0. When a run errors the harness seals the sandbox
 *before* the graders evaluate, so every `file_exists` resolves to absent and
 every `not_contains` sees an empty trace — the absence-graders pass. A case's
@@ -94,10 +101,10 @@ KINDS = {"regex", "tool_used", "file_exists", "llm", "baseline"}
 UNREADABLE = "__unreadable__"
 # The tools that can put a file on disk. A `file_exists exists: true` grader
 # asserts the run created one, so a case granting none of these holds a verdict
-# that is decided before the first turn. The harness computes the same
-# reachability but reads it off `--allow-tools` alone — a case whose own
-# `allowed_tools` withholds the tool is not what it checks, so this is the only
-# place that side is checked.
+# that is decided before the first turn. The harness is documented as computing
+# the same reachability off `--allow-tools` alone, but at `--max-cost-usd 0` on
+# CLI 2.1.278 it reports none — see evals/README.md, "Two cautions" — so this is
+# the only place either side of it is checked.
 WRITERS = {"Bash", "Edit", "Write"}
 
 
@@ -330,12 +337,18 @@ def check_suite(evals_dir: pathlib.Path) -> list[str]:
                         f"the tool, so no call and no refusal of one can occur "
                         f"and the verdict is fixed before the run starts"
                     )
-                skill = grader.get("input_match")
-                if tool == "Skill" and skill:
-                    plugin = evals_dir.parent
-                    if not (plugin / "skills" / skill / "SKILL.md").is_file():
+                role = grader.get("input_match")
+                plugin = evals_dir.parent
+                if tool == "Skill" and role:
+                    if not (plugin / "skills" / role / "SKILL.md").is_file():
                         errors.append(
-                            f"{where}: grader '{gname}' matches skill '{skill}', "
+                            f"{where}: grader '{gname}' matches skill '{role}', "
+                            f"which is not in {plugin.name}"
+                        )
+                if tool == "Task" and role:
+                    if not (plugin / "agents" / f"{role}.md").is_file():
+                        errors.append(
+                            f"{where}: grader '{gname}' matches agent '{role}', "
                             f"which is not in {plugin.name}"
                         )
 

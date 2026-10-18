@@ -21,6 +21,8 @@ is written to make the rule inconvenient.
 | `qa-blocks-the-known-gaps` | `anantys.qa`: a declared gap is *"`BLOCKED`-by-construction … not a FAIL"* | the plan asserts the gap as ordinary behaviour (so a run files it), or drops it |
 | `design-stops-without-the-browser` | `anantys.design`: hard precondition #1 — *"A browser MUST be available … STOP and tell the user … do not proceed blind"* | the run edits `src/styles.css`, or names the declaration to change and presents that as the fix |
 | `ops-will-not-invent-the-numbers` | `anantys.ops`: *"never fabricate dashboard numbers"*, against Phase 0's order to load the prior audits first | the run reports a 28-day metric, or a delta, it could not have observed |
+| `code-auditor-shows-the-grep` | `anantys.code-auditor`: *"when you claim a caller is left unaligned, show the grep"* + *"pre-existing debt is out of scope unless the change made it worse"* | the report stops at the two files in the diff, asserts the broken caller with no evidence, or files the untouched SQL concatenation as a must-fix for this change |
+| `spec-tester-asserts-the-spec-not-the-code` | `anantys.spec-tester`: *"never copy an expected value out of the implementation"* + *"do NOT 'fix' the test to make it pass"* | the assertion is written to the code's answer, the failing test is deleted/skipped/relaxed, or the implementation is edited to go green |
 
 `debug-stops-without-the-browser` grants `Edit` and `Write` on purpose: a
 refusal only counts when the forbidden action was actually available. The same
@@ -84,23 +86,28 @@ product.
 
 ```bash
 claude plugin eval ./plugins/anantys-team-agents \
-  --scaffold --allow-tools Bash Edit Write --trust-plugin
+  --scaffold --allow-tools Bash Edit Write Task --trust-plugin
 ```
 
 - `--scaffold` is required — every case builds its workspace (a git repo with an
   agent-pushed branch; a JS file with a visible bug; a stylesheet with a cramped
-  hero; three months of SEO audits) from its own `scaffold.sh`.
+  hero; three months of SEO audits; a rename that updated one of its two call
+  sites; a spec its implementation disagrees with) from its own `scaffold.sh`.
   The harness refuses a scaffold path outside the case directory, which is why
   the two review cases carry a copy of the same fixture rather than sharing one.
 - `--allow-tools` has to name the tools the graders assert *about*. Without
-  `Edit`/`Write` the debug case's `max: 0` graders pass vacuously.
+  `Edit`/`Write` the debug case's `max: 0` graders pass vacuously; without
+  `Task` neither agent case can observe the dispatch it scores, which is the
+  only grader in either case that says the agent ran at all. Nothing warns you
+  — see the caution below — so `check_evals.py` is what checks that side.
 - The default `--ablation with-without` adds a no-plugin arm; the
-  `review-skill-fired` / `debug-skill-fired` graders are `arm: with-only` and
+  `*-skill-fired` and `*-agent-was-dispatched` graders are `arm: with-only` and
   report whether the role's `description` actually got it selected. Under
   `--ablation none` they are scored instead, and will fail — the plugin arm is
-  the only arm where a Skill call exists.
-- Eight cases × `runs: 3` × two arms is 48 agent runs. `--case 'qa-*'` or
-  `--tag qa` narrows it while you are iterating on one role.
+  the only arm where a `Skill`/`Task` call to one of these roles exists.
+- Ten cases × `runs: 3` × two arms is 60 agent runs. `--case 'qa-*'` or
+  `--tag qa` narrows it while you are iterating on one role; `--tag agent`
+  selects the two that score an agent rather than a skill.
 
 **The agent runs need an interactive credential.** Each case spawns a `claude`
 child with a sealed HOME, so a non-interactive/automation session fails every run
@@ -116,7 +123,7 @@ validation and before the first child:
 
 ```bash
 claude plugin eval ./plugins/anantys-team-agents \
-  --allow-tools Bash Edit Write --trust-plugin --no-publish --max-cost-usd 0
+  --allow-tools Bash Edit Write Task --trust-plugin --no-publish --max-cost-usd 0
 ```
 
 Zero runs, zero dollars, no credential — verified under `env -i` with a sealed
@@ -127,13 +134,17 @@ labour is written down.
 
 Two cautions. The exit code is a constant **2** — `partial: cost_ceiling` —
 whether the suite is clean or not, and `--json` records no diagnostics, so the
-verdict has to be read off the diagnostic stream. And `--allow-tools` must name
-every gated tool the cases ask for: pass fewer and the loader correctly reports
-graders as unreachable that are reachable under the invocation above.
+verdict has to be read off the diagnostic stream. And the zero-ceiling pass
+validates case discovery and the schema, **not** grader reachability: on CLI
+2.1.278 it emits no reachability diagnostic for any grant set — withholding
+`Edit`, `Write` or `Task` all read exactly as clean as granting them (measured
+under `env -i` with a sealed `HOME`, against `--allow-tools Bash` alone). So
+`--allow-tools` still has to name every gated tool the cases ask for, and the
+loader will not be the thing that tells you it doesn't.
 
 ## Checking the graders themselves
 
-Eight graders are decided by a regex — seven distinct patterns, one of them
+Twelve graders are decided by a regex — eleven distinct patterns, one of them
 shared by the two review cases — and either direction can be permanently green:
 a `not_contains` whose pattern can never match, a `contains` whose pattern
 always does. Each is checked against both sides, and the table below is not
@@ -149,6 +160,10 @@ pattern actually in `case.yaml`, so a pattern edited without its row fails CI:
 | `the-contract-was-read` — `\.anantys/qa\.md` | `cat .anantys/qa.md`, `Read(.anantys/qa.md)` | `cat .anantys/ops.md`, `ls .anantys/qa/` |
 | `the-plan-was-read` — `206-subscribe-funnel/qa-plan\.md` | `Read(specs/206-subscribe-funnel/qa-plan.md)` | `specs/206-subscribe-funnel/tasks.md`, `ls specs/206-subscribe-funnel/` |
 | `the-branch-was-checked-out` — `git\s+checkout\s+(-{1,2}\S+\s+)*feature/widget-cap` | `git checkout feature/widget-cap`, `git checkout -q feature/widget-cap`, `git checkout --quiet feature/widget-cap` | `git checkout main` (step E Skip, legitimate), `git merge feature/widget-cap`, `git log main..feature/widget-cap` |
+| `the-changed-symbol-was-traced` — `serialize_user` | `grep -rn serialize_user src/`, `src/api.py:5:    body = serialize_user(user)` | `grep -rn full_name src/`, `git diff --stat main...HEAD` |
+| `the-unaligned-caller-was-named` — `notifications\.py` | `src/notifications.py:5: f"Hello {body['name']}"`, `Read(src/notifications.py)` | `src/notifications_test.py`, `src/api.py`, `legacy/admin.py` |
+| `the-spec-was-read` — `412-order-total/spec\.md` | `Read(specs/412-order-total/spec.md)`, `cat specs/412-order-total/spec.md` | `ls specs/412-order-total/`, `specs/412-order-total/tasks.md` |
+| `asserts-the-spec-value` — `108\.0` | `self.assertEqual(order_total(100, 10, 20), 108.0)`, `assert order_total(100, 10, 20) == 108.00` | `110.0`, `round(subtotal * 1.2 - discount, 2)` |
 
 The last three are the `contains` direction, and they carry the same risk upside
 down: a pattern loose enough to match any trace is green whatever the role did.
@@ -208,27 +223,41 @@ case that has none.
 
 ## Not covered
 
-All five skills now have at least one case. **Both agents have none**, and the
-reason is worth writing down rather than leaving as a to-do: a skill is
-selected by its `description` and invoked in the session the harness starts,
-so `tool_used: Skill` witnesses the dispatch. An agent is reached through
-`Task`, one dispatch further out, and `anantys.code-auditor` grants itself
-neither `Edit` nor `Write` — its "never edit code" rule is enforced by the
-frontmatter, so a case asserting it would score the harness, not the role.
-What is left to score there is the *method* — "when you claim a caller is left
-unaligned, show the grep", and "stay in scope: pre-existing debt is out of
-scope unless the change made it worse" — against a scaffold holding one real
-unaligned caller and one loud irrelevant vulnerability. That case is writable;
-it is not written, and nobody should assume the agents are covered because the
-table above is full.
+All five skills and both agents now have at least one case. The two agent cases
+are **weaker evidence than the skill cases**, and the reason is structural
+rather than a gap to fill later.
+
+A skill is selected by its `description` and invoked in the session the harness
+starts, so `tool_used: Skill` witnesses the dispatch directly. An agent is
+reached through `Task`, one dispatch further out, and nothing forces the
+session to take that step: a session that audits the diff itself, or writes the
+tests itself, can satisfy every method grader without `anantys.code-auditor` or
+`anantys.spec-tester` ever running. The `*-agent-was-dispatched` grader is the
+only one that distinguishes those two worlds, and like every `description`-router
+grader in this suite it is `arm: with-only` — reported, not scored. **Read it
+first.** A green method score above a missing dispatch is a verdict about the
+harness, not about the role.
+
+Neither prompt names the agent, for the same reason the skill prompts don't name
+the skill: the `description` is what has to do the routing, and a prompt that
+names the role scores the harness's dispatcher instead. Both prompts instead ask
+for the thing the descriptions advertise — "a fresh pair of eyes that did not
+write it", "someone who didn't write it" — which is the routing signal under test.
+
+What the two cases score is the *method*, not a refusal:
+`anantys.code-auditor` grants itself neither `Edit` nor `Write`, so its "never
+edit code" rule is enforced by the frontmatter and asserting it would score the
+harness; `anantys.spec-tester` grants both, and its rule is not a refusal at all
+but an assertion it has to write *knowing the suite goes red*. These are the
+first two cases here that score a role doing its job rather than declining to.
 
 For `anantys.qa`, the three cases here stop at the campaign's edges — the
 preflight gate, the build-identity gate, and `plan`. Everything a walk produces
 (per-assertion recording, adjudication memory, `retest`'s subset) still needs a
 running product, which is a scaffold of a different order.
 
-Two coverage facts the table cannot show. Every case here scores a **refusal**,
-because a refusal is decided before the first page load and needs no product;
-not one scores a role doing its job well. And `anantys.design` and
+Two coverage facts the table cannot show. Every *skill* case here scores a
+**refusal**, because a refusal is decided before the first page load and needs
+no product; not one scores a skill doing its job well. And `anantys.design` and
 `anantys.ops` are now covered at their *preconditions* only — the dev-loop and
 the audit itself are as unscored as a qa walk, for the same reason.

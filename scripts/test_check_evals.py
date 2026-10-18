@@ -71,7 +71,9 @@ GOOD_README = """\
 class SuiteFixture:
     """A plugin tree the checker can be pointed at."""
 
-    def __init__(self, case=GOOD_CASE, readme=GOOD_README, skill="anantys.qa"):
+    def __init__(
+        self, case=GOOD_CASE, readme=GOOD_README, skill="anantys.qa", agent=None
+    ):
         self.tmp = tempfile.TemporaryDirectory()
         root = pathlib.Path(self.tmp.name)
         self.evals = root / "plugins" / "p" / "evals"
@@ -81,6 +83,9 @@ class SuiteFixture:
         if skill:
             (root / "plugins" / "p" / "skills" / skill).mkdir(parents=True)
             (root / "plugins" / "p" / "skills" / skill / "SKILL.md").write_text("x")
+        if agent:
+            (root / "plugins" / "p" / "agents").mkdir(parents=True, exist_ok=True)
+            (root / "plugins" / "p" / "agents" / f"{agent}.md").write_text("x")
         self.root = root
 
     def errors(self):
@@ -265,6 +270,37 @@ class TestMutations(unittest.TestCase):
             self.assertTrue(
                 any("not in p" in e for e in fixture.errors())
             )
+
+    def dispatch_case(self):
+        """GOOD_CASE with its skill-dispatch grader asking about an agent.
+
+        A skill is witnessed by `tool_used: Skill`; an agent is reached through
+        `Task`, so the same grader is spelled with a `Task` tool and the agent's
+        name in `input_match`. The skill side of that pair is checked against
+        the tree; the agent side was not, so a typo in an agent name produced a
+        grader that can never fire — and since it is `arm: with-only`, nothing
+        downstream would have noticed the dispatch verdict going missing.
+        """
+        return GOOD_CASE.replace(
+            "    tool: Skill\n    input_match: anantys.qa",
+            "    tool: Task\n    input_match: anantys.code-auditor",
+        ).replace("[Skill, Bash, Read, Write]", "[Task, Bash, Read, Write]")
+
+    def test_a_task_grader_must_name_an_agent_that_exists(self):
+        with SuiteFixture(case=self.dispatch_case()) as fixture:
+            self.assertTrue(
+                any(
+                    "matches agent 'anantys.code-auditor'" in e
+                    for e in fixture.errors()
+                ),
+                fixture.errors(),
+            )
+
+    def test_a_task_grader_naming_a_present_agent_is_clean(self):
+        with SuiteFixture(
+            case=self.dispatch_case(), agent="anantys.code-auditor"
+        ) as fixture:
+            self.assertEqual(fixture.errors(), [])
 
     def test_name_must_be_the_directory_name(self):
         errors = self.mutate("name: a-case\n", "name: another-case\n")
