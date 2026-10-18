@@ -607,6 +607,55 @@ class AgentScopes(unittest.TestCase):
         self.assertEqual(c.agent_scopes(["Bash(git diff:*)"])[1], ["Bash"])
 
 
+class FirstPartyTools(unittest.TestCase):
+    """The vocabulary between mcp tools and shell commands — see `FIRST_PARTY`."""
+
+    def test_prose_using_an_ungranted_tool_is_an_error(self):
+        errors, _ = role(["Bash", "Read"], "Use `WebFetch` to post the report.")
+        self.assertIn("prose uses `WebFetch` but it is not granted", errors)
+
+    def test_a_granted_tool_is_clean(self):
+        errors, _ = role(["Bash", "Read", "WebFetch"], "Use `WebFetch` to post it.")
+        self.assertEqual(errors, [])
+
+    def test_a_scoped_grant_answers_its_own_tool(self):
+        errors, _ = role(["Bash", "Read", "WebFetch(docs:*)"], "Call `WebFetch`.")
+        self.assertEqual(errors, [])
+
+    def test_one_error_per_tool_not_per_mention(self):
+        body = "First `WebSearch`, then `WebSearch` again, then `WebSearch`."
+        errors, _ = role(["Bash", "Read"], body)
+        self.assertEqual(len(errors), 1)
+
+    def test_a_withheld_tool_is_documentation_not_a_demand(self):
+        errors, _ = role(["Bash", "Read"], "This role is not granted `NotebookEdit`.")
+        self.assertEqual(errors, [])
+
+    def test_a_backticked_non_tool_capital_is_ignored(self):
+        errors, _ = role(["Bash", "Read"], "Write it to `PASS` in the table.")
+        self.assertEqual(errors, [])
+
+    def test_bash_is_left_to_the_command_comparison(self):
+        """`Bash` in prose is judged by the commands it runs, not by membership —
+        otherwise every narrowed role is told it lacks a tool it holds scoped."""
+        errors, _ = role(["Bash(git log:*)", "Read"], "Shell out with `Bash`.")
+        self.assertNotIn("prose uses `Bash` but it is not granted", errors)
+
+    def test_task_is_left_to_the_dispatch_check(self):
+        errors, _ = role(["Read"], "Dispatch with `Task`.")
+        self.assertEqual(errors, [])
+
+    def test_an_empty_grant_list_is_check_platforms_diagnosis(self):
+        """An absent key parses to `[]` and loads as every tool. Reporting every
+        tool the prose names would answer one edit twice, and loudly."""
+        errors, _ = role([], "Use `WebFetch` and `WebSearch` here.")
+        self.assertEqual([e for e in errors if "is not granted" in e], [])
+
+    def test_an_agent_toolset_is_read_the_same_way(self):
+        errors, _ = agent(["Bash", "Read"], "Use `WebFetch` for the upstream doc.")
+        self.assertIn("prose uses `WebFetch` but it is not granted", errors)
+
+
 def agent(grants, body, agents=()):
     return c.check(
         Path("a.md"), grants, body, {"navigate", "tabs_context_mcp"}, agents, True

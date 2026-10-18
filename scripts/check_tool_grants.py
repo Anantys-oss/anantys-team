@@ -19,7 +19,14 @@ errors landed on the same grant and pointed opposite ways — `qa` held an
 unexercised `Task` in silence because it writes about `tasks.md`, while `review`,
 the one role that dispatches, was reported as not mentioning it.
 
-The first direction is only as good as what counts as a command. Reading them
+The first direction is also only as good as the vocabularies it reads. It had
+two — mcp tool names and shell commands — and between them sat every other tool
+the loader exposes, unreadable by either: both readers anchor on a lowercase
+first character, and a first-party tool name starts with a capital. A step
+saying "use `WebFetch`" was clean on a role granted no `WebFetch`. See
+`FIRST_PARTY`, whose vocabulary is closed, unlike the shell's.
+
+The first direction is also only as good as what counts as a command. Reading them
 out of ```bash fences alone left the check with nothing to read: `ops` is the
 only role here with a narrowed grant set, so the only role the check runs on,
 and it has no bash fence — it runs `mkdir -p` mid-sentence. The three grants it
@@ -114,6 +121,31 @@ WITHHELD = re.compile(
 # widened to the loader's for the same reason (`[\w.-]+`): dots, hyphens and
 # capitals are legal in a tool name and were read as the end of the match.
 MCP_IN_PROSE = re.compile(r"`([a-z_]+)`|mcp__[\w-]+__([\w.-]+)")
+
+# First-party tool names, measured against the loader in Claude Code 2.1.278.
+# The module's first direction — prose needs a tool the frontmatter withholds —
+# was implemented for two vocabularies: mcp tools, named by `MCP_IN_PROSE`, and
+# shell commands, by `bash_commands`. Between them sits every other tool the
+# loader exposes, and neither reader can see one: `MCP_IN_PROSE`'s bare form is
+# `[a-z_]+`, `INLINE_CODE`'s first class is `[a-z]`, and both reject a capital.
+# So a step reading "use `WebFetch` to post the report" was clean on a role that
+# grants no `WebFetch`, which is this direction's plainest case.
+#
+# Shell commands have no closed vocabulary, which is why `bash_commands` needs
+# two anchors and still documents a gap. Tool names do have one — the loader's
+# registry — so the check here is an exact-membership test and needs no anchor.
+# The cost of that is a set that goes stale as the registry grows: a tool added
+# upstream is unchecked until it is listed, which is silence, not noise.
+FIRST_PARTY = frozenset({
+    "AskUserQuestion", "Bash", "BashOutput", "Edit", "ExitPlanMode", "Glob",
+    "Grep", "KillShell", "NotebookEdit", "Read", "Skill", "SlashCommand",
+    "Task", "TaskCreate", "TaskList", "TaskUpdate", "TodoWrite", "WebFetch",
+    "WebSearch", "Write",
+})
+# `Bash` and `Task` are named in prose constantly and are already judged more
+# precisely elsewhere — by the command comparison and the dispatch check — so a
+# membership test on them would only duplicate those findings.
+FIRST_PARTY_IN_PROSE = re.compile(r"`([A-Z][A-Za-z]+)`")
 BASH_FENCE = re.compile(r"```(?:bash|sh|shell)\n(.*?)```", re.S)
 INLINE_CODE = re.compile(r"`([a-z][\w./-]*(?: [^`\n]*)?)`")
 FRONTMATTER = re.compile(r"\A---\n(.*?)\n---\n(.*)\Z", re.S)
@@ -365,6 +397,22 @@ def check(path, grants, body, known_mcp, agents=(), is_agent=False):
 
     for tool in sorted(mcp_used & known_mcp - mcp_granted):
         errors.append(f"prose uses browser tool `{tool}` but it is not granted")
+
+    # An empty grant list is not "holds nothing" here: `parse` returns it for an
+    # absent key too, which loads as every tool the session has. `check_platform`
+    # errors on that state by name, so running this comparison would answer the
+    # same edit twice — and would do it by reporting every tool the prose names.
+    if grants:
+        askable = FIRST_PARTY - {g.partition("(")[0] for g in grants} - {"Bash", "Task"}
+        # One error per tool, not per mention: a role names the tool it needs in
+        # every step that needs it, and twelve copies of one finding is a wall.
+        used = {
+            m.group(1)
+            for m in FIRST_PARTY_IN_PROSE.finditer(body)
+            if m.group(1) in askable and not WITHHELD.search(body[: m.start()])
+        }
+        for tool in sorted(used):
+            errors.append(f"prose uses `{tool}` but it is not granted")
 
     # A role that says it drives a browser must be able to. Naming the tools is
     # optional in prose; having them is not.
