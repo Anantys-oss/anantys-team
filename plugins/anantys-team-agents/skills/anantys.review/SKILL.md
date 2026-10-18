@@ -33,7 +33,36 @@ The user names the branch to review (a branch name, a PR number/URL, or "the cur
 
 - Local branches: `git branch --list`.
 - Open PRs: `gh pr list --state open --json number,title,headRefName,author,isDraft` (if `gh` is unavailable, fall back to `git branch -r`).
-- Present the candidates and ask which one to review.
+- **Collapse the queue by ancestry before presenting it** (below).
+- Present the **independent** heads — each with what it subsumes — and ask which one to review.
+
+### Collapse the queue by ancestry
+
+An agent queue is a **graph, not a list**: agents branch from each other's work, so one head
+routinely contains several other open PRs outright. Presenting every PR as an equal candidate is
+what makes a queue unreviewable — the human counts N decisions where there are far fewer, and a
+flat list gives no entry point, so none gets reviewed. Reduce it first, with two facts from the
+commit graph:
+
+```bash
+git fetch origin --prune
+git rev-parse origin/<head>                                  # identical SHA ⇒ one branch, two PRs
+git merge-base --is-ancestor origin/<a> origin/<b>            # exit 0 ⇒ #a is contained in #b
+```
+
+- A PR whose head is an **ancestor** of another open PR's head is **contained**: merging the
+  descendant lands it unchanged. It is not a decision of its own.
+- Two PRs whose heads are the **same commit** are one branch reviewed twice.
+- The **independent heads** — contained in nothing else open — are the actual decision set.
+
+Report both numbers (`41 open PRs · 8 independent heads`) and, under each independent head, the
+PRs it subsumes. Then review the independent heads one at a time; the contained ones are settled
+by whichever descendant the human merges, and need no diff review (see Step E).
+
+Ancestry is a property of the commit graph, not a claim anyone made, so it is the one piece of
+supersede evidence that cannot be wrong. It is also **directional**: it says the descendant
+contains this work, never that the work is unwanted. A head contained in a PR the human closes is
+back to being an independent decision — recheck after any close.
 
 ## Review workflow
 
@@ -166,6 +195,13 @@ Give one clear recommendation with a one-line rationale:
 - **Skip** — keep the branch for now, decide later.
 - **Audit** — needs deeper review/testing before deciding.
 
+A **contained** PR (Discovery) skips Steps A–D entirely: its verdict follows the descendant that
+contains it, so there is no diff to read and no independent judgement to make. Recommend **Close
+— contained in #N**, citing the `--is-ancestor` check, *after* #N is merged; before that it is
+**Skip**, because closing it while #N is still open discards the work. Never reach a Close verdict
+for a contained PR by reviewing its diff — that re-decides, one PR at a time, what the human
+already decided once.
+
 Then **wait for the user's decision.** Do not act on Merge/Close until they confirm.
 
 ## Acting on the decision (only after explicit confirmation)
@@ -180,6 +216,9 @@ Then **wait for the user's decision.** Do not act on Merge/Close until they conf
 - **One branch at a time** — never batch diffs or decisions. That bounds what you *read*, not what you *account for*: the verdict still has to name the queue the branch lands into (Step C2).
 - **A Merge verdict names the base it was computed against** — report `git rev-parse <base>` with it. If the base moved after you said it, the verdict expired; re-run Step C2 before anyone acts on it.
 - **A Close verdict names what superseded it** — the PR or commit, and what of this branch it leaves undone. No name, no Close: recommend **Skip** (Step C3).
+- **One branch at a time** — never batch diffs or decisions. "One at a time" applies to the
+  **independent** heads; a queue presented without collapsing it first charges the human a review
+  per PR for a decision set that is smaller, often far smaller.
 - **Summarize the diff** — a readable table + assessment beats a wall of raw diff.
 - **Base wins on conflicts** — the branch adapts to the base.
 - **Show PR info before the verdict** — context first.
