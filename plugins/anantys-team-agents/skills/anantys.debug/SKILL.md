@@ -4,6 +4,7 @@ description: Debug by observing the running app, not by guessing — a tight rep
 allowed-tools: mcp__claude-in-chrome__tabs_context_mcp, mcp__claude-in-chrome__tabs_create_mcp, mcp__claude-in-chrome__navigate, mcp__claude-in-chrome__computer, mcp__claude-in-chrome__read_page, mcp__claude-in-chrome__javascript_tool, mcp__claude-in-chrome__read_console_messages, Read, Write, Edit, Bash, Glob, Grep, Task, TaskCreate, TaskUpdate, TaskList
 allowed-tools: mcp__claude-in-chrome__tabs_context_mcp, mcp__claude-in-chrome__tabs_create_mcp, mcp__claude-in-chrome__navigate, mcp__claude-in-chrome__computer, mcp__claude-in-chrome__read_page, mcp__claude-in-chrome__javascript_tool, mcp__claude-in-chrome__read_console_messages, Read, Write, Edit, Bash, Glob, Grep, TaskCreate, TaskUpdate, TaskList
 disallowed-tools: Bash(git commit:*), Bash(git push:*), Bash(gh pr create:*)
+allowed-tools: mcp__claude-in-chrome__tabs_context_mcp, mcp__claude-in-chrome__tabs_create_mcp, mcp__claude-in-chrome__list_connected_browsers, mcp__claude-in-chrome__select_browser, mcp__claude-in-chrome__navigate, mcp__claude-in-chrome__computer, mcp__claude-in-chrome__read_page, mcp__claude-in-chrome__javascript_tool, mcp__claude-in-chrome__read_console_messages, mcp__claude-in-chrome__read_network_requests, Read, Write, Edit, Bash, Glob, Grep, TaskCreate, TaskUpdate, TaskList
 ---
 
 ## Mission
@@ -23,6 +24,7 @@ Hold the line in one place: **an observed signal is evidence about behaviour; it
 1. **A way to exercise the app live.** For web bugs, call `mcp__claude-in-chrome__tabs_context_mcp` first; if the browser tools aren't available, STOP and say so. The `allowed-tools` list above is the hard gate: a browser MCP whose tools are not listed there is unreachable from this skill even when it is connected. This team targets **Claude-in-Chrome** by default; to drive a different browser MCP (Playwright, chrome-devtools, …), add its equivalent tools — tab context, navigate, click/type, read page, console — to `allowed-tools` first. For non-browser bugs, confirm you can run the failing path (a command, a test, a request) and read its output/logs.
 2. **A concrete repro.** Get the exact steps, URL, input, or failing test from the user. If you can't reproduce it, say so and gather more signal — never "fix" a bug you haven't seen fail. **The repro's URL is also your navigation scope** — the grant is a tool allowlist, not a destination allowlist, and the browser is the operator's own, signed into everything they use. Drive your own tab, on the origins the repro names; a bug that only appears against production is one the operator points you at explicitly, never one you go find.
 1. **A way to exercise the app live.** For web bugs, call `mcp__claude-in-chrome__tabs_context_mcp` first; if the browser tools aren't available, STOP and say so. For non-browser bugs, confirm you can run the failing path (a command, a test, a request) and read its output/logs.
+1. **A way to exercise the app live.** For web bugs, call `mcp__claude-in-chrome__tabs_context_mcp` first. Two states look like "no browser" and are not: the Chrome tools may be **deferred** in this session — load them with one `ToolSearch` call before concluding they are missing — and several browsers may be connected with none selected, which `list_connected_browsers` + `select_browser` resolves. STOP and say so only when no browser is connected at all. For non-browser bugs, confirm you can run the failing path (a command, a test, a request) and read its output/logs.
 2. **A concrete repro.** Get the exact steps, URL, input, or failing test from the user. If you can't reproduce it, say so and gather more signal — never "fix" a bug you haven't seen fail.
 3. **A known tree state — because you will need to undo.** You edit source files and this loop can
    end UNRESOLVED (step 4b), which obliges you to leave the tree as you found it. You cannot undo to
@@ -54,6 +56,7 @@ Hold the line in one place: **an observed signal is evidence about behaviour; it
 - Drive the app to the failing state (navigate + interact, or run the failing command/test).
 - **Capture the failure signal** before touching anything: `read_console_messages` for JS errors, the network response for a bad call, the server log line, the assertion diff, a screenshot. This is your baseline — you'll compare against it.
 - **Redact as you capture, not before you report.** A console line, a request header, a response body and a cookie jar are the four places a live app hands you a bearer token, a session id, an API key or someone's personal data — and you are reading them out of the operator's own signed-in session. Quote the **shape**, never the value: `Authorization: Bearer <redacted, 214 chars, exp 2026-09-24T11:02Z>`, `sessionId: <redacted>`, `email: <redacted user 4812>`. This costs you nothing diagnostically — a credential's *content* is virtually never the bug; its presence, shape, staleness or absence is, and the shape is what you just wrote down.
+- **Capture the failure signal** before touching anything: `read_console_messages` for JS errors, `read_network_requests` for a bad call's status and response, the server log line, the assertion diff, a screenshot. This is your baseline — you'll compare against it.
 - If it doesn't reproduce, stop and widen the net (env, data, timing) rather than guessing at a fix.
 
 ### 2. Locate by evidence, not assumption
@@ -79,6 +82,8 @@ Hold the line in one place: **an observed signal is evidence about behaviour; it
   one edit, not a conjunction. Carrying rejected edits costs the verdict, not just the diff: it can
   make FIXED true and the reported root cause wrong.
 - Do NOT mark fixed on a plausible diff. Wrong hypotheses are normal; an unverified "fix" is not allowed.
+- Observe the same signal you captured in step 1 **with the same tool**: the console error is gone, `read_network_requests` shows the call returning 200, the log shows the right value, the test passes, the screenshot is correct. `read_network_requests` clears on cross-domain navigation — re-read it after the reload, not before.
+- **Not resolved? Iterate** — back to step 2 with the new signal. Do NOT mark fixed on a plausible diff. Wrong hypotheses are normal; an unverified "fix" is not allowed.
 
 ### 4b. Stop when the loop stops learning
 
