@@ -132,7 +132,11 @@ Then ask the operator only what you could not infer, in one batch:
 
 Write only the environments the operator named, with real values — never copy a template block
 full of `<placeholders>` into the contract. Re-running `init` on an existing file adds or updates
-environment blocks and leaves the others untouched.
+environment blocks and leaves the others untouched — **except the `default` marker, which is a
+property of the file, not of a block**. Moving it to the environment the operator now wants means
+clearing it from the one that held it; leaving that block "untouched" is how a contract ends up
+with two defaults, and a two-default contract runs nothing (see Environments). Before writing,
+re-read the whole file and confirm exactly one block carries `default`.
 
 **Re-running `init` on a flat file migrates it first.** If the existing `.anantys/qa.md` has no
 `## Environment:` blocks (the legacy layout, see Environments), rewrite its flat `## Surfaces` /
@@ -263,6 +267,19 @@ environment named `local`, and it is the default** — run it exactly as before,
 `--env <other>` against such a file is an error: stop and tell the operator to re-run `init`, which
 migrates the file before declaring the new environment (see `init`). Never guess an environment's
 kind; an env whose kind you cannot establish is not run.
+
+**A selection that does not resolve is an error — never fall back.** The contract declares
+**exactly one** `default` environment; the three ways selection fails each stop the action and ask
+the operator, because every silent recovery writes a result under the wrong environment's name, and
+the per-assertion suffix in `qa-plan.md` is the authoritative record of what ran where:
+
+- **`--env <name>` names no declared block** — stop; list the declared names. Never near-match
+  (`prod` → `production`), and never fall back to the default: a walk of the local stack recorded
+  as `staging: PASS` is a green no run produced, and `retest` / `status` / `report` read it as one.
+- **No block marked `default`** and no `--env` — stop, unless exactly one environment is declared,
+  which is then the default. With two or more, picking one is guessing which stack to reset.
+- **Two blocks marked `default`** — stop and ask which. First-wins depends on the order `init`
+  appended them in, which is not a decision anybody made.
 
 **Results are per environment**, since an assertion can pass on one and fail on another (a fix
 deployed to staging but not the local stack, or the reverse):

@@ -6,7 +6,11 @@ of the feature under test.
 
 It declares **one or more environments**. `run --env <name>` / `retest --env <name>` picks one; with
 none, the environment marked **default** is used — the `local` one, or a `shared` one in a project
-with no local stack. Each is one **kind**:
+with no local stack. **Exactly one block carries `default`**, and the marker belongs to the file
+rather than to a block: moving it clears the previous one. A name no block declares, no `default`
+among two or more blocks, or two of them, each **stops the action** — selection never falls back,
+because a result recorded under the wrong environment's name is a green nobody ran (SKILL.md,
+"Environments"). Each environment is one **kind**:
 
 - **`local`** — the developer's own stack. **Resettable**. Has a Reset block.
 - **`shared`** — a deployed env (staging / preview / prod). **Never reset**; test data is created
