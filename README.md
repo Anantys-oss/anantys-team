@@ -59,7 +59,7 @@ Then invoke a skill directly:
 
 ```
 anantys-team/
-├── .claude-plugin/marketplace.json     # the catalog (what `marketplace add` reads)
+├── .claude-plugin/marketplace.json     # the catalog (what `marketplace add` reads) — no version here
 └── plugins/
     └── anantys-team-agents/
         ├── .claude-plugin/plugin.json  # the installable unit (name + version)
@@ -79,6 +79,12 @@ anantys-team/
 - **marketplace** = the catalog (the repo you add).
 - **plugin** = the installable, versioned unit a user enables in one shot.
 - **skills** = the actual capabilities Claude invokes.
+
+**The version lives in `plugin.json` and nowhere else.** A catalog entry may carry a `version`,
+but it is optional and the plugin's own manifest is what the installer resolves — so a copy in
+`marketplace.json` is a second source of truth that no one reads and every release has to keep in
+sync. Bump one file. Never add `version` back to the catalog entry: two manifests means every
+branch in flight conflicts with every other one on a line that changes nothing.
 
 ## License
 
