@@ -95,8 +95,10 @@ For each FAIL: what you saw, what the case expected, the URL, and the console/ne
 
 ## Companion: `qa-runs.md`
 
-Appended by `run` / `retest` — **never overwritten**. Prior runs are how a later reader
-recognises a re-occurrence instead of re-diagnosing it from scratch.
+Appended by `run` / `retest` — **never overwritten**. Two parts: a **section per run**, and the
+cumulative **Closed defects** index. Who writes each: SKILL.md, "Closing a defect". The index is
+read before any FAIL is filed, which is how a returning defect is recognised as a regression rather
+than re-diagnosed from scratch.
 
 ```markdown
 # Run log — <feature>
@@ -114,6 +116,7 @@ Environment: `<name>` (`local` | `shared`). Subject: <account/fixture id>. Build
 |----|--------|----------|
 | A1 | ✅ | <observation> |
 | A4 | ❌ | <what was seen> vs <what was expected> — <url> |
+| B2 | ❌ REGRESSION of B2 (closed run <k>, build <x>) | <what was seen> — <url> |
 | C2 | ⛔ BLOCKED | <why unreachable> |
 
 ### Defects opened this run
@@ -124,4 +127,19 @@ Environment: `<name>` (`local` | `shared`). Subject: <account/fixture id>. Build
 |----|-----|-----|
 | <id> | <symptom> | ✅ FIXED — <how it was verified> |
 | <id> | <symptom> | **NOT A DEFECT** — <operator ruling + reason> |
+
+<!-- One section per run above. One table below, for the whole campaign. -->
+
+## Closed defects — the index every run reads first
+
+Every closure, cumulative, one row per (assertion, environment). A FAIL on an assertion listed
+`closed` here is a **REGRESSION**, not a new defect; reopen it with a new row rather than editing
+the old one, so the number of times a fix has failed to hold stays visible.
+
+| ID | Env | Opened | Closed | How | Build observed | State |
+|----|-----|--------|--------|-----|----------------|-------|
+| A4 | `local` | run 1 | run 3 | ✅ FIXED — <what was observed> | <branch @ commit> | closed |
+| A4 | `staging` | run 4 | — | — | — | open |
+| B2 | `local` | run 2 | run 3 | **NOT A DEFECT** — <ruling> | <branch @ commit> | closed |
+| B2 | `local` | run 5 | — | REGRESSION of the run 3 closure | <branch @ commit> | open |
 ```
