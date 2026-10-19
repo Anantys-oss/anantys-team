@@ -180,7 +180,12 @@ Then transform into scenarios (identical for every source):
   true mobile viewports. These are `BLOCKED` by construction and need a named human step. Say so
   in the plan rather than letting a run discover it.
 
-Write `qa-plan.md` following `templates/qa-plan.md`. Every assertion gets a stable id
+Write `qa-plan.md` following `templates/qa-plan.md`. Its header carries three **source-conditional**
+fields: the `Derived from` line, the relative link to `.anantys/qa.md` — whose
+depth differs between `specs/<feature>/` and `.anantys/qa/<slug>/` — and the spec-kit phase/Polish
+line. Fill them for the source you actually used and **omit the spec-kit-only ones**; a
+brief-derived plan that cites a `spec.md` or an excluded Polish phase points every later reader at
+files that were never written. Every assertion gets a stable id
 (`A1`, `B5`, …) — ids are referenced by runs, notes and reports forever, so **never renumber
 them**. On a regeneration, keep existing ids and their adjudication annotations; append new ones.
 

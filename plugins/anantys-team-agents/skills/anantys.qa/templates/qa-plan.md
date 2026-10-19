@@ -1,15 +1,28 @@
 # QA campaign template — `qa-plan.md`
 
-Written by `/anantys.qa plan` into the feature's spec-kit directory, beside `tasks.md`.
+Written by `/anantys.qa plan` into the **feature directory** — a spec-kit dir beside its `tasks.md`,
+or `.anantys/qa/<slug>/` beside the copied `brief.md` for a `--brief` / `--from linear:` /
+`--from pr:` campaign (SKILL.md, "Locating the feature").
 It is a **runnable campaign, not a reading list**: worked top to bottom, one assertion at a time.
+
+**Three header fields are source-conditional** — `Derived from`, the `.anantys/qa.md` link, and
+`Phases covered`: `plan` has four sources and this is one template. Fill each for the source you
+actually used and **omit the spec-kit-only ones rather than inventing a value** — a brief-derived
+plan that cites a `spec.md` or an excluded Polish phase names artifacts nobody ever wrote, and
+every later reader follows it there. Everything from §2 on is identical for all four sources.
 
 ---
 
 ```markdown
 # QA campaign — <feature>
 
-Derived from [`tasks.md`](./tasks.md) (what is built) and [`spec.md`](./spec.md) (what each case
-cites). Environment: [`.anantys/qa.md`](../../.anantys/qa.md). Runs: [`qa-runs.md`](./qa-runs.md).
+Derived from — **a spec-kit dir:** [`tasks.md`](./tasks.md) (what is built) and
+[`spec.md`](./spec.md) (what each case cites); **any other source:** [`brief.md`](./brief.md),
+which plays both roles. Name only the files that exist beside this plan.
+Environment: `.anantys/qa.md`, always at the **repo root** — but linked relative to *this*
+directory, which differs per source: `../../.anantys/qa.md` from `specs/<feature>/`,
+`../../qa.md` from `.anantys/qa/<slug>/`.
+Runs: [`qa-runs.md`](./qa-runs.md).
 
 **Under test:** <branch> @ <head commit> — <environment> (pr: <ref>). A `--from pr:` campaign
 records the head branch and commit it was derived from here, and `run` verifies the environment is
@@ -24,7 +37,8 @@ one). Then walk §2 in order. Each scenario states its **precondition**, its **s
 scenario. A case you could not run is `BLOCKED`.
 
 Phases covered: <n> of <m> from `tasks.md`. **Excluded: Phase <k> (Polish)** — optional hardening,
-not user-observable.
+not user-observable. **Spec-kit sources only:** a brief has no phases and nothing to exclude, so
+omit this line entirely — never write `<n> of <m>` from a count you had to invent.
 
 **Progress — `<env>` · <N> assertions** (the default environment's from `plan`, plus one per
 environment that has results — who writes and refreshes each: SKILL.md, "Progress table")
@@ -37,9 +51,13 @@ environment that has results — who writes and refreshes each: SKILL.md, "Progr
 
 ## 1. Scope
 
-| Journey | Covers tasks | Requirements |
+`Covers` names units of **the source in use** — spec-kit task ids, or the brief's *What shipped*
+entries. There are no `T0xx` ids outside a spec-kit campaign.
+
+| Journey | Covers | Requirements |
 |---|---|---|
 | A — <name> | T0xx–T0yy | FR-0xx, US<n> |
+| B — <name> | <the "What shipped" entries it exercises> | R1, R4 |
 
 ## 2. Scenarios
 
