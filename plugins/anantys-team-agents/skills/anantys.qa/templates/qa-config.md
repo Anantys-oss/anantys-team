@@ -91,7 +91,11 @@ How to identify the test subject (ids, and how to find them when data is encrypt
 - <emailed verification code> → operator relays the code
 
 ### Known drift — never file these as defects
+This list grows: `init` seeds it, and `/anantys.qa note <id> --env <name> --durable` promotes a
+drift ruling here so the next feature's first run inherits it instead of re-filing it. A promoted
+entry names its origin campaign and assertion, so it can be retired once the drift is fixed.
 - <e.g. an endpoint not deployed locally> — <why, and what a *real* failure would look like instead>
+- <observed behaviour> — <why it is not a defect, and what a *real* failure looks like> _(promoted <YYYY-MM-DD> from `<slug>` <assertion id>)_
 
 ## Environment: staging (`kind: shared`)
 

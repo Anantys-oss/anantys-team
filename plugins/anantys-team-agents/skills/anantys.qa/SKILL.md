@@ -11,7 +11,7 @@ A spec-kit epic that reports "all tasks done" has been verified by the agent tha
 Three properties make this useful rather than ceremonial:
 
 1. **Assertion-level results.** Most features fail in exactly one place while looking fine everywhere else. Record PASS/FAIL/BLOCKED **per assertion**, never one verdict per scenario.
-2. **Adjudication memory.** Half of what a first run reports as a defect turns out to be intended behaviour, a known env drift, or a deliberate product decision. Every such ruling is written back into the plan so no future run re-diagnoses it from scratch. This is the single highest-value artifact the campaign produces.
+2. **Adjudication memory.** Half of what a first run reports as a defect turns out to be intended behaviour, a known env drift, or a deliberate product decision. Every such ruling is written back into the plan so no future run re-diagnoses it from scratch — and a ruling that is a property of the *environment* rather than of the feature is promoted into `.anantys/qa.md`, so the next feature's first run inherits it instead of re-filing it. This is the single highest-value artifact the campaign produces.
 3. **No inferred passes.** A case you could not reach is `BLOCKED`. Never `PASS`.
 
 ## Actions
@@ -24,7 +24,7 @@ Invoked as `/anantys.qa <action> [args]`. If no action is given, infer it: no `.
 | `plan` | Derive `qa-plan.md` from the feature source: a spec-kit dir, a `--brief <file.md>`, `--from linear:<SKU-…>`, or `--from pr:<url>` |
 | `run` | Execute the plan in a browser — `--env <name>` targets a deployed environment (staging / preview); default is the environment marked default — recording results and appending to `qa-runs.md`. Runs **autonomous** (whole plan, report at the end) or **interactive** (stop at the first DEFECT, print the fix brief) — asked once per session, or `--mode <autonomous\|interactive>` |
 | `retest` | Re-run only what is unresolved plus the regression-risk cases around each fix (`--env <name>` as for `run`) |
-| `note` | Record an operator adjudication into the plan so it is never re-filed — scoped to one environment (`--env <name>`) or to `--env all` |
+| `note` | Record an operator adjudication into the plan so it is never re-filed — scoped to one environment (`--env <name>`) or to `--env all`; `--durable` also promotes a drift ruling into `.anantys/qa.md`, so later features inherit it |
 | `report` | Emit `qa-report.md` — a fix brief to paste into a dev session (`--env <name>`; default: the last run's environment) |
 | `status` | Summarize coverage and remaining blockers without running anything (`--env` as for `report`) |
 
@@ -132,7 +132,10 @@ Then ask the operator only what you could not infer, in one batch:
 
 Write only the environments the operator named, with real values — never copy a template block
 full of `<placeholders>` into the contract. Re-running `init` on an existing file adds or updates
-environment blocks and leaves the others untouched.
+environment blocks and leaves the others untouched — and **keeps every `### Known drift` entry
+already there**, promoted ones included (`_(promoted … from …)_`, see `note --durable`). Those were
+earned by a run; an `init` that rewrites the list from the interview alone discards rulings the
+operator made months ago and the next run re-files them.
 
 **Re-running `init` on a flat file migrates it first.** If the existing `.anantys/qa.md` has no
 `## Environment:` blocks (the legacy layout, see Environments), rewrite its flat `## Surfaces` /
@@ -375,10 +378,14 @@ operator's go before any write.
   not a defect.
 - **Screenshot anything visual**, and capture the URL plus any console/network error on every FAIL.
 - **Never infer a PASS from a screen you did not reach.**
-- Check every FAIL against the adjudication annotations in `qa-plan.md` **scoped to this environment
-  or to `all`** before filing it. If it is already ruled intended or a known drift there, record it
-  as PASS-with-note and move on. A ruling scoped to another environment never passes a FAIL here —
-  file it, and mention the other env's ruling in the evidence so the operator can extend it.
+- Check every FAIL against **two** records before filing it: the adjudication annotations in
+  `qa-plan.md` **scoped to this environment or to `all`**, and the selected environment's
+  **`### Known drift`** list in `.anantys/qa.md` — the one that carries rulings earlier campaigns
+  promoted (see `note --durable`) plus whatever `init` recorded. Checking only the plan makes a
+  first run on a new feature re-file every drift the project already knows. If the FAIL is ruled
+  intended or a known drift in either, record it as PASS-with-note, cite which record ruled it, and
+  move on. A ruling scoped to another environment never passes a FAIL here — file it, and mention
+  the other env's ruling in the evidence so the operator can extend it.
 
 ## `retest` — the second pass after a fix
 
@@ -430,6 +437,42 @@ so its absence is never re-reported as a defect.
 
 After any ruling, refresh **every** progress table in `qa-plan.md` — a REMOVED assertion leaves N
 for all environments (see "Progress table").
+
+### `--durable` — a drift ruling outlives the feature that found it
+
+`qa-plan.md` is **per feature**. Both existing scopes are environment axes, so a drift ruling —
+"this env's sandbox key prices differently", "this env never sends mail" — is a property of the
+environment that happens to have been discovered by one campaign, and it dies with that campaign's
+directory. The next feature's first run re-files it as a defect, which is precisely the
+re-diagnosis this action exists to prevent.
+
+`--durable` therefore also appends the ruling to the **`### Known drift`** list of each environment
+in its scope in `.anantys/qa.md` (`--env <name>` → that block; `--env all` → every block; a flat
+legacy file is the one `local` environment, see Environments), after the assertion annotation is
+written — creating the section if that block has none. Promoted entries carry their origin, so a
+later reader can retire one when the drift is fixed:
+
+```markdown
+### Known drift — never file these as defects
+- Checkout price does not match the grid — sandbox key drift, not a product defect. A real failure
+  is a mismatch in **plan or period**. _(promoted 2026-08-03 from `sku-231` A4)_
+```
+
+Three limits:
+
+- **Only drift is promotable.** Intended behaviour and a REMOVED strike-through are rulings about
+  *this* product's behaviour; they narrow one assertion and belong to its plan. `--env all` on
+  such a ruling means "on every environment", never "for every feature" — reject `--durable` on
+  it and say why.
+- **Never promote without the flag.** Without `--durable`, apply the ruling to the plan, then say
+  in one line that it is feature-scoped and give the `note … --durable` call that would widen it.
+  Widening is the operator's call, exactly as it is for `--env all`.
+- **`.anantys/qa.md` is committed and holds no secrets.** A promoted entry carries the observed
+  behaviour and the reason — never a credential, a token, or a URL with one in it.
+
+A ruling that reaches the contract is read back by **two** places: `run`'s adjudication check
+(see Judging rules), and the next `init`, which keeps every promoted entry when it updates an
+environment block.
 
 ## `report` — the fix brief
 
