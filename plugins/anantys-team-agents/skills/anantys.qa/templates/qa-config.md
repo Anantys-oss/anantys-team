@@ -21,6 +21,10 @@ A file with **no** `## Environment:` blocks (the flat layout an earlier `init` w
 single `local` environment named `local`, marked default — it keeps working unchanged. Re-run
 `init` to add a `shared` one: it first rewrites the flat sections as the `local` block below.
 
+It also declares the **defect sink** — the tracker `file` opens issues in. One per project, not per
+environment: a defect is a defect wherever it was observed. With `none`, or with the section
+absent, `file` stops and the campaign ends at `qa-report.md`.
+
 > **No secrets.** Record the *command* that retrieves a credential, never the credential.
 > This file is committed.
 
@@ -32,6 +36,14 @@ single `local` environment named `local`, marked default — it keeps working un
 _Last updated: <YYYY-MM-DD> — maintained by `/anantys.qa init`._
 
 Environments below. `run --env <name>` selects one; default is the one marked default.
+
+## Defect sink
+
+Tracker: `github:<owner>/<repo>`   <!-- or: none -->
+Labels: `qa`, `defect`
+
+Where `/anantys.qa file` opens one issue per open defect. Written out in full — never inferred from
+the git remote, which is the fork the campaign runs in, not necessarily where the work is tracked.
 
 ## Environment: local (`kind: local`, default)
 

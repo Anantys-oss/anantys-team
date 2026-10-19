@@ -1,6 +1,6 @@
 ---
 name: anantys.qa
-description: Run a browser-driven QA campaign against a completed feature. Derives an executable test plan from a spec-kit tasks.md, a freeform feature brief (--brief), a set of tracker issues (--from linear:SKU-…), or one or more GitHub pull requests (--from pr:<url>), executes it in a real browser — against a local dev stack or a deployed environment (staging / a preview), selected with --env — recording PASS/FAIL/BLOCKED per assertion, accumulates operator adjudications so a defect is never re-filed twice, and emits a copy-pasteable fix brief for the dev agent. Environment specifics live in a project-local .anantys/qa.md, never in the skill. Use to QA a finished feature — however it was built — before release.
+description: Run a browser-driven QA campaign against a completed feature. Derives an executable test plan from a spec-kit tasks.md, a freeform feature brief (--brief), a set of tracker issues (--from linear:SKU-…), or one or more GitHub pull requests (--from pr:<url>), executes it in a real browser — against a local dev stack or a deployed environment (staging / a preview), selected with --env — recording PASS/FAIL/BLOCKED per assertion, accumulates operator adjudications so a defect is never re-filed twice, emits a copy-pasteable fix brief for the dev agent, and can open the open defects in the project's tracker (file). Environment specifics live in a project-local .anantys/qa.md, never in the skill. Use to QA a finished feature — however it was built — before release.
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep, Task, TaskCreate, TaskUpdate, TaskList, AskUserQuestion
 ---
 
@@ -26,6 +26,7 @@ Invoked as `/anantys.qa <action> [args]`. If no action is given, infer it: no `.
 | `retest` | Re-run only what is unresolved plus the regression-risk cases around each fix (`--env <name>` as for `run`) |
 | `note` | Record an operator adjudication into the plan so it is never re-filed — scoped to one environment (`--env <name>`) or to `--env all` |
 | `report` | Emit `qa-report.md` — a fix brief to paste into a dev session (`--env <name>`; default: the last run's environment) |
+| `file` | Open the report's defects in the project's tracker — one issue per defect, once (`--env` as for `report`) |
 | `status` | Summarize coverage and remaining blockers without running anything (`--env` as for `report`) |
 
 `testplan` — the action's former name — is still accepted as an alias of `plan`.
@@ -124,6 +125,10 @@ Then ask the operator only what you could not infer, in one batch:
   be filed as a defect.
 - **`local` only:** the reset procedure for a fresh test subject, and a payment sandbox instrument
   (test card / token) if any journey touches money — without one, every checkout case is BLOCKED.
+- **Where a defect gets filed** — the tracker `file` writes to (`github:<owner>/<repo>`) and the
+  labels to put on each issue, or `none` if the operator wants the report only. Never infer the
+  repository from the git remote: the fork a campaign runs in is often not where the work is
+  tracked.
 - **`shared` only:** how the operator's signed-in browser session is made available to you, whether
   a real record exhibiting the behaviour under test exists there (a shared env has no fixtures), and
   how deploy lag shows up (a fix merged but not yet deployed), and **whether it is production**
@@ -448,7 +453,59 @@ Close with the release verdict: the blocker list, its status, and — explicitly
 that were never observed. **Passing every blocker is not the same as having tested everything**;
 say which gaps a green list is hiding.
 
-Tell the operator the file is ready to paste into a dev session. Do not open issues or PRs.
+Tell the operator the file is ready to paste into a dev session. `report` itself never opens an
+issue or a PR — `file` does, and only when it is the action that was invoked.
+
+## `file` — hand the defects to the tracker
+
+`qa-report.md` is a file on a disk. A campaign whose findings stay there is one the operator has to
+re-carry by hand into wherever the work actually lives — and the second campaign re-files what the
+first already filed, because nothing recorded that it had been.
+
+`file` is the one action that writes outside the repo. It needs a **defect sink** declared in
+`.anantys/qa.md` (see `templates/qa-config.md`):
+
+```markdown
+## Defect sink
+Tracker: `github:<owner>/<repo>`   # or: none
+Labels: `qa`, `defect`
+```
+
+With `Tracker: none`, or no sink section at all, `file` says so and stops — it never guesses a
+repository from the git remote. The only tracker it drives is GitHub, through `gh` on the `Bash`
+grant; a Linear sink would need an MCP server this skill is not granted, so a Linear-sourced
+campaign is reported, not filed.
+
+1. **Select the environment** (`--env <name>`, else the most recent run's) and build the same open
+   defect set `report` builds. Nothing else is filable: a BLOCKED assertion is a gap in the
+   campaign, not a defect in the product, and a PASS-with-note was already adjudicated.
+2. **Split it by what the plan already records.** An assertion carries a filed annotation (below)
+   or it does not. Not filed → a new issue. Already filed → a comment on the existing issue, never
+   a second one.
+3. **Show the operator the split and wait for their go** — the sink, and for each defect its
+   assertion id, its blast radius, and whether it will be created or commented. No go, no write.
+   This is a write to a system other people read; it gets the same gate a `shared` env gets.
+4. **Create one issue per new defect.** Title: `[QA] <assertion id> — <what the spec requires>`.
+   Body: that defect's section of `qa-report.md` **verbatim** — observed / repro / blast radius /
+   what a fix must not break — plus the environment it was observed on and the build identity
+   recorded beside `Subject:` in `qa-runs.md`. A defect filed without the build it was seen on is
+   one nobody can reproduce once the env moves on.
+5. **Comment on each already-filed defect** with one line: still failing as of this run, or — if
+   the latest result is now PASS — passing as of this run, and on which build. Never close an
+   issue: the operator decides when a defect is done, and a PASS on one environment is not a fix.
+6. **Record the issue back into `qa-plan.md`** on that assertion, in the same annotation form
+   `note` uses, so the next campaign reads it instead of re-filing:
+
+   ```markdown
+   - [ ] A4 Checkout is priced for the selected plan and period (FR-012).
+         📮 *Filed 2026-08-03 (env: `local`): owner/repo#128.*
+   ```
+
+   An unrecorded issue is a duplicate waiting for the next run. If a `gh` call fails, record the
+   ones that succeeded before reporting the failure — a half-filed batch that remembers nothing
+   files everything twice.
+
+End with the issue list and the progress table.
 
 ## `status`
 
@@ -471,6 +528,8 @@ under its header. Which tables, and who writes them:
 - `note` refreshes **every** table: a REMOVED assertion changes N for all of them. `note --env all`
   prints them all; `note --env <name>` prints that environment's.
 - `status` / `report` print the selected environment's table; they write nothing to the plan.
+- `file` prints the selected environment's table. It writes filed annotations to the plan, but no
+  result and no N changes, so no table is recomputed.
 
 Percentages are of the plan's **total assertions** — REMOVED ones excluded — each with its count;
 they are computed from `qa-plan.md`, never estimated.
@@ -504,6 +563,9 @@ whole number on its own; show a non-zero value below 1% as `<1%` (never `0%`) an
   to the operator.
 - **Never modify product code.** You observe and report; fixing is a separate session, which is
   the entire point of `report`.
+- **File once, and only when asked.** `file` is the only action that writes outside the repo, it
+  waits for the operator's go first, and it records every issue it opened back into the plan. An
+  issue the plan does not know about is one the next campaign opens again.
 - **Assertion ids are permanent.** Never renumber. Runs, notes and reports reference them for the
   life of the feature.
 - **Append runs, never overwrite them.** The history is what stops a fixed defect from being
