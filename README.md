@@ -13,11 +13,14 @@ like a teammate would:
 | 🐞 **Runtime Debugger** | skill `/anantys.debug` | **Ralf loop** | Reproduces a bug live, reads runtime signals (console, network, logs), fixes, and re-proves by observation — never by a plausible diff. |
 | 🔀 **PR Reviewer** | skill `/anantys.review` | **Decision-ready review** | Cleanly reviews one agent-pushed PR branch: rebases on its base, summarizes only its own changes, assesses value/risk, and recommends Merge / Close / Skip / Audit — then waits for the human. |
 | 🧭 **QA Campaign Runner** | skill `/anantys.qa` | **Campaign loop** | Turns a finished feature — a spec-kit `tasks.md`, a written brief, tracker issues, or a GitHub PR — into an executable browser campaign, runs it against a local dev stack or a deployed env (`--env staging`) recording PASS/FAIL/BLOCKED **per assertion**, accumulates operator rulings so a non-defect is never re-filed, and emits a fix brief for a fresh dev session. |
-| 🔍 **Code Auditor** | agent `anantys.code-auditor` | **Adversarial review** | Runs in a fresh context after a large LLM-generated change and reports what it *omitted* — implicit contracts, edge cases, violated conventions the brief never spelled out. Restores cognitive control over mass-generated code. |
-| 🧪 **Spec Tester** | agent `anantys.spec-tester` | **Spec-first testing** | Writes tests from the spec, deliberately *not* from the implementation, so they can fail against existing code — instead of just confirming what the model already wrote. |
+| 🔍 **Code Auditor** | agent `anantys.code-auditor` — name it, or `/anantys.review` dispatches it | **Adversarial review** | Runs in a fresh context after a large LLM-generated change and reports what it *omitted* — implicit contracts, edge cases, violated conventions the brief never spelled out. Restores cognitive control over mass-generated code. |
+| 🧪 **Spec Tester** | agent `anantys.spec-tester` — name it in a request | **Spec-first testing** | Writes tests from the spec, deliberately *not* from the implementation, so they can fail against existing code — instead of just confirming what the model already wrote. |
 
-**Skills** are invoked directly (`/anantys.design …`) — type `/anantys` to see the whole team.
-**Agents** are dispatched as isolated subagents (via the `Task`/Agent tool) — a deliberately
+**Skills** are invoked directly (`/anantys.design …`) — type `/anantys` to list the five of them.
+**Agents are not slash commands**, so `/anantys` never shows them — that menu is five sevenths of
+the team. You reach an agent by **naming it in a request** ("use the `anantys.spec-tester` agent
+on …"); `/anantys.review` also dispatches `anantys.code-auditor` on its own for a large change.
+Either way they run as isolated subagents (via the `Task`/Agent tool) — a deliberately
 *fresh context* so their review/testing isn't biased by the reasoning that produced the code.
 
 Every role is **project-agnostic**: no hardcoded domains, paths, or design tokens. They ask
@@ -53,6 +56,13 @@ Then invoke a skill directly:
 /anantys.qa      run                      # walk it in a real browser, on the local env (asks: autonomous or interactive)
 /anantys.qa      run --env staging        # …or on a deployed env — never reset, additive only
 /anantys.qa      report                   # fix brief to paste into a dev session
+```
+
+The two agents have no slash command — name one in plain language and Claude dispatches it:
+
+```text
+use the anantys.code-auditor agent on branch agent/123-add-export — the PR description is the only brief
+use the anantys.spec-tester agent for specs/206-checkout — write the tests from the spec, not from the code
 ```
 
 ## Repository layout
