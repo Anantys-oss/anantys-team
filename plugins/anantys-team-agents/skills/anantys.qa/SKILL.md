@@ -67,6 +67,19 @@ matter how the plan was derived.
    Assemble the same brief with `gh` and **confirm it before proceeding**. Writes to
    `.anantys/qa/<slug>/brief.md`; that directory is the feature directory.
 
+**Re-running `plan` never re-copies over an existing `brief.md`.** The copy is not a mirror of the
+operator's file: `plan` writes assigned requirement ids back into it, and runs, notes and reports
+cite those ids forever. So when `.anantys/qa/<slug>/brief.md` already exists — any of the three
+non-spec-kit sources, whether the second `plan` was given the same `--brief` path, re-fetched the
+same SKUs, or re-assembled the same PRs — **merge into it**: keep every existing
+id → requirement binding verbatim, give any requirement new since the last `plan` the next unused
+id, and leave a requirement that disappeared from the source in place marked
+`**R<n>** ~~<text>~~ — REMOVED from the source (<date>)`. Never renumber, never reuse a retired id.
+Show the operator the id-level diff (added / removed / reworded) before writing, and say which ids
+the run history already cites. Overwriting the copy instead re-derives the same ids in a different
+order: every `R<n>` in `qa-runs.md`, every adjudication in `qa-plan.md`, and every closed-defect
+row then names a different requirement than it was written against, and nothing reports the shift.
+
 **The `<slug>`** is a stable kebab-case name, so a re-run reuses the same directory instead of
 orphaning its plan and run history: for `--brief`, the brief's title heading (else the file's
 basename); for `--from linear:`, the primary SKU (e.g. `sku-231`); for `--from pr:`, the head
@@ -165,7 +178,8 @@ Resolve the source (see "Locating the feature"), then read it for the two roles 
   skipping it makes the plan FAIL the very gaps it was told to expect, which is the case this whole
   section exists to prevent. There is no Polish phase to drop. If a requirement carries no stable
   id, assign one (`R1`, `R2`, …) and write it back into the **copy** (never the operator's original)
-  — ids are referenced by runs, notes and reports forever.
+  — ids are referenced by runs, notes and reports forever, which is why a re-run merges into the
+  existing copy rather than re-copying over it (see "Re-running `plan`" above).
 
 Then transform into scenarios (identical for every source):
 
