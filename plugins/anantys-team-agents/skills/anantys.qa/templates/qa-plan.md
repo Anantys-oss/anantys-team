@@ -1,8 +1,8 @@
 # QA campaign template — `qa-plan.md`
 
-Written by `/anantys.qa plan` into the **feature directory** — a spec-kit dir beside its `tasks.md`,
-or `.anantys/qa/<slug>/` beside the copied `brief.md` for a `--brief` / `--from linear:` /
-`--from pr:` campaign (SKILL.md, "Locating the feature").
+Written by `/anantys.qa plan` into the **feature directory** — a spec-kit dir beside its
+`tasks.md`, or `.anantys/qa/<slug>/` beside the copied `brief.md` for a `--brief` /
+`--from linear:` / `--from pr:` campaign (SKILL.md, "Locating the feature").
 It is a **runnable campaign, not a reading list**: worked top to bottom, one assertion at a time.
 
 **Three header fields are source-conditional** — `Derived from`, the `.anantys/qa.md` link, and
