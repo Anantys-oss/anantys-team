@@ -1,8 +1,8 @@
 # QA environment contract — `.anantys/qa.md`
 
 Written by `/anantys.qa init`, committed to the repo, read by every other action.
-It holds everything that is true of **this project's environments** and nothing that is true
-of the feature under test.
+It holds everything that is true of **this project's environments** — plus the one repo-scoped
+key `plan` reads, `specs_dir` — and nothing that is true of the feature under test.
 
 It declares **one or more environments**. `run --env <name>` / `retest --env <name>` picks one; with
 none, the environment marked **default** is used — the `local` one, or a `shared` one in a project
@@ -30,6 +30,11 @@ single `local` environment named `local`, marked default — it keeps working un
 # QA environment — <project>
 
 _Last updated: <YYYY-MM-DD> — maintained by `/anantys.qa init`._
+
+specs_dir: <directory holding the spec-kit feature folders, e.g. `docs/specs`>
+
+Repo-scoped, not per environment — spec dirs live in the checkout. `plan` reads it to find a
+feature by branch name. Omit the line entirely when it is the default, `specs/`.
 
 Environments below. `run --env <name>` selects one; default is the one marked default.
 
