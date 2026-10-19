@@ -53,6 +53,8 @@ Then invoke a skill directly:
 /anantys.qa      run                      # walk it in a real browser, on the local env (asks: autonomous or interactive)
 /anantys.qa      run --env staging        # …or on a deployed env — never reset, additive only
 /anantys.qa      note A4 --env local --durable   # "known env drift" — promote it, later features inherit it
+/anantys.qa      retest                   # re-walk only what's unresolved, plus the regression risk
+/anantys.qa      status                   # can this ship? — coverage and blockers, nothing run
 /anantys.qa      report                   # fix brief to paste into a dev session
 ```
 
