@@ -45,8 +45,9 @@ matter how the plan was derived.
 1. **spec-kit dir** (default) — a folder holding `tasks.md` (and usually `spec.md`, `plan.md`). The
    folder IS the feature directory; artifacts are written beside `tasks.md`.
    - Named: `/anantys.qa plan 206-subscribe-funnel`.
-   - Else read `specs_dir` from `.anantys/qa.md` (default `specs/`), list its subdirectories, and
-     take the one matching the current git branch's name; otherwise ask.
+   - Else read `specs_dir` from `.anantys/qa.md` — the repo-scoped key `init` writes above the
+     environment blocks; **absent means `specs/`**. List its subdirectories and take the one
+     matching the current git branch's name; otherwise ask.
 2. **`--brief <file.md>`** — a single markdown brief you wrote by hand (`templates/feature-brief.md`),
    carrying **Requirements** (each with a stable id), a **What shipped** summary, and a **Not
    shipped / known gaps** section. The universal, dependency-free path for any feature NOT built
@@ -105,11 +106,15 @@ Read `templates/qa-config.md` for the shape. Fill it by **interviewing the opera
 legwork first so the questions are few and precise:
 
 - Read `README.md`, `CLAUDE.md`/`AGENTS.md`, `Makefile`, `docker-compose*.yml`, `.env.example`, `package.json` scripts.
+- Glob `**/tasks.md` to locate the spec-kit feature folders — their common parent is `specs_dir`.
 - Detect running services: `docker ps`, and probe likely dev hostnames.
 - **Never read `.env` values into the transcript.** Reference *how* to obtain a secret (`grep -oE 'X=.*' .env`), never the secret itself.
 
 Then ask the operator only what you could not infer, in one batch:
 
+- **Where spec-kit features live** — confirm the inferred `specs_dir` and write it above the
+  environment blocks; omit the line when it is `specs/`. Repo-scoped, asked once, never per
+  environment. Skip the question for a project with no `tasks.md` anywhere.
 - **Which environments exist** — the local stack, and any deployed ones worth testing against
   (staging, a PR preview). Give each a name and a `kind:` (`local` / `shared`, see Environments),
   and mark exactly one as **default** — the `local` one when there is one; a project with no local
@@ -132,7 +137,8 @@ Then ask the operator only what you could not infer, in one batch:
 
 Write only the environments the operator named, with real values — never copy a template block
 full of `<placeholders>` into the contract. Re-running `init` on an existing file adds or updates
-environment blocks and leaves the others untouched.
+`specs_dir` and the environment blocks, and leaves the others untouched — so a contract written
+before the key existed gains it.
 
 **Re-running `init` on a flat file migrates it first.** If the existing `.anantys/qa.md` has no
 `## Environment:` blocks (the legacy layout, see Environments), rewrite its flat `## Surfaces` /
