@@ -53,6 +53,25 @@ class ExtractClaims(unittest.TestCase):
         self.assertEqual(ca.extract_claims("Refactor the loader. See README."), [])
 
 
+class Mentions(unittest.TestCase):
+    def test_a_quoted_claim_is_not_asserted(self):
+        for quoted in ("*145 tests pass*", "`145 tests pass`",
+                       '"145 tests pass"', "**145 tests pass**"):
+            with self.subTest(quoted=quoted):
+                self.assertEqual(ca.extract_claims(f"it said {quoted}"), [])
+
+    def test_a_mention_wrapped_once_is_still_a_mention(self):
+        self.assertEqual(ca.extract_claims("it said *412 tests\npass* at the time"), [])
+
+    def test_blanking_preserves_offsets(self):
+        msg = "x *9 tests pass* y"
+        self.assertEqual(len(ca.blank_mentions(msg)), len(msg))
+
+    def test_an_unquoted_claim_beside_a_quoted_one_survives(self):
+        kinds = [c[0] for c in ca.extract_claims("`145 tests pass` before; 9 tests pass now")]
+        self.assertEqual(kinds, ["tests"])
+
+
 class ForeignTree(unittest.TestCase):
     def test_a_pr_reference_after_the_claim_marks_it_foreign(self):
         self.assertTrue(ca.names_foreign_tree(" with #59's gates applied"))

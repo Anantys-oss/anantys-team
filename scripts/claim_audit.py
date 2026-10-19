@@ -68,6 +68,15 @@ CLAIM_PATTERNS = (
 
 VERSION_FIELD = re.compile(r'^[+-]\s*"version"\s*:')
 
+# A claim inside emphasis, backticks or quotes is being *mentioned* — quoted from
+# somewhere else so it can be discussed — not asserted by this commit. Scoring a
+# mention is the one false row that teaches a reader to skip the section, and
+# this tool's own commit message quotes four of them. Spans may wrap once, since
+# these messages are hard-wrapped at 80 columns; they may not run on past that.
+MENTION = re.compile(r"\*\*?[^*\n]*(?:\n[^*\n]*)?\*\*?"
+                     r"|`[^`\n]*(?:\n[^`\n]*)?`"
+                     r'|"[^"\n]*(?:\n[^"\n]*)?"')
+
 # A test count qualified by another pull request — "412 tests pass with #59's
 # gates" — is a measurement of a tree that exists on no branch. It is not stale
 # and it is not wrong; it is unreachable, and saying so is the whole finding.
@@ -85,12 +94,18 @@ def git(*args, check=True):
     return r.stdout
 
 
-def extract_claims(message):
-    """Pull every re-measurable claim out of one commit message.
+def blank_mentions(message):
+    """Blank out quoted spans, preserving offsets so tails still line up."""
+    return MENTION.sub(lambda m: " " * len(m.group(0)), message)
 
-    Returns a list of (kind, matched_text, groups). Order follows the message so
-    a reader can find the sentence the row came from.
+
+def extract_claims(message):
+    """Pull every claim this commit message *asserts* out of it.
+
+    Returns a list of (kind, matched_text, groups, tail). Order follows the
+    message so a reader can find the sentence the row came from.
     """
+    message = blank_mentions(message)
     found = []
     for kind, pattern in CLAIM_PATTERNS:
         for m in pattern.finditer(message):
