@@ -70,7 +70,7 @@ anantys-team/
         │   ├── anantys.review/SKILL.md
         │   └── anantys.qa/
         │       ├── SKILL.md
-        │       └── templates/           # qa-config.md, qa-plan.md, feature-brief.md
+        │       └── templates/           # qa-config.md, qa-plan.md, qa-report.md, feature-brief.md
         └── agents/                     # dispatched as isolated subagents
             ├── anantys.code-auditor.md
             └── anantys.spec-tester.md
