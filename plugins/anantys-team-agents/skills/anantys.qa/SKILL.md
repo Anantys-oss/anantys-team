@@ -23,6 +23,7 @@ Invoked as `/anantys.qa <action> [args]`. If no action is given, infer it: no `.
 | `init` | Interview the operator and write `.anantys/qa.md` — the project's environment contract |
 | `plan` | Derive `qa-plan.md` from the feature source: a spec-kit dir, a `--brief <file.md>`, `--from linear:<SKU-…>`, or `--from pr:<url>` |
 | `run` | Execute the plan in a browser — `--env <name>` targets a deployed environment (staging / preview); default is the environment marked default — recording results and appending to `qa-runs.md`. Runs **autonomous** (whole plan, report at the end) or **interactive** (stop at the first DEFECT, print the fix brief) — asked once per session, or `--mode <autonomous\|interactive>` |
+| `resume` | Finish an interrupted walk — run only the assertions with **no result yet** on the environment, without resetting the subject (`--env <name>` as for `run`) |
 | `retest` | Re-run only what is unresolved plus the regression-risk cases around each fix (`--env <name>` as for `run`) |
 | `note` | Record an operator adjudication into the plan so it is never re-filed — scoped to one environment (`--env <name>`) or to `--env all` |
 | `report` | Emit `qa-report.md` — a fix brief to paste into a dev session (`--env <name>`; default: the last run's environment) |
@@ -242,12 +243,12 @@ legacy file included — is driven by the operator's connected browser.
   production **by construction** — reason "unsafe on production" — never walked.
 - The pre-write confirmation below is mandatory (it applies to every `shared` env).
 
-Select one with `--env <name>` on any action that reads or writes results — `run`, `retest`,
-`note`, `status`, `report` (`/anantys.qa run --env staging`). With none:
+Select one with `--env <name>` on any action that reads or writes results — `run`, `resume`,
+`retest`, `note`, `status`, `report` (`/anantys.qa run --env staging`). With none:
 
-- `run` / `retest` use the environment marked **default**, whatever its kind — normally the `local`
-  one. A contract with no `local` environment must mark a `shared` one default; a bare `run` then
-  targets it, pre-write confirmation included.
+- `run` / `resume` / `retest` use the environment marked **default**, whatever its kind — normally
+  the `local` one. A contract with no `local` environment must mark a `shared` one default; a bare
+  `run` then targets it, pre-write confirmation included.
 - `status` / `report` / `note` use **the environment of the most recent run** in `qa-runs.md` (the
   default if there is none) — so `run --env staging` followed by a bare `report` reports staging.
   **A run header that names no environment** (a `qa-runs.md` written before environments existed)
@@ -272,7 +273,7 @@ deployed to staging but not the local stack, or the reverse):
   staging: PASS`) — the suffix is the authoritative record, required on every assertion that has
   run anywhere; the checkbox is checked only when every declared environment is PASS. A run
   updates only the selected environment's status, never another's.
-- `retest`, `status` and `report` read only the results recorded for the selected environment and
+- `resume`, `retest`, `status` and `report` read only the results recorded for the selected environment and
   say which environment they describe. `status` and `report` also name every other environment
   that has results, so a defect recorded elsewhere is never silently out of view.
 - **Adjudications are scoped too** (see `note`): most are drift rulings, and drift is
@@ -290,9 +291,9 @@ Preconditions: `.anantys/qa.md` exists, `qa-plan.md` exists — and, if `qa-plan
 
 ### Run mode — asked once per session
 
-The first `run` or `retest` of a Claude session asks the operator which mode to use, before
-preflight — one `AskUserQuestion`, both options described. Reuse that answer for every later `run` /
-`retest` in the same session without asking again; `--mode autonomous|interactive` skips the
+The first `run`, `resume` or `retest` of a Claude session asks the operator which mode to use,
+before preflight — one `AskUserQuestion`, both options described. Reuse that answer for every later
+walk in the same session without asking again; `--mode autonomous|interactive` skips the
 question and overrides the remembered answer for that call. Never pick a mode yourself.
 
 - **Autonomous** — walk the **whole** plan without stopping on a defect. Record every DEFECT as it
@@ -308,7 +309,8 @@ question and overrides the remembered answer for that call. Never pick a mode yo
 Either way, `qa-report.md` covers **every open defect on the environment** — never only this run's.
 A report rewritten with one defect silently drops the others from the brief the operator hands on.
 An assertion the run did not walk **keeps its previous status** on this environment; stopping early
-never resets a result to `not run`.
+never resets a result to `not run`. The assertions that never had one are picked up by `resume`,
+not by a second `run` — see below.
 
 A **DEFECT** is an assertion that FAILs after the adjudication check (Judging rules) — a
 PASS-with-note is not one. A `BLOCKED` result never stops an interactive run: record it and walk on.
@@ -380,12 +382,52 @@ operator's go before any write.
   as PASS-with-note and move on. A ruling scoped to another environment never passes a FAIL here —
   file it, and mention the other env's ruling in the evidence so the operator can extend it.
 
+## `resume` — finish an interrupted walk
+
+A walk ends early far more often than it ends: interactive mode stops at the first new DEFECT, a
+browser session dies, a preflight-clean stack falls over at scenario D, the operator runs out of
+afternoon. The plan then holds a partial result set and a tail of assertions with **no result on
+this environment** — and neither other action reaches them. A second `run` re-walks the whole plan
+from scratch, discarding an hour of green and resetting the subject those results describe;
+`retest` takes only FAIL and BLOCKED, and `not run` is neither. `resume` is that missing third
+case.
+
+**The subset**: every assertion whose status on the selected environment is `not run`, in plan
+order. Nothing else — a FAIL left behind by the stopping defect belongs to `retest`, after a fix.
+State the subset before walking it, and say how many assertions already have a result.
+
+**Same build, or it is not a resume.** The results you are extending were observed against a
+specific build. Before walking anything, run the selected environment's build-identity check as
+`run` step 1 does, and compare it to the build recorded beside `Subject:` in the run being
+continued. If they differ — the stack was redeployed, the operator rebased and restarted the dev
+server — **stop and tell the operator**: the recorded PASSes describe code the environment no
+longer serves, and finishing the tail would produce one result set spanning two builds, green at
+the top and green at the bottom for different reasons. The honest move there is a fresh `run`. An
+environment with no build-identity probe cannot be checked: say so, and ask the operator to confirm
+the build is unchanged before continuing.
+
+**No reset.** This is the one rule that separates `resume` from `run`, on a `local` environment as
+much as a `shared` one. The campaign-level reset exists to give the walk a clean test subject —
+re-applying it would destroy the subject the already-recorded results were observed on, which turns
+every PASS above into a claim about a deleted account. Re-establish each scenario's **own**
+precondition instead, exactly as the walk does between scenarios. A scenario whose precondition
+genuinely cannot be re-established without a reset is recorded `BLOCKED` with that reason — then
+tell the operator a full `run` is the way to cover it, and do not reset to force it.
+
+Otherwise the rules are `run`'s, unchanged: preflight stops the campaign, run mode is asked once
+per session, a `shared` env still needs the operator's go before any write, production still skips
+its unsafe classes. Append a run section marked `resume` with its environment and the build
+observed, update only the walked assertions on only the selected environment, and finish by writing
+`qa-report.md` as `report` does.
+
 ## `retest` — the second pass after a fix
 
 A full re-run after a fix pass is expensive and mostly re-confirms green. Instead:
 
 1. Take from `qa-runs.md` every assertion whose latest result **on the selected environment** is
-   FAIL or BLOCKED — a result recorded on another environment neither adds nor removes a case.
+   FAIL or BLOCKED — a result recorded on another environment neither adds nor removes a case. An
+   assertion with **no** result there is not unresolved, it is unwalked: it belongs to `resume`,
+   and silently folding it in here hides an interrupted campaign behind a fix pass.
 2. Add the **regression-risk set** around each fix — the assertions the fix could plausibly have
    broken, especially the ones an *over-fix* would break. A guard added to stop a wrong behaviour
    very often also suppresses the right one; assert the right one explicitly.
@@ -455,8 +497,10 @@ Tell the operator the file is ready to paste into a dev session. Do not open iss
 For the selected environment (`--env <name>`, else the most recent run's — say which), read
 `qa-plan.md` + `qa-runs.md` and report, without running anything: the progress table
 (PASS / DEFECT / BLOCKED / Not run), the blocker list with each blocker's status, the open
-defects, and the never-observed gaps. One short table, then the single sentence that answers
-"can this ship?".
+defects, and the never-observed gaps. A non-zero **Not run** is an interrupted campaign, not a
+finished one: say so, and name `resume` as the way to close it — a release verdict read off a plan
+that was never finished walking is the failure this whole action exists to prevent. One short
+table, then the single sentence that answers "can this ship?".
 
 ---
 
@@ -467,7 +511,7 @@ under its header. Which tables, and who writes them:
 
 - `plan` writes the **default** environment's table (all Not run), and keeps any existing ones —
   recomputed, since a regeneration can change N.
-- `run` / `retest` add or refresh the **selected** environment's table.
+- `run` / `resume` / `retest` add or refresh the **selected** environment's table.
 - `note` refreshes **every** table: a REMOVED assertion changes N for all of them. `note --env all`
   prints them all; `note --env <name>` prints that environment's.
 - `status` / `report` print the selected environment's table; they write nothing to the plan.
@@ -508,6 +552,9 @@ whole number on its own; show a non-zero value below 1% as `<1%` (never `0%`) an
   life of the feature.
 - **Append runs, never overwrite them.** The history is what stops a fixed defect from being
   re-diagnosed six weeks later.
+- **Never reset to resume, and never resume across a build.** The reset would delete the subject
+  the already-recorded results describe; a redeploy makes them describe code the environment no
+  longer serves. Either way the honest answer is a fresh `run`, not a stitched-together result set.
 - **BLOCKED is a real result.** Report it as loudly as a FAIL — an unreachable case is untested,
   and a green blocker list that quietly contains one is worse than a red one.
 - Report what you actually observed. Never a PASS you inferred.

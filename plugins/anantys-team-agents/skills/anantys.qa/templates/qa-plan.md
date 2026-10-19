@@ -95,7 +95,7 @@ For each FAIL: what you saw, what the case expected, the URL, and the console/ne
 
 ## Companion: `qa-runs.md`
 
-Appended by `run` / `retest` — **never overwritten**. Prior runs are how a later reader
+Appended by `run` / `resume` / `retest` — **never overwritten**. Prior runs are how a later reader
 recognises a re-occurrence instead of re-diagnosing it from scratch.
 
 ```markdown
@@ -104,11 +104,15 @@ recognises a re-occurrence instead of re-diagnosing it from scratch.
 > **Status as of run <n>, per environment:** `local`: <open blockers, or "no open defects"> ·
 > `staging`: <…>. A result on one environment says nothing about another.
 
-## Run <n> — <date> — `run` | `retest` — env: `<name>` — mode: autonomous | interactive
+## Run <n> — <date> — `run` | `resume` | `retest` — env: `<name>` — mode: autonomous | interactive
 
 Environment: `<name>` (`local` | `shared`). Subject: <account/fixture id>. Build observed:
 <branch/commit the env was serving, from its build-identity check — omit only when the plan has no
 **Under test:** line>. Path walked: <one line>.
+
+A `resume` section also states the run it continues and that the build is unchanged
+(`continues run <n-1> — same build, no reset`). A build that moved is not a resume: the earlier
+results describe code the environment no longer serves.
 
 | ID | Result | Evidence |
 |----|--------|----------|
