@@ -1,7 +1,7 @@
 ---
 name: anantys.qa
 description: Run a browser-driven QA campaign against a completed feature. Derives an executable test plan from a spec-kit tasks.md, a freeform feature brief (--brief), a set of tracker issues (--from linear:SKU-…), or one or more GitHub pull requests (--from pr:<url>), executes it in a real browser — against a local dev stack or a deployed environment (staging / a preview), selected with --env — recording PASS/FAIL/BLOCKED per assertion, accumulates operator adjudications so a defect is never re-filed twice, and emits a copy-pasteable fix brief for the dev agent. Environment specifics live in a project-local .anantys/qa.md, never in the skill. Use to QA a finished feature — however it was built — before release.
-allowed-tools: Bash, Read, Write, Edit, Glob, Grep, Task, TaskCreate, TaskUpdate, TaskList, AskUserQuestion
+allowed-tools: mcp__claude-in-chrome__tabs_context_mcp, mcp__claude-in-chrome__tabs_create_mcp, mcp__claude-in-chrome__navigate, mcp__claude-in-chrome__computer, mcp__claude-in-chrome__read_page, mcp__claude-in-chrome__get_page_text, mcp__claude-in-chrome__find, mcp__claude-in-chrome__form_input, mcp__claude-in-chrome__javascript_tool, mcp__claude-in-chrome__read_console_messages, Bash, Read, Write, Edit, Glob, Grep, Task, TaskCreate, TaskUpdate, TaskList, AskUserQuestion
 ---
 
 ## Mission
@@ -11,8 +11,36 @@ A spec-kit epic that reports "all tasks done" has been verified by the agent tha
 Three properties make this useful rather than ceremonial:
 
 1. **Assertion-level results.** Most features fail in exactly one place while looking fine everywhere else. Record PASS/FAIL/BLOCKED **per assertion**, never one verdict per scenario.
-2. **Adjudication memory.** Half of what a first run reports as a defect turns out to be intended behaviour, a known env drift, or a deliberate product decision. Every such ruling is written back into the plan so no future run re-diagnoses it from scratch. This is the single highest-value artifact the campaign produces.
+2. **Adjudication memory.** Half of what a first run reports as a defect turns out to be intended behaviour, a known env drift, or a deliberate product decision. Every such ruling is written back into the plan so no future run re-diagnoses it from scratch — and a ruling that is a property of the *environment* rather than of the feature is promoted into `.anantys/qa.md`, so the next feature's first run inherits it instead of re-filing it. This is the single highest-value artifact the campaign produces.
 3. **No inferred passes.** A case you could not reach is `BLOCKED`. Never `PASS`.
+
+## Browser preflight (hard gate)
+
+Any action that observes the product — `run`, `retest` — starts by calling
+`mcp__claude-in-chrome__tabs_context_mcp`. If it is unavailable or returns nothing
+usable, **STOP** and tell the user this skill needs a connected browser. Never
+substitute reading the source for driving it: a result you did not observe is not a
+result, and a whole campaign of inferred passes is worse than no campaign.
+
+The `allowed-tools` list above is the hard gate — a browser MCP whose tools are not
+listed there is unreachable from this skill even when it is connected. This team targets
+**Claude-in-Chrome** by default. To drive a different browser MCP (Playwright,
+chrome-devtools, …), add its equivalent tools — tab context, navigate, click/type, read
+page, console — to `allowed-tools` first.
+
+An environment whose `Driven by:` is a named local command (a headless runner, a
+screenshot script) is exempt: that command is the observation channel, run through
+`Bash`. The gate applies to every environment driven by the operator's browser.
+
+**The grant is a tool allowlist, not a destination allowlist.** `allowed-tools` says which
+verbs you hold; nothing in it says where you may point them. When `Driven by:` is the
+operator's browser, that browser is signed into their whole working life — the tab next to
+yours is their mailbox, their billing console, their production admin. Your navigation
+scope is exactly the **Surfaces** table of the environment you selected, plus whatever
+origins a scenario's own steps traverse (an OAuth provider, a payment sandbox). Anything
+else is out of bounds: do not open it, do not read it, do not "just check" it. A surface a
+scenario needs and the environment does not declare is a `.anantys/qa.md` gap — say so and
+`BLOCKED` the case, rather than navigating there anyway.
 
 ## Actions
 
@@ -24,7 +52,7 @@ Invoked as `/anantys.qa <action> [args]`. If no action is given, infer it: no `.
 | `plan` | Derive `qa-plan.md` from the feature source: a spec-kit dir, a `--brief <file.md>`, `--from linear:<SKU-…>`, or `--from pr:<url>` |
 | `run` | Execute the plan in a browser — `--env <name>` targets a deployed environment (staging / preview); default is the environment marked default — recording results and appending to `qa-runs.md`. Runs **autonomous** (whole plan, report at the end) or **interactive** (stop at the first DEFECT, print the fix brief) — asked once per session, or `--mode <autonomous\|interactive>` |
 | `retest` | Re-run only what is unresolved plus the regression-risk cases around each fix (`--env <name>` as for `run`) |
-| `note` | Record an operator adjudication into the plan so it is never re-filed — scoped to one environment (`--env <name>`) or to `--env all` |
+| `note` | Record an operator adjudication into the plan so it is never re-filed — scoped to one environment (`--env <name>`) or to `--env all`; `--durable` also promotes a drift ruling into `.anantys/qa.md`, so later features inherit it |
 | `report` | Emit `qa-report.md` — a fix brief to paste into a dev session (`--env <name>`; default: the last run's environment) |
 | `status` | Summarize coverage and remaining blockers without running anything (`--env` as for `report`) |
 
@@ -47,7 +75,7 @@ matter how the plan was derived.
    - Named: `/anantys.qa plan 206-subscribe-funnel`.
    - Else read `specs_dir` from `.anantys/qa.md` (default `specs/`), list its subdirectories, and
      take the one matching the current git branch's name; otherwise ask.
-2. **`--brief <file.md>`** — a single markdown brief you wrote by hand (`templates/feature-brief.md`),
+2. **`--brief <file.md>`** — a single markdown brief you wrote by hand (`${CLAUDE_SKILL_DIR}/templates/feature-brief.md`),
    carrying **Requirements** (each with a stable id), a **What shipped** summary, and a **Not
    shipped / known gaps** section. The universal, dependency-free path for any feature NOT built
    with spec-kit — a bot-loop feature, a hotfix, a design doc. `plan` **copies** the brief to
@@ -92,7 +120,7 @@ or `brief.md`):
 
 - `qa-plan.md` — the campaign (regenerated by `plan`, annotated by `note`)
 - `qa-runs.md` — the run log: one section per run, plus the closed-defect history
-- `qa-report.md` — the fix brief for the dev agent (overwritten by `report`)
+- `qa-report.md` — the fix brief for the dev agent (overwritten by `report`, `templates/qa-report.md`)
 
 ---
 
@@ -101,7 +129,7 @@ or `brief.md`):
 The skill knows *how* to QA. It must know nothing about *this* project's stack. Everything
 environment-specific goes into `.anantys/qa.md` at the repo root.
 
-Read `templates/qa-config.md` for the shape. Fill it by **interviewing the operator**, but do the
+Read `${CLAUDE_SKILL_DIR}/templates/qa-config.md` for the shape. Fill it by **interviewing the operator**, but do the
 legwork first so the questions are few and precise:
 
 - Read `README.md`, `CLAUDE.md`/`AGENTS.md`, `Makefile`, `docker-compose*.yml`, `.env.example`, `package.json` scripts.
@@ -124,7 +152,9 @@ Then ask the operator only what you could not infer, in one batch:
   be filed as a defect.
 - **`local` only:** the reset procedure for a fresh test subject, and a payment sandbox instrument
   (test card / token) if any journey touches money — without one, every checkout case is BLOCKED.
-- **`shared` only:** how the operator's signed-in browser session is made available to you, whether
+- **`shared` only:** how the operator's signed-in browser session is made available to you **and
+  how to tell at a glance that it is still live** (`Signed in when:` — an account menu, an avatar, a
+  `/me` returning 200; see Environments), whether
   a real record exhibiting the behaviour under test exists there (a shared env has no fixtures), and
   how deploy lag shows up (a fix merged but not yet deployed), and **whether it is production**
   (`Production: yes | no`). A `shared` block is always written with `Reset — NONE`, never a reset
@@ -132,13 +162,19 @@ Then ask the operator only what you could not infer, in one batch:
 
 Write only the environments the operator named, with real values — never copy a template block
 full of `<placeholders>` into the contract. Re-running `init` on an existing file adds or updates
-environment blocks and leaves the others untouched.
+environment blocks and leaves the others untouched — and **keeps every `### Known drift` entry
+already there**, promoted ones included (`_(promoted … from …)_`, see `note --durable`). Those were
+earned by a run; an `init` that rewrites the list from the interview alone discards rulings the
+operator made months ago and the next run re-files them.
 
 **Re-running `init` on a flat file migrates it first.** If the existing `.anantys/qa.md` has no
 `## Environment:` blocks (the legacy layout, see Environments), rewrite its flat `## Surfaces` /
 `## Preflight` / `## Reset` / `## Credentials` / … sections as one
-`## Environment: local (kind: local, default)` block **before** adding any new one, and show the
-converted file in the confirmation below. Appending a `shared` block to a flat file leaves the local
+`## Environment: local (kind: <asked>, default)` block **before** adding any new one, and show the
+converted file in the confirmation below. **Ask the kind — never carry it over from the name.** A
+flat file's sections say nothing about whether they describe a dev stack or a deployed one, and the
+migration is the moment the answer becomes durable; a `local` answer also needs the Target and probe
+the Reset block predates. Appending a `shared` block to a flat file leaves the local
 sections read by nothing and no environment marked default — the local campaign stops resolving.
 
 Confirm the file back to the operator before writing. `.anantys/qa.md` is committed — so it must
@@ -164,7 +200,33 @@ Resolve the source (see "Locating the feature"), then read it for the two roles 
   skipping it makes the plan FAIL the very gaps it was told to expect, which is the case this whole
   section exists to prevent. There is no Polish phase to drop. If a requirement carries no stable
   id, assign one (`R1`, `R2`, …) and write it back into the **copy** (never the operator's original)
-  — ids are referenced by runs, notes and reports forever.
+  — ids are referenced by runs, notes and reports forever, so a minted id is **carried forward by
+  text, never re-derived by position** (below).
+
+#### A minted id has no witness in the source
+
+An `FR-030` lives in the operator's source, so a regeneration re-reads it and a dropped requirement
+takes its id with it. An `R`-id does not: `plan` mints it into the copy at `.anantys/qa/<slug>/brief.md`,
+and that copy is the file the next `plan` overwrites. The only durable record of what `R5` *means* is
+destroyed by the act that re-derives it, and the operator's original — the one file a human edits
+between campaigns — never carries the id at all. Re-derived by position it is an index into an
+edited list, and it does not need an edit to move: `--from linear:` and `--from pr:` distil
+requirements from issue prose on every run, so the same source re-assembled tomorrow can order or
+word them differently. So on a regeneration, **before** overwriting the copy:
+
+- Read the existing copy's **Requirements** list. It is the id ledger; after the write there is none.
+- Carry each minted id onto the line whose requirement it matches — on the behaviour, not the
+  wording. An id follows its requirement through a rewrite.
+- Mint only for lines that match nothing, at the **next free number** — never one a prior id used,
+  even one no longer present. `R`-ids are never renumbered and never reused, for the same reason
+  assertion ids are not.
+- An unmatched minted id is **not an absent requirement.** It has no witness in the source: a
+  behaviour the product dropped and a re-distillation that phrased it beyond recognition look
+  identical. Keep the id, route its assertions into §4 (Known gaps) with the reason `cited
+  requirement not matched in this read`, and leave the product decision to an operator `note`.
+- Name the carried, added and unmatched ids when you show the operator the plan. A shift past one
+  insertion point is cheap to catch and expensive to miss: every run, note and report citing a
+  shifted id is an observation about a different requirement.
 
 Then transform into scenarios (identical for every source):
 
@@ -176,11 +238,18 @@ Then transform into scenarios (identical for every source):
   can only confirm what the model already did.
 - **Prioritise the money/legal/data paths.** Anything touching payment, consent, or overwriting
   existing user data goes in the blocker list.
-- **Mark what a browser agent cannot do** — CAPTCHA, emailed codes, real payment credentials,
-  true mobile viewports. These are `BLOCKED` by construction and need a named human step. Say so
-  in the plan rather than letting a run discover it.
+- **Mark what a browser agent cannot do — read it from the contract, never re-derive it.** Each
+  environment's `### Agent limits` block in `.anantys/qa.md` is the operator's own list (a signup
+  CAPTCHA, an emailed code, a viewport below the browser's clamp, a real payment credential). These
+  are `BLOCKED` by construction and need a named human step. `plan` takes no `--env`, so route
+  **every** declared environment's limits into §4 (Known gaps) — each item **naming the
+  environment(s) it applies to**, a limit being per environment like every other field of that
+  block — and mark the assertions they cover `BLOCKED`, exactly as an adjudication would. Re-deriving
+  them from a generic list leaves a declared limit for a run to discover mid-campaign; recording one
+  without its environment BLOCKs a case elsewhere that could have been walked. Add what the contract
+  missed, and say which items were yours.
 
-Write `qa-plan.md` following `templates/qa-plan.md`. Every assertion gets a stable id
+Write `qa-plan.md` following `${CLAUDE_SKILL_DIR}/templates/qa-plan.md`. Every assertion gets a stable id
 (`A1`, `B5`, …) — ids are referenced by runs, notes and reports forever, so **never renumber
 them**. On a regeneration, keep existing ids and their adjudication annotations; append new ones.
 
@@ -232,10 +301,16 @@ local dev stack *or* a deployed one. Each environment is one of two **kinds**:
 
 **How each environment is driven is read from its `Driven by:` line**, never assumed: the
 operator's connected browser (e.g. Claude-in-Chrome), or a named local command. A `shared` env is
-always driven by the operator's connected browser. An environment with no `Driven by:` line — a
-legacy file included — is driven by the operator's connected browser.
+always driven by the operator's connected browser — its kind *derives* the line, which is a
+declaration, not an absence. A **declared** env missing the line is not assumed to be: ask which
+drives it, fold the question into the run-mode question below, and write the answer into
+`.anantys/qa.md`. Never fall back to the operator's connected browser — it is the widest capability
+this skill has, and a missing line is the one case where nobody chose to grant it.
 
-**Production is a `shared` env with `Production: yes`**, and gets two extra guards:
+**Production is a `shared` env with `Production: yes`**. A `shared` block with **no** `Production:`
+line is treated as production until the operator says otherwise — being wrong that way costs a
+handful of `BLOCKED` assertions, being wrong the other way charges a real card or emails a real
+person. Production gets two extra guards:
 
 - **Never run on production:** any scenario that charges a real card, records a real consent, or
   sends a notification (email, SMS, push) to a real person. Those assertions are `BLOCKED` on
@@ -254,30 +329,107 @@ Select one with `--env <name>` on any action that reads or writes results — `r
   **is a run on the default environment.**
 
 Always state which environment was selected, and how. Every surface URL, preflight check,
-build-identity check, reset step, credential and drift note then comes from **that** environment's
-block in `.anantys/qa.md`.
+build-identity check, reset step, credential, **agent limit** and drift note then comes from
+**that** environment's block in `.anantys/qa.md`.
 
 **A `.anantys/qa.md` with no `## Environment:` blocks** (written by an earlier `init`: flat
 `## Surfaces` / `## Preflight` / `## Reset` / `## Credentials` sections) **is a single `local`
-environment named `local`, and it is the default** — run it exactly as before, reset included.
-`--env <other>` against such a file is an error: stop and tell the operator to re-run `init`, which
-migrates the file before declaring the new environment (see `init`). Never guess an environment's
-kind; an env whose kind you cannot establish is not run.
+environment named `local`, and it is the default** — its surfaces, preflight checks, credentials and
+drift notes are read exactly as before. Its **kind is undeclared**, so its Reset block is **not
+run**: the flat layout predates the `local`/`shared` distinction, nothing in it was written under a
+rule that asked which kind it targets, and it carries neither a declared Target nor a probe to
+compare one against. A campaign needing a fresh subject there asks the operator to re-run `init`
+first. `--env <other>` against such a file is an error: stop and tell the operator to re-run `init`,
+which migrates the file before declaring the new environment (see `init`). Never guess an
+environment's kind; an env whose kind you cannot establish is not reset and not run.
+
+**An absent declaration is never a permission** — the general rule the three paragraphs above
+apply, stated once in `templates/qa-config.md`. A field this skill gates an action on can be
+missing: an older `init` wrote the file, a hand edit dropped a line, the operator skipped the
+question. Missing resolves to the **narrower** branch, and a field whose absence would widen what an
+action may do is asked, never inferred. Note which way the existing defaults already lean: the two
+fields about *being able to verify* fail closed (no build-identity probe ⇒ ask and stop; no payment
+instrument ⇒ every checkout case `BLOCKED`). The fields about *permission to act* are the ones to
+watch, because their permissive branch reads like backward compatibility.
+
+**And a present declaration is not an observation** — the complement, also stated once in
+`templates/qa-config.md`. `kind:` and `Production:` are typed at `init` and read forever after as if
+they described the host; they describe a URL, and the URL is what moves — a retired staging hostname
+repointed at prod, a repointed dev box behind a `local` block (whose surface is *expected* not to be
+`localhost`), a `shared` block copied with only the name changed. No field is missing in any of
+those, so every rule above passes while the campaign resets real data or walks the money assertions
+it was meant to `BLOCK`. Each environment therefore records an **`Answers as:`** line beside its
+build-identity probe — an identity in the probe's own response, never the commit, since staging and
+production serve the same commit right after a deploy — and `run` step 1 compares it, free, because
+the probe already ran. No match, or no identity in the response, ⇒ `kind:`/`Production:`
+**unconfirmed** ⇒ the narrower branch above: not reset, treated as production.
+
+**And an observation is a measurement at a time, not a property of the run.** The two rules above
+read a field once and compare it once, at step 1 — correct for `kind:` and `Production:`, which a
+deploy changes between campaigns rather than during one. One precondition does not hold still:
+on a `shared` env the whole campaign rides the **operator's signed-in browser session**, and the
+agent may not sign in, so this is the only load-bearing precondition it can neither establish nor
+repair. Sessions expire, and an autonomous walk is long. Past that point the product answers every
+request with a login wall, "judge from what the product shows" reads it as the feature being gone,
+and the run files consecutive FAILs — money and legal ones first, since those scenarios are ordered
+first — against code that is fine. Nothing in the file is wrong and no probe disagrees; the
+observation simply aged. So each `shared` env records a **`Signed in when:`** line — the cheapest
+visible proof the session is still live — and `run` re-checks it per scenario (step 3), reporting
+its loss as `BLOCKED`, which is what an unreachable case has always been.
 
 **Results are per environment**, since an assertion can pass on one and fail on another (a fix
 deployed to staging but not the local stack, or the reverse):
 
-- Every `qa-runs.md` run header names its environment (`templates/qa-plan.md`).
+- Every `qa-runs.md` run header names its environment (`${CLAUDE_SKILL_DIR}/templates/qa-plan.md`).
 - The per-assertion status in `qa-plan.md` is recorded **per environment** (`local: FAIL ·
   staging: PASS`) — the suffix is the authoritative record, required on every assertion that has
-  run anywhere; the checkbox is checked only when every declared environment is PASS. A run
-  updates only the selected environment's status, never another's.
+  run anywhere; the checkbox is checked only when every declared environment **it was permitted to
+  run on** is PASS (see "a refusal is not a gap" below). A run updates only the selected
+  environment's status, never another's.
 - `retest`, `status` and `report` read only the results recorded for the selected environment and
   say which environment they describe. `status` and `report` also name every other environment
   that has results, so a defect recorded elsewhere is never silently out of view.
 - **Adjudications are scoped too** (see `note`): most are drift rulings, and drift is
   per-environment. A ruling applies only to its own environment, or to all of them when scoped
   `all`.
+
+**But a brief is work, not evidence, and the work is not per environment.** The rules above scope
+*results*, correctly: an observation belongs to the environment it was made on. `qa-report.md` is
+not a result. It is the one artifact that leaves the campaign, addressed to a dev agent that has the
+spec but neither the plan nor this session — and the code it asks for is the same code on every
+environment. Yet the file is a **single slot, rewritten in full** by `report` and by step 7 of every
+`run`. A campaign with open defects on two environments can therefore hand off only one of them: the
+second write replaces the first brief, and the repro, blast radius and *what a fix must not break*
+it carried survive nowhere — `qa-runs.md` keeps one line per defect, which is a record, not a brief.
+Bullet three above makes that loss visible rather than silent, which is strictly better, but it
+points the reader at a brief that no longer exists.
+
+So **`qa-report.md` covers every environment that has an open defect**, selected environment first,
+each defect naming the environments it was observed on, and one entry per product problem rather
+than one per environment that saw it. *What a fix must not break* is then computed against the
+assertions passing **anywhere** — a fix validated only against `staging`'s passing set can regress
+an assertion that passes only on the local stack, and no per-environment rule above can see that.
+
+**And a refusal is not a gap.** `BLOCKED` carries two things. A case the run *could not reach* — a
+CAPTCHA, an emailed code, a torn-down preview — is untested, and reporting it as loudly as a FAIL is
+right. A case this skill **refused to walk** is not: the production guard above `BLOCKED`s every
+money, consent and notification assertion by construction, and those are exactly §3's Money and
+Legal blockers. A production campaign that behaved perfectly therefore reports its whole blocker
+list `BLOCKED`, every run, forever — and the `Production:`-is-missing rule above widens that to any
+under-declared `shared` block. One status, two meanings, and the surfaces answering "can this ship?"
+read the louder one. So record the reason and let the other environments answer it:
+
+- Write a refused result as `BLOCKED — unsafe on production` (or the refusing rule's own reason).
+  Its own environment can never resolve it; only another one can.
+- It is a **coverage gap only when no environment has a PASS for it** — the cross-environment read
+  `status` and `report` already do. Blocked on production, green on staging, is *verified
+  elsewhere*; blocked on production and green nowhere is a real gap, and the loudest kind.
+- It is **not retestable** (`retest` step 1): that is the one place the subset rule orders a walk
+  another rule forbids.
+
+`note` is the wrong repair — an adjudication records what the *operator* ruled about the product,
+and this is the skill declining to act; re-typing it per assertion per campaign would dress a safety
+guard as operator-approved drift.
 
 Testing a shipped feature on `staging` is often easier than reproducing its data locally —
 but the `shared` rules above are not optional, because the blast radius of a reset or a stray write
@@ -341,20 +493,49 @@ operator's go before any write.
 
    The line is absent for a merged/deployed feature, and then there is nothing extra to check.
 
+   **The same probe response also says which host answered — read it.** Compare it to the
+   environment's `Answers as:` line (Environments). A match confirms this block's `kind:` and
+   `Production:` for this run; a mismatch, or a response carrying no identity, leaves both
+   **unconfirmed** — no reset in step 2, and the environment is treated as production. Record
+   `Identity: confirmed` or `Identity: unconfirmed — <what answered> ≠ <declared>` in the run
+   section next to `Subject:`, and never edit `Answers as:` to match. This check is free: the probe
+   already ran above, and the commit it returns is what `Answers as:` exists to supplement — the
+   same commit is served by staging and production between deploys.
+
    **On a `shared` env, confirm the target before anything is written:** echo the environment name,
-   its base URL, the build it serves, whether it is production, and the scenarios that will create
-   data there — then wait for the operator's explicit go. No go, no run.
-2. **Reset — `local` only.** On a `local` environment, apply its reset procedure and confirm it took
-   effect (a stale auth cookie or leftover cache silently invalidates every assertion that follows) —
-   verify by observing the app, not by trusting the command's exit code. On a **`shared`**
-   environment there is **NO reset**: never reset staging / preview / prod — reuse the operator's
-   session and create any needed test data additively (see Environments).
+   its base URL, the build it serves, whether it is production **and whether that was confirmed or
+   declared**, and the scenarios that will create data there — then wait for the operator's explicit
+   go. No go, no run. Reading `Production: no` back as fact is how a mistyped block gets confirmed
+   by the person who mistyped it; an unconfirmed env is presented as production, and the question is
+   whether to proceed at all.
+2. **Reset — a confirmed `local` env only.** On an environment whose block declares `kind: local`
+   *and* whose identity step 1 confirmed, apply its reset procedure and confirm it took effect (a stale auth cookie or leftover cache
+   silently invalidates every assertion that follows) — verify by observing the app, not by trusting
+   the command's exit code. On a **`shared`** environment there is **NO reset**: never reset staging /
+   preview / prod — reuse the operator's session and create any needed test data additively. On an
+   environment whose kind is **undeclared** (a flat legacy file) or **unconfirmed** (step 1 found a
+   different host, or none) there is also no reset: ask the operator to re-run `init`, or walk the
+   plan with whatever subject state exists and mark anything the leftover state invalidates
+   `BLOCKED` (see Environments).
 3. **Walk the scenarios in order**, in a real browser driven as the environment's `Driven by:`
    line says (see Environments). On production, skip the unsafe scenario classes and record them
    `BLOCKED`. Per scenario: establish the precondition,
    perform the steps, then evaluate each assertion **individually**. In **interactive** mode the
    first *new* DEFECT ends the walk: finish that assertion's evidence, do steps 5–6, then hand off
    (see Run mode).
+
+   **On a `shared` env, the session is part of that precondition — check it, per scenario.** Before
+   the first step, confirm the environment's `Signed in when:` condition still holds. If it does not,
+   the walk is **over**: you cannot sign in, so every remaining scenario would observe a login wall
+   and file it as a defect. Mark this scenario's assertions — and every one not yet walked —
+   `BLOCKED`, reason `session ended`, record it in the run section, do steps 5–7, and tell the
+   operator what to re-establish. This is a preflight failure found late, not a verdict on the
+   product: name no defect, and do not let `report` lead with one.
+   Two cases stay ordinary FAILs, or the rule would suppress the defects it most resembles: an
+   assertion **about** authentication (a requirement that an unauthenticated visitor is redirected,
+   or that a session survives a reload) is judged on its merits; and a login wall on **one** surface
+   while `Signed in when:` still holds elsewhere is the product logging the user out, which is the
+   defect.
 4. **Post a one-line result after each scenario.** The operator is watching; a campaign that
    reports only at the end is one where a bad reset costs you the whole run.
 5. **Append a run section to `qa-runs.md`**, its header naming the environment and the mode —
@@ -370,15 +551,21 @@ operator's go before any write.
 - **Behaviour over stores.** Judge from what the product shows, not from a database or cache you
   polled. Reads race the writes they observe, and tokens lag the events that invalidate them —
   both will lie to you at exactly the wrong moment.
-- **Confirm your own preconditions before asserting.** A surviving session, a leftover record, or
-  state you created yourself by re-walking a flow invalidates the result. A defect you caused is
-  not a defect.
+- **Confirm your own preconditions before asserting — in both directions.** A surviving session, a
+  leftover record, or state you created yourself by re-walking a flow invalidates the result. So
+  does the same state *gone*: an expired session, a fixture reaped by a nightly job, a preview
+  environment torn down mid-walk. A defect you caused is not a defect, and neither is one you
+  observed through a precondition that had quietly lapsed.
 - **Screenshot anything visual**, and capture the URL plus any console/network error on every FAIL.
 - **Never infer a PASS from a screen you did not reach.**
-- Check every FAIL against the adjudication annotations in `qa-plan.md` **scoped to this environment
-  or to `all`** before filing it. If it is already ruled intended or a known drift there, record it
-  as PASS-with-note and move on. A ruling scoped to another environment never passes a FAIL here —
-  file it, and mention the other env's ruling in the evidence so the operator can extend it.
+- Check every FAIL against **two** records before filing it: the adjudication annotations in
+  `qa-plan.md` **scoped to this environment or to `all`**, and the selected environment's
+  **`### Known drift`** list in `.anantys/qa.md` — the one that carries rulings earlier campaigns
+  promoted (see `note --durable`) plus whatever `init` recorded. Checking only the plan makes a
+  first run on a new feature re-file every drift the project already knows. If the FAIL is ruled
+  intended or a known drift in either, record it as PASS-with-note, cite which record ruled it, and
+  move on. A ruling scoped to another environment never passes a FAIL here — file it, and mention
+  the other env's ruling in the evidence so the operator can extend it.
 
 ## `retest` — the second pass after a fix
 
@@ -386,6 +573,9 @@ A full re-run after a fix pass is expensive and mostly re-confirms green. Instea
 
 1. Take from `qa-runs.md` every assertion whose latest result **on the selected environment** is
    FAIL or BLOCKED — a result recorded on another environment neither adds nor removes a case.
+   **Except a refused one** (`BLOCKED — unsafe on production` and any other rule-refusal, see
+   Environments): it is not a case a second pass can settle, and walking it is what the refusing
+   rule forbids. Say it is excluded and why, with the environment that answers it if one does.
 2. Add the **regression-risk set** around each fix — the assertions the fix could plausibly have
    broken, especially the ones an *over-fix* would break. A guard added to stop a wrong behaviour
    very often also suppresses the right one; assert the right one explicitly.
@@ -431,11 +621,48 @@ so its absence is never re-reported as a defect.
 After any ruling, refresh **every** progress table in `qa-plan.md` — a REMOVED assertion leaves N
 for all environments (see "Progress table").
 
+### `--durable` — a drift ruling outlives the feature that found it
+
+`qa-plan.md` is **per feature**. Both existing scopes are environment axes, so a drift ruling —
+"this env's sandbox key prices differently", "this env never sends mail" — is a property of the
+environment that happens to have been discovered by one campaign, and it dies with that campaign's
+directory. The next feature's first run re-files it as a defect, which is precisely the
+re-diagnosis this action exists to prevent.
+
+`--durable` therefore also appends the ruling to the **`### Known drift`** list of each environment
+in its scope in `.anantys/qa.md` (`--env <name>` → that block; `--env all` → every block; a flat
+legacy file is the one `local` environment, see Environments), after the assertion annotation is
+written — creating the section if that block has none. Promoted entries carry their origin, so a
+later reader can retire one when the drift is fixed:
+
+```markdown
+### Known drift — never file these as defects
+- Checkout price does not match the grid — sandbox key drift, not a product defect. A real failure
+  is a mismatch in **plan or period**. _(promoted 2026-08-03 from `sku-231` A4)_
+```
+
+Three limits:
+
+- **Only drift is promotable.** Intended behaviour and a REMOVED strike-through are rulings about
+  *this* product's behaviour; they narrow one assertion and belong to its plan. `--env all` on
+  such a ruling means "on every environment", never "for every feature" — reject `--durable` on
+  it and say why.
+- **Never promote without the flag.** Without `--durable`, apply the ruling to the plan, then say
+  in one line that it is feature-scoped and give the `note … --durable` call that would widen it.
+  Widening is the operator's call, exactly as it is for `--env all`.
+- **`.anantys/qa.md` is committed and holds no secrets.** A promoted entry carries the observed
+  behaviour and the reason — never a credential, a token, or a URL with one in it.
+
+A ruling that reaches the contract is read back by **two** places: `run`'s adjudication check
+(see Judging rules), and the next `init`, which keeps every promoted entry when it updates an
+environment block.
+
 ## `report` — the fix brief
 
 Select the environment first (`--env <name>`, else the most recent run's — see Environments) and
-name it at the top of the report. Write `qa-report.md` addressed to a **dev agent in a fresh
-session** that has the spec context but not yours. For each open defect:
+name it at the top of the report. Write `qa-report.md` **following `templates/qa-report.md`** —
+the brief has its own shape, and it is not the run table the plan's §5 shows — addressed to a
+**dev agent in a fresh session** that has the spec context but not yours. For each open defect:
 
 - **Assertion id and what the spec requires** (with its requirement id).
 - **What you observed** — exact copy, URL, console/network error.
@@ -446,7 +673,16 @@ session** that has the spec context but not yours. For each open defect:
 
 Close with the release verdict: the blocker list, its status, and — explicitly — the assertions
 that were never observed. **Passing every blocker is not the same as having tested everything**;
-say which gaps a green list is hiding.
+say which gaps a green list is hiding. Split the never-observed into the two kinds (see
+Environments): **unreached** here and green on no environment — the real gap — and **refused**
+here, naming the environment whose PASS answers it, or stating that none does. A verdict that
+reports a refusal as a gap is unshippable by construction; one that reports an unanswered refusal
+as a non-gap ships a money path nobody tested.
+
+"Open defect" here means open on **any** environment, not only the selected one (see Environments):
+the selected environment orders the brief and is named at the top, it does not filter it. *What a fix
+must not break* likewise spans every environment's passing assertions. The release verdict stays
+per environment — it answers "can this ship *here*".
 
 Tell the operator the file is ready to paste into a dev session. Do not open issues or PRs.
 
@@ -455,8 +691,8 @@ Tell the operator the file is ready to paste into a dev session. Do not open iss
 For the selected environment (`--env <name>`, else the most recent run's — say which), read
 `qa-plan.md` + `qa-runs.md` and report, without running anything: the progress table
 (PASS / DEFECT / BLOCKED / Not run), the blocker list with each blocker's status, the open
-defects, and the never-observed gaps. One short table, then the single sentence that answers
-"can this ship?".
+defects, and the never-observed gaps — split unreached from refused, as `report` does. One short
+table, then the single sentence that answers "can this ship?".
 
 ---
 
@@ -494,6 +730,11 @@ whole number on its own; show a non-zero value below 1% as `<1%` (never `0%`) an
 
 ## Rules
 
+- **A file bundled with this skill is named `${CLAUDE_SKILL_DIR}/<path>`, never bare.** The
+  placeholder is substituted with this skill's own directory when the skill loads. A companion
+  named *without* it is a relative path, and resolves against the session's working directory —
+  the operator's repo — where it does not exist. Applies to anything under `templates/`, and to
+  any companion a future split adds.
 - **Environment details live in `.anantys/qa.md`, never in this skill and never in `qa-plan.md`.**
   A plan that hardcodes a hostname stops working for the next project — and for the next dev stack.
 - **Never reset — or write destructively to — a `shared` environment** (staging, a preview, prod).
@@ -509,5 +750,7 @@ whole number on its own; show a non-zero value below 1% as `<1%` (never `0%`) an
 - **Append runs, never overwrite them.** The history is what stops a fixed defect from being
   re-diagnosed six weeks later.
 - **BLOCKED is a real result.** Report it as loudly as a FAIL — an unreachable case is untested,
-  and a green blocker list that quietly contains one is worse than a red one.
+  and a green blocker list that quietly contains one is worse than a red one. A `BLOCKED` this
+  skill **refused** to walk is answered by another environment's PASS, not by a louder report
+  (see Environments).
 - Report what you actually observed. Never a PASS you inferred.
