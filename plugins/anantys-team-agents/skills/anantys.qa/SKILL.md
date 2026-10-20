@@ -184,6 +184,10 @@ Write `qa-plan.md` following `templates/qa-plan.md`. Every assertion gets a stab
 (`A1`, `B5`, …) — ids are referenced by runs, notes and reports forever, so **never renumber
 them**. On a regeneration, keep existing ids and their adjudication annotations; append new ones.
 
+A source that yields **no** assertion is a stop, not an empty plan: say which source you read and
+why nothing in it is browser-observable, and write nothing. An empty plan is the one campaign that
+cannot fail, so it reports a clean bill of health for a feature nobody tested.
+
 If the source carries an **under-test precondition** — a `--from pr:` head branch, or a brief's
 `_Under test:_` line — copy it into the plan header as `**Under test:** <branch> @ <head commit> —
 <environment>` (plus `pr: <ref>` for a PR source). Record the head **commit**, not only the branch:
@@ -489,6 +493,12 @@ as PASS. **Done** = has a result on this environment (PASS, DEFECT or BLOCKED). 
 percentages, so never adjust a count to make the percentages add up. Round each percentage to a
 whole number on its own; show a non-zero value below 1% as `<1%` (never `0%`) and a value above
 99% but short of 100% as `>99%` (never `100%`).
+
+**`N = 0` has no percentages.** A plan whose every assertion is struck through `REMOVED` leaves no
+denominator, so print `—` in all five percentage cells — never `0%`, and never the template's
+`100%` for Not run — and head the table `· 0 assertions (all REMOVED)`. `status` and `report`
+answer "can this ship?" with **no**, for the reason that nothing is under test: a feature whose
+whole scope was dropped needs a regenerated plan, not a release.
 
 ---
 
