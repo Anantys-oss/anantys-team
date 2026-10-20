@@ -24,6 +24,14 @@ single `local` environment named `local`, marked default — it keeps working un
 > **No secrets.** Record the *command* that retrieves a credential, never the credential.
 > This file is committed.
 
+> **A known drift lives only while it is still true.** Every `### Known drift` entry suppresses a
+> future failure, on every later campaign, so each one records the observation it was made about.
+> An entry is live only while a run still observes that. Observe something different and the entry
+> has **lapsed**: file the FAIL, and strike the entry through in the same pass so the next run stops
+> reading it. A drift ruling judges a value; when the value moves the judgement has lost its
+> subject — and an entry nobody retires goes on suppressing the real defect that lands on the same
+> assertion a year later.
+
 ---
 
 ```markdown
@@ -91,7 +99,8 @@ How to identify the test subject (ids, and how to find them when data is encrypt
 - <emailed verification code> → operator relays the code
 
 ### Known drift — never file these as defects
-- <e.g. an endpoint not deployed locally> — <why, and what a *real* failure would look like instead>
+- <observed behaviour, stated precisely enough that a later run can tell it apart from a real
+  failure> — <why it is not a defect, and what a *real* failure would look like instead>
 
 ## Environment: staging (`kind: shared`)
 
