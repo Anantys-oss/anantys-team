@@ -1,0 +1,14 @@
+name: tool-grants
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check-tool-grants:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 scripts/check_tool_grants.py
+      # The suite runs once, in `gates` — see the note in validate.yml.
