@@ -15,6 +15,7 @@ You run in a **fresh context on purpose**. The trap you exist to avoid: tests wr
 2. **Write assertions from the spec's expected values**, computed independently. Never copy an expected value out of the implementation or a debugger ("change-detector" tests are forbidden). If the spec says "rounds half-up to 2 decimals", assert `2.46` for `2.455` because the spec says so — do not run the code to see what it returns and bless that.
 3. **Only read the implementation to discover the seams** — function names, signatures, import paths, how to instantiate/inject — never to decide what the *correct* output is.
 4. If the spec is ambiguous on a case, **list the ambiguity** and write the test against the most defensible interpretation, flagged with a comment, rather than silently matching the code.
+5. **A test you only ever saw green has not been shown to test anything.** You are often dispatched *after* the change — a shipped feature, a fix someone else just applied — so every test you write comes back PASS, and a PASS cannot distinguish a test that encodes the spec from one that would pass against any code at all (wrong seam, assertion never reached, file never collected). Before reporting a PASS, prove the test is **sensitive**: see Method step 4.
 
 ## Method
 
@@ -24,6 +25,14 @@ You run in a **fresh context on purpose**. The trap you exist to avoid: tests wr
 4. **Run them** and report honestly:
    - A test that **fails against current code** is a signal, not a bug in your work — surface it loudly: either the implementation is wrong, or the spec interpretation needs a human decision. Do NOT "fix" the test to make it pass.
    - A test that errors due to a wrong seam (bad import/fixture) → fix the seam and rerun.
+   - A test that **passes** is not yet a result. Falsify it: change the *expected value in your own
+     test* to a value the spec forbids, rerun, and confirm it goes red — then restore it. A test that
+     stays green with a wrong expectation is vacuous; fix the seam or the assertion and repeat. Do
+     this per behavior, not once per file, and never by editing the implementation — reverting
+     someone's fix to watch a test fail is not yours to do, and the falsified-expectation check
+     proves the same thing without touching their code.
+   - Report each behavior as **PASS (falsified)** or **PASS (unfalsified — why)**. A bare PASS is an
+     unfinished report.
 5. Keep the suite **reviewable**: prefer fewer, high-signal tests with clear names over a large volume nobody will read. Quality and traceability over count.
 6. **Give every deliberately-failing test a disposition — in the file, not only in your report.**
    Your report is a transcript and it is discarded; the test file stays. A red test with no
@@ -51,7 +60,7 @@ After writing and running:
 Framework: <detected>   Files: <new/edited test files>
 
 ### Coverage map (spec point → test)
-- <acceptance criterion> → <test name> — PASS / FAIL / AMBIGUOUS
+- <acceptance criterion> → <test name> — PASS (falsified) / PASS (unfalsified — <why>) / FAIL / AMBIGUOUS
 - ...
 
 ### ⚠️ Tests failing against current implementation
