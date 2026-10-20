@@ -137,7 +137,7 @@ class TheSweepRulesOnlyOnItsOwnMeasuring(unittest.TestCase):
         with (
             mock.patch.object(gm, "git", return_value=""),
             mock.patch.object(gm, "gates", return_value=["check_a"]),
-            mock.patch.object(gm, "run", side_effect=lambda _t, ref, _n: rows[ref]),
+            mock.patch.object(gm, "run", side_effect=lambda _t, ref, *_: rows[ref]),
         ):
             return gm.main(list(rows))
 
@@ -217,6 +217,144 @@ class TheGateListComesFromTheTree(unittest.TestCase):
         found = gm.gates()
         self.assertIn("check_plugins", found)
         self.assertTrue(all(n.startswith("check_") for n in found))
+
+    def test_the_gate_list_can_be_read_from_somewhere_other_than_root(self) -> None:
+        # The assertion above is the reason this one exists: "from the tree" meant
+        # *this* tree, and the sweep's instrument is then whichever gates the branch
+        # it was launched from happens to carry.
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / "scripts").mkdir()
+            (Path(tmp) / "scripts" / "check_elsewhere.py").write_text("")
+            self.assertEqual(gm.gates(Path(tmp)), ["check_elsewhere"])
+
+
+class AUnionOverlayIsAssembledNotMerged(unittest.TestCase):
+    """`union` builds a gate set from the whole queue instead of from one branch.
+
+    The licence for it is that no file is synthesized: every byte written is some
+    head's blob, so a finding is reproducible from the head the provenance names.
+    These cover that promise, the newest-wins rule, and the support files whose
+    absence inverts two gates' verdicts.
+    """
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.repo = Path(self.tmp.name) / "repo"
+        self.repo.mkdir()
+        self._git("init", "--quiet", "--initial-branch=base")
+        self._git("config", "user.email", "t@example.com")
+        self._git("config", "user.name", "t")
+        # Never `head` — on a case-insensitive filesystem it aliases HEAD.
+        self._commit(
+            "older", {"scripts/check_a.py": "a-from-older\n"}, "2020-01-01T00:00:00+0000"
+        )
+        self._git("checkout", "--quiet", "-b", "newer", "base")
+        self._commit(
+            "newer",
+            {
+                "scripts/check_a.py": "a-from-newer\n",
+                "scripts/check_b.py": "b-from-newer\n",
+                "scripts/a-baseline.txt": "declared\n",
+            },
+            "2021-01-01T00:00:00+0000",
+        )
+
+    def _git(self, *args: str, when: str | None = None) -> str:
+        import os
+        import subprocess
+
+        env = dict(os.environ)
+        if when:  # `--date` sets only the *author* date; `by_tip_date` reads `%ct`
+            env["GIT_COMMITTER_DATE"] = env["GIT_AUTHOR_DATE"] = when
+        done = subprocess.run(
+            ("git", *args), cwd=self.repo, capture_output=True, text=True, check=False, env=env
+        )
+        return done.stdout.strip()
+
+    def _commit(self, message: str, files: dict[str, str], when: str) -> None:
+        for path, body in files.items():
+            target = self.repo / path
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(body)
+        self._git("add", "-A")
+        self._git("commit", "--quiet", "-m", message, when=when)
+
+    def _union(self, refs: list[str]) -> tuple[Path, dict[str, str]]:
+        into = Path(self.tmp.name) / "union"
+        with mock.patch.object(gm, "ROOT", self.repo):
+            return into, gm.union(refs, into)
+
+    def test_a_file_only_one_head_carries_is_in_the_union(self) -> None:
+        into, held = self._union(["base", "newer"])
+        self.assertEqual((into / "scripts" / "check_b.py").read_text(), "b-from-newer\n")
+        self.assertEqual(held["scripts/check_b.py"], "newer")
+
+    def test_the_last_ref_wins_a_contested_path(self) -> None:
+        into, held = self._union(["base", "newer"])
+        self.assertEqual((into / "scripts" / "check_a.py").read_text(), "a-from-newer\n")
+        self.assertEqual(held["scripts/check_a.py"], "newer")
+
+    def test_the_caller_orders_the_refs_so_the_earlier_one_can_win(self) -> None:
+        into, held = self._union(["newer", "base"])
+        self.assertEqual((into / "scripts" / "check_a.py").read_text(), "a-from-older\n")
+        self.assertEqual(held["scripts/check_a.py"], "base")
+
+    def test_a_support_file_comes_along_with_its_gate(self) -> None:
+        # The defect this flag was built out of: a grants gate is a `.py` plus a
+        # `-baseline.txt` it reads relative to its own `__file__`. An assembly that
+        # copies only the Python reports that gate's *declared* debt as live errors,
+        # and the sweep's finding is then its own harness.
+        into, _ = self._union(["base", "newer"])
+        self.assertEqual((into / "scripts" / "a-baseline.txt").read_text(), "declared\n")
+
+    def test_every_file_in_the_union_is_some_head_s_blob_verbatim(self) -> None:
+        # Not `gate_drift.py`'s merge. Nothing here is synthesized, which is what
+        # makes a finding reproducible by checking out the named head.
+        into, held = self._union(["base", "newer"])
+        for path, ref in held.items():
+            with mock.patch.object(gm, "ROOT", self.repo):
+                self.assertEqual(
+                    (into / path).read_bytes(), gm.git("show", f"{ref}:{path}").encode() + b"\n"
+                )
+
+    def test_both_overlay_directories_exist_even_when_no_head_carries_one(self) -> None:
+        # `check` copies each `OVERLAY` entry unconditionally; a missing source makes
+        # that a silent `cp` failure and the subject keeps its own gates.
+        into, _ = self._union(["base", "newer"])
+        for name in gm.OVERLAY:
+            self.assertTrue((into / name).is_dir(), name)
+
+    def test_tip_dates_order_the_queue_oldest_first(self) -> None:
+        with mock.patch.object(gm, "ROOT", self.repo):
+            self.assertEqual(gm.by_tip_date(["newer", "base"]), ["base", "newer"])
+
+    def test_a_ref_with_no_resolvable_date_does_not_crash_the_ordering(self) -> None:
+        with mock.patch.object(gm, "ROOT", self.repo):
+            self.assertEqual(gm.by_tip_date(["newer", "nope"])[0], "nope")
+
+
+class TheOverlaySourceIsAParameter(unittest.TestCase):
+    """`check` and `run` copied from `ROOT`, so `--union` would have changed nothing."""
+
+    def test_check_runs_the_gates_it_was_handed_not_this_branch_s(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            overlay = Path(tmp) / "overlay"
+            for name in gm.OVERLAY:
+                (overlay / name).mkdir(parents=True)
+            (overlay / "scripts" / "check_elsewhere.py").write_text("import sys\nsys.exit(3)\n")
+            subject = Path(tmp) / "subject"
+            subject.mkdir()
+            cells = gm.check(subject, ["check_elsewhere"], overlay)
+            self.assertEqual(cells["check_elsewhere"], 3)
+            self.assertTrue((subject / "scripts" / "check_elsewhere.py").is_file())
+
+    def test_the_overlay_still_defaults_to_this_branch(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            subject = Path(tmp) / "subject"
+            subject.mkdir()
+            gm.check(subject, [])
+            self.assertTrue((subject / "scripts" / "gate_matrix.py").is_file())
 
 
 if __name__ == "__main__":

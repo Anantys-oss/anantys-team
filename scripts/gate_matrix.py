@@ -14,9 +14,14 @@ the field. Neither was reachable from this branch's own tree.
 
     python3 scripts/gate_matrix.py                        # every head on origin
     python3 scripts/gate_matrix.py origin/koan/a-head ...  # just these
+    python3 scripts/gate_matrix.py --union                # with the queue's whole gate set
 
 The gates are overlaid onto each head, so what is measured is the head's *content*
 against this branch's checkers — not whatever checkers the head happens to carry.
+
+`--union` moves that overlay off this branch. The sentence above holds the blind
+spot one level up: *this branch's* checkers are 19 of the queue's 22 tools, because
+each tool arrived on its own branch too. See `union`.
 """
 
 from __future__ import annotations
@@ -38,8 +43,66 @@ def git(*args: str, cwd: Path | None = None) -> str:
     return done.stdout.strip() if done.returncode == 0 else ""
 
 
-def gates() -> list[str]:
-    return sorted(p.stem for p in (ROOT / "scripts").glob("check_*.py"))
+def gates(overlay: Path = ROOT) -> list[str]:
+    return sorted(p.stem for p in (overlay / "scripts").glob("check_*.py"))
+
+
+def union(refs: list[str], into: Path) -> dict[str, str]:
+    """Assemble every head's newest copy of the overlay into `into`. Returns provenance.
+
+    `gates()` reads `ROOT`, so a sweep's instrument is whatever the branch it was
+    launched from happens to carry. That is the same blind spot this file opens by
+    naming, one level up: a gate pointed only at the work it was written from can
+    only confirm that work, and a *gate set* assembled from one branch can only ask
+    that branch's questions. Measured over 87 open heads, the richest single head
+    carried 19 of the queue's 22 tools; `check_evals.py`, `claim_audit.py` and
+    `fold_absorbs.py` live on three others, so no sweep launched from anywhere could
+    run them. `origin/main` carries none, which is `heads()`'s point about the cell
+    CI never fills, repeated about the instrument instead of the subject.
+
+    **Newest wins, by the carrying head's tip date.** Approximate on purpose: the
+    exact answer is the commit that last touched each path on each head, which is a
+    `git log` per path per head. The tip date is one call per head and orders the
+    queue the way a reader does.
+
+    **This is not `gate_drift.py`'s merge, and the difference is the whole licence
+    for it.** That tool objects — rightly — that merging diverged copies of a gate
+    "produces a `check_plugins.py` that no author wrote, reviewed, or ran". Nothing
+    here is merged. Every file written is one head's blob, byte for byte, so the
+    *tree* is new and no *file* in it is. A finding from this overlay is reproducible
+    by checking out the head the provenance names.
+
+    **Every file, not just `check_*.py`.** A grants gate is a `.py` and a
+    `-baseline.txt` that declares the errors predating it, and the gate reads that
+    ledger relative to its own `__file__`. An assembly that copies only the Python
+    drops the ledger, at which point `check_mcp_grants` and `check_tool_grants`
+    report their *declared* debt as live errors — a sweep built that way called both
+    red on `main` and on all 87 heads, and the finding was the harness. `.github`
+    comes along for the reason `OVERLAY` already says.
+    """
+    provenance: dict[str, str] = {}
+    for ref in refs:  # oldest tip first, so a newer head overwrites
+        listing = git("ls-tree", "-r", "--name-only", ref, *OVERLAY)
+        for path in listing.splitlines():
+            if not path or "__pycache__" in path:
+                continue
+            blob = subprocess.run(
+                ("git", "show", f"{ref}:{path}"), cwd=ROOT, capture_output=True, check=False
+            )
+            if blob.returncode:
+                continue
+            target = into / path
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(blob.stdout)
+            provenance[path] = ref
+    for name in OVERLAY:  # `check` copies each one unconditionally
+        (into / name).mkdir(parents=True, exist_ok=True)
+    return provenance
+
+
+def by_tip_date(refs: list[str]) -> list[str]:
+    """`refs` oldest tip first. A ref with no resolvable date sorts first, not last."""
+    return sorted(refs, key=lambda r: int(git("log", "-1", "--format=%ct", r) or 0))
 
 
 def heads() -> list[str]:
@@ -95,17 +158,20 @@ def finding(out: str, err: str) -> str:
     return tail[-1] if tail else ""
 
 
-def check(tree: Path, names: list[str]) -> dict[str, Cell]:
+def check(tree: Path, names: list[str], overlay: Path = ROOT) -> dict[str, Cell]:
     """Overlay these gates onto whatever `tree` currently holds, and run them there.
 
     Split out of `run` so a caller that builds its subject some other way than a
     checkout gets the same instrument. `pair_gates.py` assembles its tree with two
     merges, and a second copy of the overlay-then-run dance is a second place for the
     exit code to be read wrong — which is the one bug this sweep has already had.
+
+    `overlay` is where the gate set is copied *from*, and it is a parameter because
+    `ROOT` is one branch's answer to a question about the queue. See `union`.
     """
     for name in OVERLAY:  # the subject's own copies lose to ours, on purpose
         subprocess.run(("rm", "-rf", str(tree / name)), check=False)
-        subprocess.run(("cp", "-R", str(ROOT / name), str(tree / name)), check=False)
+        subprocess.run(("cp", "-R", str(overlay / name), str(tree / name)), check=False)
     # `check=False` and the returncode read together: a gate is allowed to fail, and a
     # gate that raises is a finding of its own, so a traceback must not stop the sweep.
     cells = {}
@@ -128,7 +194,7 @@ def check(tree: Path, names: list[str]) -> dict[str, Cell]:
     return cells
 
 
-def run(tree: Path, head: str, names: list[str]) -> dict[str, Cell]:
+def run(tree: Path, head: str, names: list[str], overlay: Path = ROOT) -> dict[str, Cell]:
     """Exit code per gate for one head's content. Empty when the head will not check out."""
     for name in OVERLAY:  # a head that tracks these would conflict with the checkout
         subprocess.run(("rm", "-rf", str(tree / name)), check=False)
@@ -137,7 +203,7 @@ def run(tree: Path, head: str, names: list[str]) -> dict[str, Cell]:
     ).returncode:
         return {}
     git("checkout", "--", ".", cwd=tree)
-    return check(tree, names)
+    return check(tree, names, overlay)
 
 
 def table(rows: dict[str, dict[str, int]], names: list[str]) -> str:
@@ -174,15 +240,26 @@ def table(rows: dict[str, dict[str, int]], names: list[str]) -> str:
 
 
 def main(argv: list[str]) -> int:
-    names, refs = gates(), argv or heads()
+    pooled = "--union" in argv
+    refs = [a for a in argv if a != "--union"] or heads()
     if not refs:
         print("no heads to sweep", file=sys.stderr)
         return 1
     with tempfile.TemporaryDirectory() as tmp:
         tree = Path(tmp) / "head"
+        overlay = ROOT
+        if pooled:
+            overlay = Path(tmp) / "union"
+            held = union(by_tip_date(heads()), overlay)
+            print(f"union overlay: {len(held)} file(s), {len(gates(overlay))} gate(s)")
+            for path, ref in sorted(held.items()):
+                if path.startswith("scripts/") and not Path(path).name.startswith("test_"):
+                    print(f"  {path} <- {ref}")
+            print()
+        names = gates(overlay)
         git("worktree", "add", "--detach", str(tree), "HEAD")
         try:
-            rows = {ref: run(tree, ref, names) for ref in refs}
+            rows = {ref: run(tree, ref, names, overlay) for ref in refs}
         finally:
             git("worktree", "remove", "--force", str(tree))
     print(table(rows, names))
