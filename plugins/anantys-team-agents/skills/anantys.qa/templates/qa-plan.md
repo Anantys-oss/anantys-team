@@ -27,7 +27,8 @@ Phases covered: <n> of <m> from `tasks.md`. **Excluded: Phase <k> (Polish)** —
 not user-observable.
 
 **Progress — `<env>` · <N> assertions** (the default environment's from `plan`, plus one per
-environment that has results — who writes and refreshes each: SKILL.md, "Progress table")
+environment that has results — who writes and refreshes each: SKILL.md, "Progress table". At
+`N = 0` every percentage cell is `—`, not `0%`/`100%`.)
 
 | ✅ Done | 🟢 PASS | 🔴 DEFECT | 🟠 BLOCKED | ⚪ Not run |
 |---|---|---|---|---|
