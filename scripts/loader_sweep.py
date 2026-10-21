@@ -17,9 +17,11 @@ and answers three questions no text gate can:
   * **Is every component exposed?** The inventory is the loader's own count. A
     skill whose frontmatter the loader rejects is missing from it, silently —
     there is no error, just a shorter list.
-  * **What does it cost always-on?** `details` prices the always-loaded budget
-    per head, so a head that doubles it is visible before it lands rather than
-    after.
+  * **What does it cost?** `details` prices both of the loader's budgets per
+    head — the always-on total and each component's on-invoke row — against the
+    ceilings `check_cost` enforces. `check_cost` rules on one tree and its merge
+    base; this is where those ceilings meet their whole population, and the only
+    column in which a fold over `anantys.qa` can be priced at all.
 
 Two findings from the first run are why the report is shaped this way.
 
@@ -54,22 +56,18 @@ import tarfile
 import tempfile
 from pathlib import Path
 
+from check_plugins import ALWAYS_ON_MAX, LOADER_ROW, LOADER_TOTAL, ON_INVOKE_MAX, tokens
+
 PLUGIN = "anantys-team-agents"
 
 # `details` prints one `Label (n)  a, b, c` line per component kind.
 INVENTORY = re.compile(r"^\s*(Skills|Agents|Hooks|MCP servers|LSP servers)\s*\((\d+)\)\s*(.*)$")
-ALWAYS_ON = re.compile(r"Always-on:\s*~?([\d.]+)\s*(k?)\s*tok")
 VERSION = re.compile(r"^" + re.escape(PLUGIN) + r"\s+(\S+)")
 
 
 def run(*args, **kw):
     """Capture a command; never raise — a failing loader call is data."""
     return subprocess.run(args, capture_output=True, text=True, **kw)
-
-
-def tokens(amount, suffix):
-    """`details` abbreviates thousands; normalise to a plain token count."""
-    return int(float(amount) * (1000 if suffix == "k" else 1))
 
 
 def parse_details(text):
@@ -91,9 +89,9 @@ def parse_details(text):
             # The declared count and the printed names can disagree; trust the
             # names, because a name is what a session can actually invoke.
             out["inventory"][kind] = sorted(n for n in (p.strip() for p in names.split(",")) if n)
-        m = ALWAYS_ON.search(line)
-        if m:
-            out["always_on"] = tokens(*m.groups())
+    if m := LOADER_TOTAL.search(text):
+        out["always_on"] = tokens(m.group(1))
+    out["on_invoke"] = {c: tokens(oi) for c, _, oi in LOADER_ROW.findall(text)}
     return out
 
 
@@ -118,6 +116,38 @@ def gained(baseline, head):
         base = set(baseline.get("inventory", {}).get(kind, []))
         extra += [f"{kind}:{n}" for n in names if n not in base]
     return extra
+
+
+def overspent(baseline, head):
+    """Loader budgets this head is over, as `(raised, inherited)` finding lists.
+
+    `check_cost` in `check_plugins.py` enforces these two ceilings against one
+    tree and its merge base. Every head in the queue is measured against the
+    same `origin/main`, so the sweep is the only place the ceilings meet their
+    whole population — and the only place the fold can be priced, which is what
+    `ON_INVOKE_MAX`'s own note asks for: twelve heads append to `anantys.qa`,
+    each passes alone, and which one is handed the error is decided by merge
+    order.
+
+    The split is `crossing`'s, for `crossing`'s reason: a head that is over a
+    budget the baseline was already over, without raising it, owns no remedy.
+    Reporting that as a failure would force an order on changes that have none.
+    """
+    raised, inherited = [], []
+    rows = [("always-on", head.get("always_on"), baseline.get("always_on"), ALWAYS_ON_MAX)]
+    rows += [(c, n, baseline.get("on_invoke", {}).get(c), ON_INVOKE_MAX)
+             for c, n in sorted(head.get("on_invoke", {}).items())]
+    for what, now, before, limit in rows:
+        if now is None or now <= limit:
+            continue
+        finding = f"{what} {now} > {limit}"
+        # A component the baseline never had is this head's own, so `None` must
+        # not read as "was under the limit and is over now".
+        if before is not None and before > limit and now <= before:
+            inherited.append(finding)
+        else:
+            raised.append(finding + (f" (base {before})" if before is not None else " (new here)"))
+    return raised, inherited
 
 
 def declared_names(tree):
@@ -263,14 +293,22 @@ def main(argv=None):
             failures.append((label, head["error"]))
             continue
         missing, extra = lost(base, head), gained(base, head)
+        raised, inherited = overspent(base, head)
         notes = (["LOST " + ", ".join(missing)] if missing else []) + \
                 (["added " + ", ".join(extra)] if extra else []) + \
-                ([f"NAME IGNORED x{len(head['misnamed'])}"] if head["misnamed"] else [])
-        cost = f"{head['always_on'] - base['always_on']:+d}" if base["always_on"] else "?"
+                ([f"NAME IGNORED x{len(head['misnamed'])}"] if head["misnamed"] else []) + \
+                (["OVER " + ", ".join(raised)] if raised else []) + \
+                (["inherits " + ", ".join(inherited)] if inherited else [])
+        # Both counts are optional: a table this script cannot read leaves `None`,
+        # and subtracting it is how the sweep used to die on the heads it exists for.
+        cost = f"{head['always_on'] - base['always_on']:+d}" \
+            if None not in (head["always_on"], base["always_on"]) else "?"
         print(f"{label:52} {head['version'] or '?':7} {cost:>9}  "
               f"{'; '.join(notes) or 'same inventory'}")
         if missing:
             failures.append((label, "exposes fewer components: " + ", ".join(missing)))
+        for finding in raised:
+            failures.append((label, f"over a loader budget this head raised: {finding}"))
         for directory, declared in head["misnamed"]:
             failures.append((label, f"{directory}/ declares `name: {declared}`; the loader "
                                     f"exposes `{directory}` and discards the field"))

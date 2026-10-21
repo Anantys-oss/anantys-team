@@ -31,7 +31,9 @@ ALWAYS_ON_MAX = 1_000
 #: Loose per branch, not per queue: that 8.6k is 72% of the ceiling already spent,
 #: twelve open heads append to the same file, and two of them pass alone and are
 #: 14.7k together. Which one gets the error is decided by merge order, so the fold
-#: has to be priced in this column too — see `docs/landing-the-queue.md`.
+#: has to be priced in this column too — see `docs/landing-the-queue.md`. It now is:
+#: `loader_sweep.py` installs every head and reports this column, and the keystone
+#: fold `#113` comes back at 13.5k. The ceiling is loose and the fold is still over it.
 ON_INVOKE_MAX = 12_000
 #: `Always-on:   ~716 tok   added to every session`
 #: A cost under the loader's reporting floor prints as `< 20` rather than `~N`, so
@@ -355,12 +357,16 @@ def check_cost(plugin_dir: Path, name: str, details: str | None, base: str | Non
     - On-invoke is per component, but a branch that never opens ``anantys.qa/SKILL.md``
       is still handed its row. Role-local is not branch-local.
 
-    Measured on the queue this gate ships into: two of the open heads price at 1,034
-    always-on against a 1,000 ceiling, and one prices ``anantys.qa`` at 12.8k against
-    12,000. Without the baseline, the first of those to merge reddens every one of the
-    other heads for a number it did not move — and hands each of them a remedy
-    (*shorten those descriptions*, *move detail into `reference/`*) in files it does
-    not own. That is the order-forcing this file refuses everywhere else.
+    Measured on the queue this gate ships into, by installing all 90 open heads with
+    the real loader (`scripts/loader_sweep.py`): every head prices at 716 always-on,
+    and two are over the on-invoke ceiling on the same file — `#33` at 12.8k and the
+    keystone fold `#113` at 13.5k, both `anantys.qa`, both against a baseline of 8.6k.
+    An earlier reading of a smaller queue found two heads at 1,034 always-on; they are
+    not in it any more, which is the shape of every number in this docstring. Re-run
+    the sweep rather than trusting them. Without the baseline, the first of the two
+    over-budget heads to merge reddens the other for a number it did not move — and
+    hands it a remedy (*move detail into `reference/`*) in a file it does not own.
+    That is the order-forcing this file refuses everywhere else.
     """
     if details is None:
         warnings.append(

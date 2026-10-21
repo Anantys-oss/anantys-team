@@ -22,6 +22,11 @@ Component inventory
 
 Projected token cost
   Always-on:   ~716 tok   added to every session
+
+Per-component (rounded)
+  component             always-on  on-invoke
+  anantys.qa                 ~190      ~8.6k
+  anantys.debug               ~80       ~950
 """
 
 
@@ -54,6 +59,23 @@ class ParseDetails(unittest.TestCase):
     def test_version_comes_from_the_plugin_line_not_a_later_mention(self):
         text = "anantys-team-agents 0.6.1\n  Requires 9.9.9\n"
         self.assertEqual(L.parse_details(text)["version"], "0.6.1")
+
+    def test_reads_the_thousands_separator_a_four_digit_count_carries(self):
+        # The loader prints `1,034` once the total passes a thousand — which is
+        # the only range `ALWAYS_ON_MAX` is about. A reader that stops at the
+        # comma leaves the number unread on exactly the heads it exists to price.
+        self.assertEqual(L.parse_details("  Always-on:   ~1,034 tok")["always_on"], 1034)
+
+    def test_reads_the_floor_the_loader_prints_instead_of_a_small_count(self):
+        # Under its reporting floor the loader prints `< 20`, not `~N`.
+        self.assertEqual(L.parse_details("  Always-on:   < 20 tok")["always_on"], 20)
+
+    def test_collects_the_per_component_on_invoke_column(self):
+        got = L.parse_details(DETAILS)["on_invoke"]
+        self.assertEqual(got, {"anantys.qa": 8600, "anantys.debug": 950})
+
+    def test_a_table_the_loader_never_printed_is_empty_not_missing(self):
+        self.assertEqual(L.parse_details("command not found")["on_invoke"], {})
 
 
 BASE = {"inventory": {"Skills": ["a", "b"], "Agents": ["x"]}}
@@ -130,6 +152,51 @@ class DeclaredNames(unittest.TestCase):
     def test_keeps_a_value_containing_a_colon(self):
         self.assertEqual(self.write("---\nname: plugin:anantys.qa\n---\n"),
                          {"anantys.qa": "plugin:anantys.qa"})
+
+
+class Overspent(unittest.TestCase):
+    """`overspent` splits a budget finding by who owns its remedy."""
+
+    def tree(self, always_on, **on_invoke):
+        return {"always_on": always_on, "on_invoke": on_invoke}
+
+    def test_a_head_under_both_ceilings_reports_nothing(self):
+        base = self.tree(716, **{"anantys.qa": 8600})
+        self.assertEqual(L.overspent(base, base), ([], []))
+
+    def test_a_head_that_crosses_the_always_on_ceiling_owns_it(self):
+        raised, inherited = L.overspent(self.tree(716), self.tree(L.ALWAYS_ON_MAX + 34))
+        self.assertEqual(inherited, [])
+        self.assertIn("always-on 1034", raised[0])
+
+    def test_a_head_that_only_inherits_an_overflow_owns_no_remedy(self):
+        over = L.ALWAYS_ON_MAX + 34
+        raised, inherited = L.overspent(self.tree(over), self.tree(over))
+        self.assertEqual(raised, [])
+        self.assertEqual(len(inherited), 1)
+
+    def test_lowering_an_inherited_overflow_without_clearing_it_is_not_a_failure(self):
+        raised, inherited = L.overspent(self.tree(L.ALWAYS_ON_MAX + 100),
+                                        self.tree(L.ALWAYS_ON_MAX + 10))
+        self.assertEqual(raised, [])
+        self.assertEqual(len(inherited), 1)
+
+    def test_a_component_the_baseline_never_had_is_the_head_s_own(self):
+        # Absent from the baseline must not read as "was 0, so under the limit".
+        raised, _ = L.overspent(self.tree(716),
+                                self.tree(716, **{"new.role": L.ON_INVOKE_MAX + 1}))
+        self.assertIn("new here", raised[0])
+
+    def test_each_over_budget_component_is_its_own_finding(self):
+        raised, _ = L.overspent(
+            self.tree(716),
+            self.tree(716, **{"a": L.ON_INVOKE_MAX + 1, "b": L.ON_INVOKE_MAX + 2}),
+        )
+        self.assertEqual(len(raised), 2)
+
+    def test_an_unreadable_count_rules_on_nothing(self):
+        # `None` is "the table could not be read", never "measured zero".
+        self.assertEqual(L.overspent(self.tree(716), self.tree(None)), ([], []))
 
 
 if __name__ == "__main__":
