@@ -45,9 +45,21 @@ Two findings, and they are deliberately not the same severity:
 
 "Near-misses" is the whole of the second check's precision. A `/`-token is
 compared to the exposed names with every non-alphanumeric character stripped, so
-`/anantys.qa` is reported against `anantys-qa` while `./plugins/anantys-team-
-agents` — a path, also `/`-prefixed — matches nothing and is ignored. A token
-that resembles no exposed name is somebody else's command, not a typo of ours.
+`/anantys.qa` is reported against `anantys-qa`. A token that resembles no exposed
+name is somebody else's command, not a typo of ours.
+
+That filter alone is not enough, because a *path* segment can also resemble an
+exposed name. `./plugins/anantys-team-agents` is ignored for the wrong reason —
+no exposed name resembles it — while `skills/anantys.qa/` squashes to exactly
+`anantys-qa` and was reported as a dead command. It is the sentence explaining
+this gate's own premise, in the one tree that had already fixed every real
+occurrence: the gate's only finding there was the documentation of why it exists.
+
+So the `/` must *open* a token, not continue a path: nothing word-like, no dot,
+hyphen or slash before it. Every command this tree advertises sits after a
+backtick, a brace, a parenthesis or whitespace, and every path segment sits after
+a name character — which makes the boundary the discriminator, and the
+resemblance filter only a second opinion.
 
 Usage: python3 scripts/check_exposed_names.py [root]
 Exit 1 on errors, 0 on warnings.
@@ -75,7 +87,9 @@ from pathlib import Path
 ADVERTISING = ("**/*.md", "**/.claude-plugin/*.json")
 SKIP_PARTS = {".git", "__pycache__", "node_modules"}
 
-SLASH_TOKEN = re.compile(r"/([A-Za-z0-9][A-Za-z0-9._:-]*)")
+# The lookbehind is the path guard: a command's `/` opens a token, a path
+# segment's `/` follows one. See the "Near-misses" paragraph above.
+SLASH_TOKEN = re.compile(r"(?<![\w./-])/([A-Za-z0-9][A-Za-z0-9._:-]*)")
 
 
 def squash(name):

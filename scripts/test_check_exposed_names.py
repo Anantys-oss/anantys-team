@@ -97,6 +97,27 @@ class Misspellings(unittest.TestCase):
     def test_a_path_that_merely_starts_with_the_prefix_is_ignored(self):
         self.assertEqual(self.find({"README.md": '"./plugins/anantys-team-agents"'}), {})
 
+    def test_a_path_segment_spelled_like_an_exposed_name_is_ignored(self):
+        """The resemblance filter cannot save this one — the segment *is* the name."""
+        self.assertEqual(self.find({"README.md": "`skills/anantys.qa/SKILL.md`"}), {})
+
+    def test_the_sentence_explaining_the_naming_rule_is_clean(self):
+        """Verbatim from the tree that had fixed every real occurrence."""
+        text = "so `skills/anantys.qa/` ships as `anantys-qa`."
+        self.assertEqual(self.find({"README.md": text}), {})
+
+    def test_a_command_inside_a_manifest_description_is_still_reported(self):
+        """The boundary must admit `(` — the manifests' own delimiter."""
+        doc = '{"description": "5 skills (/anantys.qa, /anantys.ops)"}'
+        found = self.find({".claude-plugin/marketplace.json": doc})
+        self.assertEqual(
+            found[Path(".claude-plugin/marketplace.json")], {"anantys.qa": "anantys-qa"}
+        )
+
+    def test_a_command_opening_a_line_is_still_reported(self):
+        found = self.find({"README.md": "run it:\n/anantys.qa report\n"})
+        self.assertEqual(found[Path("README.md")], {"anantys.qa": "anantys-qa"})
+
     def test_a_manifest_under_a_dot_directory_is_read(self):
         """The widest-reach file in the tree lives behind a leading dot."""
         found = self.find({".claude-plugin/marketplace.json": '{"d": "/anantys.qa"}'})
