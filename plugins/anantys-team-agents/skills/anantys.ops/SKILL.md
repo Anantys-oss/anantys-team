@@ -25,6 +25,7 @@ The user should provide (ask for anything missing — do NOT guess or hardcode):
 - **Search Console URL** for the property (the user pastes the performance URL while logged in, or the property domain so you can build it).
 - **Analytics URL** (e.g. a GA4 report URL) for the property.
 - **Target queries** for SERP analysis (the keywords that matter to this business).
+- **Search locale** for SERP analysis — the `hl` (and optional `gl`) the queries should be ranked in, e.g. `hl=fr&gl=FR`. Reuse the locale recorded in `current.md` when one exists; positions collected under different locales are not comparable, so never pick one yourself.
 - **Traffic goal** (e.g. "from ~40 to 100 daily organic visitors").
 - **Workspace path** for outputs (default `./seo/`). Two files land there and nothing else: `journal/<YYYY-MM-DD>-analysis.md` (Phase 5) and `current.md` (Phase 6).
 
@@ -46,6 +47,7 @@ If no prior data exists, note this is the first audit and skip comparisons. When
 
 1. Call `tabs_context_mcp`; create a fresh tab with `tabs_create_mcp`.
 2. Present a plan via `update_plan`: the domains you'll visit, and the approach (hub audit → top pages deep-dive → Search Console → Analytics → SERP → technical crawl → report; on a first audit the deep-dive moves after Search Console — see Phase 1b).
+2. Present a plan via `update_plan`: the domains you'll visit, and the approach (hub audit → Search Console → top pages deep-dive → Analytics → SERP → report).
 3. Wait for user approval before proceeding.
 
 ## Phase 1: Hub / Landing Page Audit
@@ -82,6 +84,12 @@ Navigate to the property's Search Console performance URL (28-day window, broken
 - Top ~10 pages (Pages tab): same metrics.
 - Flag **high-impression / low-CTR** queries (title-meta quick wins) and **good-position (<10) / low-click** queries.
 
+## Phase 2b: Top Page Deep-Dive
+
+A hub/index is rarely the page that earns clicks — the individual content pages it links to are. Cross-reference the hub's links with the Phase 2 top-pages table (or, if Search Console was unreachable, the last audit's) to pick the **top 5-10 pages by clicks/impressions**. This phase runs after Phase 2 because it has no page ranking of its own to work from.
+
+For each, navigate + screenshot + extract via JS: title (+length), meta description (+length), H1/H2/H3, structured data, canonical, word count (`document.body.innerText.split(/\s+/).length`), internal links, FAQ presence, OG image. Then evaluate: does the title match the target query and beat competitors? Is the meta description click-worthy (numbers/freshness)? Content depth, rich-snippet readiness, internal linking. Record per-page findings in a table — these pages have the highest CTR leverage.
+
 ## Phase 3: Analytics
 
 Navigate to the Analytics (e.g. GA4) report URL. If not logged in, tell the user and wait. Screenshot, then extract: active users (daily/weekly/monthly trend), traffic-source breakdown (organic vs direct vs referral vs social), top pages by views, engagement (session duration, bounce/engagement rate), geographic split if shown.
@@ -100,6 +108,7 @@ The SERP you are about to read comes through the operator's **own signed-in brow
 When the two disagree by more than a rank or two, that gap is itself a finding — personalization or locale — to record in §7, not an error to average away.
 
 For each **target query** the user provided, navigate to a clean search URL (`https://www.google.com/search?q=<encoded query>&hl=<lang>`), screenshot, and use `get_page_text`/`find` to locate the site's domain in results. Record: the site's position (or absence), competitors ranking above/below, featured snippets / People-Also-Ask / rich results, and ad presence (competitors bidding). Check the first 2 result pages max — do not scroll endlessly.
+For each **target query** the user provided, navigate to a clean search URL (`https://www.google.com/search?q=<encoded query>&<search locale>`), screenshot, and use `get_page_text`/`find` to locate the site's domain in results. Record: the site's position (or absence), competitors ranking above/below, featured snippets / People-Also-Ask / rich results, and ad presence (competitors bidding). Check the first 2 result pages max — do not scroll endlessly.
 
 Keep the per-query **demand evidence** (PAA question count, rich-result types, how many ads) alongside the position — these are the only demand numbers the granted tools can observe for a query the site does not yet rank for, and §9 of the report is scored on them.
 
@@ -152,6 +161,7 @@ Overwrite **`<workspace>/current.md`** — the living snapshot that persists bet
 ## KPI Dashboard         (Metric | Current | Previous | Delta | Target)
 ## SERP Positions        (Query | GSC avg position | Trend | SERP observed (signed-in) | Target —
 ##                        the trend is computed from the GSC column only; see Phase 4)
+## SERP Positions        (Query | Position | Trend | Target) — state the search locale used; Phase 4 of the next audit reuses it
 ## Top Pages Performance (Page | Clicks 28d | Impressions | CTR | Position)
 ## Completed Actions     (carried forward from previous current.md, marked [x])
 ## Next Actions          (priority-ordered; flag how many audits each has been pending)
