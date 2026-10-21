@@ -1,0 +1,22 @@
+name: platform
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check-platform:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # `claude plugin validate` reads local files only — no auth, no network,
+      # verified against an empty HOME and a scrubbed environment.
+      - run: npm install -g @anthropic-ai/claude-code
+      # The suite runs once, in `gates` — see the note in validate.yml. It does not
+      # need the CLI installed above: every test mocks `subprocess.run`, so the only
+      # thing this job uniquely provides is the real loader for the gate below.
+      # Not --strict: the marketplace has carried a missing-author warning since
+      # before this gate existed, and reddening every PR over it would teach
+      # people to ignore the gate. Errors fail; warnings are printed.
+      - run: python3 scripts/check_platform.py
