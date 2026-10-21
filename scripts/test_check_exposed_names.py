@@ -8,10 +8,12 @@ made *about* the loader's answer, against a tree on disk.
 """
 
 import io
+import os
 import sys
 import tempfile
 import unittest
 from contextlib import redirect_stdout
+from unittest import mock
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -195,6 +197,31 @@ class Sealing(unittest.TestCase):
 
     def test_ordinary_variables_survive(self):
         self.assertFalse(c._is_credential("PATH"))
+
+
+class LoaderEnv(unittest.TestCase):
+    """The seal. `CLAUDE_CONFIG_DIR` outranks `HOME`, so it must be assigned."""
+
+    def test_the_config_dir_is_sealed_under_the_throwaway_home(self):
+        env = c.loader_env("/tmp/throwaway")
+        self.assertTrue(env["CLAUDE_CONFIG_DIR"].startswith("/tmp/throwaway"))
+
+    def test_an_inherited_config_dir_does_not_survive(self):
+        """The developer's own config dir is what the gate must not read or write."""
+        with mock.patch.dict(os.environ, {"CLAUDE_CONFIG_DIR": "/home/dev/.claude"}):
+            env = c.loader_env("/tmp/throwaway")
+        self.assertNotEqual(env["CLAUDE_CONFIG_DIR"], "/home/dev/.claude")
+
+    def test_home_is_the_throwaway(self):
+        self.assertEqual(c.loader_env("/tmp/throwaway")["HOME"], "/tmp/throwaway")
+
+    def test_credentials_are_still_stripped(self):
+        with mock.patch.dict(os.environ, {"ANTHROPIC_API_KEY": "sk-x"}):
+            self.assertNotIn("ANTHROPIC_API_KEY", c.loader_env("/tmp/throwaway"))
+
+    def test_ordinary_variables_still_reach_the_loader(self):
+        with mock.patch.dict(os.environ, {"PATH": "/usr/bin"}):
+            self.assertEqual(c.loader_env("/tmp/throwaway")["PATH"], "/usr/bin")
 
 
 if __name__ == "__main__":

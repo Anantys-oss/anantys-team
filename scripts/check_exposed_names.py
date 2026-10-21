@@ -102,12 +102,39 @@ def squash(name):
     return re.sub(r"[^a-z0-9]", "", name.lower())
 
 
-def expose(root):
-    """Install the tree's own marketplace into a throwaway HOME and ask.
+def loader_env(home):
+    """The environment the loader is booted in. A seal is set, never inherited.
 
-    A sealed HOME is not hygiene, it is the measurement: the names depend on
-    what is installed, so reading the developer's own session would report their
-    other plugins and whichever version of this one they last installed.
+    `CLAUDE_CONFIG_DIR` outranks `HOME`, so a throwaway `HOME` seals nothing
+    whenever the developer exports one — and exporting it is the documented way
+    to try this plugin without touching a real install, so the people most
+    likely to run this gate are the ones it fails on. Measured on 2.1.278, both
+    halves of the seal break:
+
+      * `plugin marketplace add` writes `extraKnownMarketplaces` and
+        `enabledPlugins` into their real `settings.json`, pointing at a tree
+        this function is about to delete.
+      * the init event then reports every plugin they already have. An
+        unrelated installed plugin shipping `agents/anantys.qa.md` — agents keep
+        the dot — makes `/anantys.qa` an exposed name, and this gate's findings
+        on `main` drop from 8 to 4.
+
+    So the config dir is assigned under the throwaway `HOME`, not merely left
+    unset: that holds whichever of the two the running binary prefers.
+    """
+    env = {k: v for k, v in os.environ.items() if not _is_credential(k)}
+    env["HOME"] = str(home)
+    env["CLAUDE_CONFIG_DIR"] = str(Path(home) / ".claude")
+    return env
+
+
+def expose(root):
+    """Install the tree's own marketplace into a throwaway config dir and ask.
+
+    The seal is not hygiene, it is the measurement: the names depend on what is
+    installed, so reading the developer's own session would report their other
+    plugins and whichever version of this one they last installed. See
+    `loader_env` for why `HOME` alone does not provide it.
 
     Returns the exposed bare names, or None when the loader could not be asked.
     A gate that cannot run must say so rather than certify silence, but it may
@@ -120,9 +147,8 @@ def expose(root):
     market = plugins["name"]
     names = [p["name"] for p in plugins["plugins"]]
 
-    env = {k: v for k, v in os.environ.items() if not _is_credential(k)}
     with tempfile.TemporaryDirectory() as home, tempfile.TemporaryDirectory() as cwd:
-        env["HOME"] = home
+        env = loader_env(home)
         run = lambda *a: subprocess.run(  # noqa: E731 - three identical calls
             ["claude", *a],
             cwd=cwd,
