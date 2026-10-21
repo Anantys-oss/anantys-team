@@ -82,4 +82,5 @@ anantys-team/
 
 ## License
 
-Provided as-is for consulting and educational use.
+[MIT](LICENSE) — use it, fork it, ship it in client work, no attribution beyond the
+copyright notice. Provided as-is, without warranty.
