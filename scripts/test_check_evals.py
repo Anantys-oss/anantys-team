@@ -79,6 +79,7 @@ class SuiteFixture:
         self.evals = root / "plugins" / "p" / "evals"
         (self.evals / "a-case").mkdir(parents=True)
         (self.evals / "a-case" / "case.yaml").write_text(case)
+        (self.evals / "a-case" / "scaffold.sh").write_text("#!/bin/sh\n")
         (self.evals / "README.md").write_text(readme)
         if skill:
             (root / "plugins" / "p" / "skills" / skill).mkdir(parents=True)
@@ -305,6 +306,43 @@ class TestMutations(unittest.TestCase):
     def test_name_must_be_the_directory_name(self):
         errors = self.mutate("name: a-case\n", "name: another-case\n")
         self.assertTrue(any("is not the directory name" in e for e in errors))
+
+    def test_a_scaffold_path_escaping_the_case_directory_is_caught(self):
+        errors = self.mutate(
+            "scaffold_script: scaffold.sh", "scaffold_script: ../other/scaffold.sh"
+        )
+        self.assertTrue(any("escapes the case directory" in e for e in errors))
+
+    def test_an_absolute_scaffold_path_is_caught(self):
+        errors = self.mutate(
+            "scaffold_script: scaffold.sh", "scaffold_script: /tmp/scaffold.sh"
+        )
+        self.assertTrue(any("escapes the case directory" in e for e in errors))
+
+    def test_a_scaffold_path_naming_nothing_is_caught(self):
+        errors = self.mutate(
+            "scaffold_script: scaffold.sh", "scaffold_script: setup.sh"
+        )
+        self.assertTrue(any("does not exist" in e for e in errors))
+
+    def test_a_subdirectory_scaffold_path_is_not_an_escape(self):
+        # `..` and absolute are the two spellings the harness refuses; a path
+        # deeper inside the case directory is legitimate and must stay clean.
+        with SuiteFixture(
+            case=GOOD_CASE.replace(
+                "scaffold_script: scaffold.sh", "scaffold_script: fixture/scaffold.sh"
+            )
+        ) as fixture:
+            nested = fixture.evals / "a-case" / "fixture"
+            nested.mkdir()
+            (nested / "scaffold.sh").write_text("#!/bin/sh\n")
+            self.assertEqual(fixture.errors(), [])
+
+    def test_a_case_with_no_scaffold_is_not_a_finding(self):
+        with SuiteFixture(
+            case=GOOD_CASE.replace("context:\n  scaffold_script: scaffold.sh\n", "")
+        ) as fixture:
+            self.assertEqual(fixture.errors(), [])
 
     def test_a_pattern_with_no_vector_row_is_unverified(self):
         with SuiteFixture(readme="# Evals\n\nNo table.\n") as fixture:

@@ -93,8 +93,14 @@ claude plugin eval ./plugins/anantys-team-agents \
   agent-pushed branch; a JS file with a visible bug; a stylesheet with a cramped
   hero; three months of SEO audits; a rename that updated one of its two call
   sites; a spec its implementation disagrees with) from its own `scaffold.sh`.
-  The harness refuses a scaffold path outside the case directory, which is why
-  the two review cases carry a copy of the same fixture rather than sharing one.
+  The harness refuses a scaffold path outside the case directory — verified, not
+  assumed: it reports `path "../review-never-pushes/scaffold.sh" escapes the
+  case directory` and exits 1 *before the first turn*, so the check costs no
+  credential and no money under `--max-cost-usd 0.01`. It refuses a path that
+  names nothing the same way. That is why the two review cases carry a copy of
+  the same fixture rather than sharing one, and why `scripts/check_evals.py`
+  holds both rules: the refusals happen at launch, and the CI step runs the
+  loader at `--max-cost-usd 0`, where no case ever launches.
 - `--allow-tools` has to name the tools the graders assert *about*. Without
   `Edit`/`Write` the debug case's `max: 0` graders pass vacuously; without
   `Task` neither agent case can observe the dispatch it scores, which is the

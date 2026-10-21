@@ -68,6 +68,14 @@ authoring time:
      verdict is an `llm` grader reports 1.00 on an aborted run: strictly worse
      than the 0.50 this gate was written to catch.
 
+  3. **The scaffold path.** Every case builds its workspace from its own
+     `scaffold.sh`. The harness refuses a path that escapes the case directory
+     or names nothing, but it resolves the path only when a case *launches* —
+     and CI runs the loader at `--max-cost-usd 0`, which stops the suite before
+     the first launch. So both refusals are invisible to the gate that was
+     supposed to be the loader's own reading of these files. `check_scaffold`
+     carries the command that reproduces each one at zero cost.
+
 What this checker deliberately does not do: score a role. That needs the agent
 runs, a credential, and a human reading the result. It asserts only that the
 suite is capable of scoring one.
@@ -300,6 +308,8 @@ def check_suite(evals_dir: pathlib.Path) -> list[str]:
                 f"'{case_file.parent.name}' — `--case` filters by name"
             )
 
+        errors += check_scaffold(where, case, case_file.parent)
+
         for grader in graders:
             if UNREADABLE in grader:
                 errors.append(
@@ -388,6 +398,43 @@ def check_suite(evals_dir: pathlib.Path) -> list[str]:
             f"regex grader in the suite"
         )
     return errors
+
+
+def check_scaffold(where, case: dict, case_dir: pathlib.Path) -> list[str]:
+    """The two scaffold paths the harness refuses, checked before it is asked.
+
+    The harness resolves `context.scaffold_script` when the case *launches*, and
+    refuses an escaping or missing path there — verified on CLI 2.1.278, with no
+    credential and at $0.00, by:
+
+        claude plugin eval ./plugins/<plugin> --case <case> --runs 1 \\
+          --ablation none --scaffold --allow-tools Bash Edit Write Task \\
+          --trust-plugin --no-publish --max-cost-usd 0.01
+
+    which reports `path "…" escapes the case directory` / `path "…" does not
+    exist` and exits 1 before the first turn. The ceiling has to be a nonzero
+    cent: at `--max-cost-usd 0` the suite stops *before* any run launches, so
+    nothing resolves the path — which is exactly the invocation CI uses, and why
+    both of these land green and then fail for every reader who runs the suite
+    for real.
+    """
+    script = case.get("scaffold_script")
+    if not script:
+        return []
+    parts = pathlib.PurePosixPath(script)
+    if parts.is_absolute() or ".." in parts.parts:
+        return [
+            f"{where}: scaffold_script '{script}' escapes the case directory "
+            f"(`..` or an absolute path) — the harness refuses it at launch, and "
+            f"CI's `--max-cost-usd 0` never gets that far"
+        ]
+    if not (case_dir / script).is_file():
+        return [
+            f"{where}: scaffold_script '{script}' does not exist — the case has "
+            f"no workspace to build, and every grader about what the run read or "
+            f"wrote is decided by that absence"
+        ]
+    return []
 
 
 def check_pattern(where, gname: str, grader: dict, vectors: dict) -> list[str]:

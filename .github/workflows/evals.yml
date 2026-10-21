@@ -32,15 +32,27 @@ name: evals
 #                    schema_version removed · execution.prompt removed
 #   both (3)         an unknown grader `type:` · `graders:` misspelled ·
 #                    a grader about a tool the case does not grant
-#   check_evals (6)  name != directory · input_match naming a skill the plugin
+#   check_evals (8)  name != directory · input_match naming a skill the plugin
 #                    does not ship · a pattern that no longer compiles, or that
 #                    drifted from the README row verifying it · allowed_tools
 #                    emptied · `exists: true` with no write-capable grant ·
-#                    `max: 0` without `min: 0`
-#   neither (1)      a scaffold_script path outside its case directory. The
-#                    README says the harness refuses one; under the ceiling no
-#                    case launches, so nothing resolves the path. That claim is
-#                    still verified only by hand.
+#                    `max: 0` without `min: 0` · a scaffold_script path that
+#                    escapes its case directory, or that names nothing
+#   neither (0)
+#
+# The last two rows were "neither" until the README's claim about them was
+# actually run. The harness does refuse both, with the wording
+# `path "…" escapes the case directory` / `path "…" does not exist`, and it does
+# so before the first turn — so it needs no credential and costs nothing:
+#
+#   claude plugin eval ./plugins/anantys-team-agents --case <case> --runs 1 \
+#     --ablation none --scaffold --allow-tools Bash Edit Write Task \
+#     --trust-plugin --no-publish --max-cost-usd 0.01
+#
+# The ceiling has to be a nonzero cent. At `--max-cost-usd 0` — the invocation
+# below — the suite stops *before* any run launches, which is precisely why
+# neither refusal was ever reachable from here. `check_evals.py` now holds both,
+# and the step below still cannot see them.
 #
 # The last two `check_evals` rows are the asymmetry worth naming: the loader
 # computes grader reachability too, but against `--allow-tools` alone. A case
