@@ -82,13 +82,18 @@ Everything else is a defect to file, not a blocker.
 
 - **<assertion / path>** — <why an agent cannot reach it, and the exact human step needed>
 
-## 5. Report format
+## 5. Result format — what a run records, per assertion, in `qa-runs.md`
 
 | ID | Scenario | Env | Result | Evidence |
 |----|----------|-----|--------|----------|
 | A1 | <short> | `local` | PASS | <what was observed — exact copy, URL, screenshot> |
 
 For each FAIL: what you saw, what the case expected, the URL, and the console/network error.
+
+This is the **run** table. The fix brief is a different artifact with a different shape —
+`qa-report.md`, from `templates/qa-report.md`: per defect, a repro, a blast radius, and what a fix
+must not break. A brief written in the table above omits all three, and the last one is the only
+thing in the campaign a fresh dev agent cannot look up.
 ```
 
 ---

@@ -1,6 +1,6 @@
 # anantys-team
 
-A small, vendor-neutral marketplace that turns Claude Code into a **specialized mini-team**.
+A small, project-agnostic marketplace that turns Claude Code into a **specialized mini-team**.
 
 The `anantys-team-agents` plugin gives Claude a set of **roles** — each one a way to put
 *Claude + a real browser* to work, not just for writing code, but for piloting your tools
@@ -12,7 +12,7 @@ like a teammate would:
 | 📈 **Growth / Ops Analyst** | skill `/anantys.ops` | **Ops loop** | Drives the browser across live pages and SaaS dashboards (Search Console, Analytics, SERP) to produce a quantified, prioritized SEO/acquisition report with trend deltas. |
 | 🐞 **Runtime Debugger** | skill `/anantys.debug` | **Ralf loop** | Reproduces a bug live, reads runtime signals (console, network, logs), fixes, and re-proves by observation — never by a plausible diff. |
 | 🔀 **PR Reviewer** | skill `/anantys.review` | **Decision-ready review** | Cleanly reviews one agent-pushed PR branch: rebases on its base, summarizes only its own changes, assesses value/risk, and recommends Merge / Close / Skip / Audit — then waits for the human. |
-| 🧭 **QA Campaign Runner** | skill `/anantys.qa` | **Campaign loop** | Turns a finished feature — a spec-kit `tasks.md`, a written brief, tracker issues, or a GitHub PR — into an executable browser campaign, runs it against a local dev stack or a deployed env (`--env staging`) recording PASS/FAIL/BLOCKED **per assertion**, accumulates operator rulings so a non-defect is never re-filed, and emits a fix brief for a fresh dev session. |
+| 🧭 **QA Campaign Runner** | skill `/anantys.qa` | **Campaign loop** | Turns a finished feature — a spec-kit `tasks.md`, a written brief, tracker issues, or a GitHub PR — into an executable browser campaign, runs it against a local dev stack or a deployed env (`--env staging`) recording PASS/FAIL/BLOCKED **per assertion**, accumulates operator rulings so a non-defect is never re-filed — a drift ruling promoted into the project's env contract (`note --durable`) is inherited by the *next* feature's campaign — and emits a fix brief for a fresh dev session. |
 | 🔍 **Code Auditor** | agent `anantys.code-auditor` | **Adversarial review** | Runs in a fresh context after a large LLM-generated change and reports what it *omitted* — implicit contracts, edge cases, violated conventions the brief never spelled out. Restores cognitive control over mass-generated code. |
 | 🧪 **Spec Tester** | agent `anantys.spec-tester` | **Spec-first testing** | Writes tests from the spec, deliberately *not* from the implementation, so they can fail against existing code — instead of just confirming what the model already wrote. |
 
@@ -24,10 +24,52 @@ Every role is **project-agnostic**: no hardcoded domains, paths, or design token
 for what they need (a dev URL, a property, target queries) or infer it from the project.
 More roles can be added over time without changing how you install the team.
 
+## How the roles hand off
+
+A team is defined by its handoffs, not by its headcount. The two agents exist because of a
+single rule: **a context cannot independently check its own work.** The reasoning that wrote
+a fix will write a test that confirms that fix; the reasoning that wrote a feature will
+review it as complete. So the skills delegate exactly the steps where self-assessment is
+worthless:
+
+```
+/anantys.debug   defect spec  ──▶  anantys.spec-tester   regression test, fresh context
+/anantys.review  spec/ticket  ──▷  anantys.spec-tester   are the PR's tests change-detectors?
+                                                         (recommended as Audit, you authorize)
+/anantys.review  the diff     ──▶  anantys.code-auditor  what did it omit?
+```
+
+A solid arrow is a dispatch the skill performs; `──▷` is one it recommends and you authorize.
+`review` is read-only by declaration — it may not hand its clean working tree to an agent that
+writes files, so the test run it needs is a verdict, not a side effect.
+
+What crosses the boundary is always the **spec, never the diff**. Hand `spec-tester` the
+expected behavior and it can write a test that fails; hand it the implementation and it can
+only write one that passes. Same for the auditor: it gets the change as a suspect, not the
+reasoning that justified it.
+
 ## Requirements
 
 - [Claude Code](https://claude.com/claude-code)
-- A connected browser for the browser tools (e.g. the **Claude-in-Chrome** extension).
+- **Claude-in-Chrome**, for the four browser-driven roles (`design`, `ops`, `debug`, `qa`).
+
+  The team is agnostic about *your project* — no hardcoded domains, paths, or design
+  tokens — but not about the browser backend. Each browser role names the
+  `mcp__claude-in-chrome__*` tools in its `allowed-tools`, and that list is a hard
+  allowlist: a different browser MCP (Playwright, chrome-devtools, …) is unreachable
+  from the skill even while connected. To swap backends, edit the role's
+  `allowed-tools` to its equivalent tools — tab context, navigate, click/type, read
+  page, console. The roles' prose is written against capabilities, not against one
+  vendor, so nothing else needs to change.
+
+  That list is a **tool** allowlist, not a **destination** allowlist — it says which
+  verbs a role holds, never where it may point them. The browser it drives is *yours*,
+  signed into everything you use, so each browser role additionally declares its own
+  navigation scope up front: the approved domain list you sign off on (`ops`), the dev
+  URL (`design`), the repro's URL (`debug`), the selected environment's Surfaces
+  (`qa`). `ops` — the one role aimed at live SaaS dashboards under your real account —
+  is read-only there as well as on the codebase: it may change what a page *shows* it,
+  never what the service *stores*.
 
 ## Install
 
@@ -52,6 +94,9 @@ Then invoke a skill directly:
 /anantys.qa      plan --brief feat.md     # …or from a hand-written feature brief
 /anantys.qa      run                      # walk it in a real browser, on the local env (asks: autonomous or interactive)
 /anantys.qa      run --env staging        # …or on a deployed env — never reset, additive only
+/anantys.qa      note A4 --env local --durable   # "known env drift" — promote it, later features inherit it
+/anantys.qa      retest                   # re-walk only what's unresolved, plus the regression risk
+/anantys.qa      status                   # can this ship? — coverage and blockers, nothing run
 /anantys.qa      report                   # fix brief to paste into a dev session
 ```
 
@@ -70,7 +115,7 @@ anantys-team/
         │   ├── anantys.review/SKILL.md
         │   └── anantys.qa/
         │       ├── SKILL.md
-        │       └── templates/           # qa-config.md, qa-plan.md, feature-brief.md
+        │       └── templates/           # qa-config.md, qa-plan.md, qa-report.md, feature-brief.md
         └── agents/                     # dispatched as isolated subagents
             ├── anantys.code-auditor.md
             └── anantys.spec-tester.md
