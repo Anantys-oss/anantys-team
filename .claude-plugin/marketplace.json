@@ -3,10 +3,11 @@
   "owner": {
     "name": "Anantys-OSS"
   },
+  "description": "Roles that put Claude plus a real browser to work on a project: design, ops, debug, review, QA.",
   "plugins": [
     {
       "name": "anantys-team-agents",
-      "version": "0.6.0",
+      "version": "0.6.1",
       "description": "Turn Claude into a specialized mini-team of roles: 5 skills (/anantys.design, /anantys.ops, /anantys.debug, /anantys.review, /anantys.qa) and 2 review agents (anantys.code-auditor, anantys.spec-tester). Vendor-neutral, project-agnostic.",
       "category": "development",
       "source": "./plugins/anantys-team-agents"
