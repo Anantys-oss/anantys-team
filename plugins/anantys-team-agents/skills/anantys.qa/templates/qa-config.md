@@ -26,7 +26,7 @@ single `local` environment named `local`, marked default — it keeps working un
 
 ---
 
-```markdown
+````markdown
 # QA environment — <project>
 
 _Last updated: <YYYY-MM-DD> — maintained by `/anantys.qa init`._
@@ -132,4 +132,4 @@ operator's already-signed-in browser session.
 ### Known drift — never file these as defects
 - A fix merged to `main` is not live until the next deploy — a defect a merged-but-undeployed PR
   already fixes is EXPECTED here; name the PR that closes it rather than filing it anew.
-```
+````

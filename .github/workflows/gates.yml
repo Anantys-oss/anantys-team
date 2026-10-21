@@ -20,6 +20,9 @@ jobs:
       - run: python3 scripts/check_ci_coverage.py
       - run: python3 scripts/check_delegation_grants.py
       - run: python3 scripts/check_doc_actions.py
+      # Stdlib-only and reads nothing but the tree's `.md` files, so it belongs
+      # in the cheapest job rather than beside the gates that boot a loader.
+      - run: python3 scripts/check_md_fences.py
       # No `claude` on this runner, so every declared MCP server comes back
       # unprobed: the gate charges the server half of each grant and says, per
       # server, that the tool half went unverified. Installing the CLI here would
