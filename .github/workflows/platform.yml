@@ -16,7 +16,7 @@ jobs:
       # The suite runs once, in `gates` — see the note in validate.yml. It does not
       # need the CLI installed above: every test mocks `subprocess.run`, so the only
       # thing this job uniquely provides is the real loader for the gate below.
-      # Not --strict: the marketplace has carried a missing-author warning since
-      # before this gate existed, and reddening every PR over it would teach
-      # people to ignore the gate. Errors fail; warnings are printed.
-      - run: python3 scripts/check_platform.py
+      # --strict, now that the two manifests satisfy it. It was off because the
+      # missing-author warning predated the gate; leaving it off is what let the
+      # warning survive 114 heads. See docs/platform-conformance.md.
+      - run: python3 scripts/check_platform.py --strict

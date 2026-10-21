@@ -442,5 +442,28 @@ class Argv(unittest.TestCase):
         self.assertEqual(cp.errors, [])
 
 
+class StrictIsSatisfiable(unittest.TestCase):
+    """The CI step passes `--strict`, so the shipped manifests owe it two fields.
+
+    Measured on 2.1.278: an absent `author` is a warning, but a bare string is an
+    error (`author: Invalid input`) and so is an object without `name`
+    (`author.name: Invalid input`). The obvious wrong fix reddens the same step
+    the right one greens, which is why the shape is asserted and not just the key.
+    """
+
+    REPO = Path(__file__).resolve().parent.parent
+
+    def load(self, *parts: str) -> dict:
+        return json.loads((self.REPO.joinpath(*parts)).read_text(encoding="utf-8"))
+
+    def test_plugin_manifest_carries_an_object_author_with_a_name(self) -> None:
+        author = self.load("plugins", "anantys-team-agents", ".claude-plugin", "plugin.json").get("author")
+        self.assertIsInstance(author, dict)
+        self.assertTrue(author.get("name"))
+
+    def test_marketplace_carries_a_description(self) -> None:
+        self.assertTrue(self.load(".claude-plugin", "marketplace.json").get("description"))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -68,6 +68,37 @@ indistinguishable from an absent one, and it must not read as clean. The
 line-wise reading is not unique to this file; `check_tool_grants.py` resolves
 `allowed-tools:` the same way, and whoever lands there owns that half.
 
-The gate runs non-strict in CI. `--strict` currently fails on a pre-existing
-missing-author warning in the manifests; those two files are under contention in
-the open queue, so the fix belongs with whoever lands there, not here.
+## Why the gate now runs strict
+
+The gate used to run non-strict, deferring one pre-existing warning —
+`plugin.json → author` — to "whoever lands in the manifests". Measured against
+the open queue, nobody was going to:
+
+| | |
+|---|---|
+| remote heads | 114 |
+| passing `claude plugin validate --strict` on root **and** plugin dir | **0** |
+| carrying `plugin.json` `author` | 1 |
+| carrying marketplace `description` | 8 |
+| carrying **both** | **0** |
+| heads wiring `--strict` into a workflow | 21 |
+
+Twenty-one heads prescribe a flag no tree satisfies, and each of them declines
+the two-field fix on the same grounds: a gate may not fix the violations it
+detects. That rule keeps a gate reviewable, and here it also kept the warning
+alive — every head deferred to a head that was deferring back. So this change
+writes the field and turns the flag on together, which is the one combination
+none of the twenty-one could make.
+
+`author` is not a free-form string. Measured on 2.1.278, four shapes:
+
+| `author` | verdict |
+|---|---|
+| `{"name": …}` | passes |
+| `{"name": …, "url": …}` | passes |
+| `"Anantys-OSS"` (bare string) | **error** — `author: Invalid input` |
+| `{"url": …}` | **error** — `author.name: Invalid input` |
+
+Absent it is a warning; wrong it is an error. A `--strict` CI step therefore
+reddens on the obvious wrong fix too, which is why the shape is asserted in
+`test_check_platform.py` rather than left to the next reader.
