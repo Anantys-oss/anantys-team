@@ -263,10 +263,15 @@ class MentionIsNotSpelling(unittest.TestCase):
         _, warnings = role(["Task"], f"Dispatch the `{self.AUDITOR}` agent.", {self.AUDITOR})
         self.assertEqual(warnings, [])
 
+    def test_a_dispatch_discharges_the_canonical_grant_too(self):
+        """`Agent` is `Task` under the name the loader resolves both to."""
+        _, warnings = role(["Agent"], f"Dispatch the `{self.AUDITOR}` agent.", {self.AUDITOR})
+        self.assertEqual(warnings, [])
+
     def test_dispatching_without_the_task_grant_is_an_error(self):
         errors, _ = role(["Read"], f"Dispatch the `{self.AUDITOR}` agent.", {self.AUDITOR})
         self.assertIn(self.AUDITOR, errors[0])
-        self.assertIn("`Task` is not granted", errors[0])
+        self.assertIn("`Agent` is not granted", errors[0])
 
     def test_a_name_that_is_no_agent_in_the_tree_is_not_a_dispatch(self):
         errors, _ = role(["Read"], f"Dispatch the `{self.AUDITOR}` agent.", set())
@@ -654,6 +659,54 @@ class FirstPartyTools(unittest.TestCase):
     def test_an_agent_toolset_is_read_the_same_way(self):
         errors, _ = agent(["Bash", "Read"], "Use `WebFetch` for the upstream doc.")
         self.assertIn("prose uses `WebFetch` but it is not granted", errors)
+
+
+class RenamedTools(unittest.TestCase):
+    """A rename is two spellings of one tool — see `RENAMED`."""
+
+    def test_every_pair_is_in_the_registry_under_both_spellings(self):
+        for alias, name in c.RENAMED.items():
+            with self.subTest(alias=alias):
+                self.assertIn(alias, c.FIRST_PARTY)
+                self.assertIn(name, c.FIRST_PARTY)
+
+    def test_canonical_resolves_an_alias_and_passes_anything_else_through(self):
+        self.assertEqual(c.canonical("Task"), "Agent")
+        self.assertEqual(c.canonical("KillShell"), "TaskStop")
+        self.assertEqual(c.canonical("Read"), "Read")
+
+    def test_canonical_is_idempotent(self):
+        """No pair may chain — a canonical name must not itself be an alias."""
+        for name in c.RENAMED.values():
+            with self.subTest(name=name):
+                self.assertEqual(c.canonical(name), name)
+
+    def test_prose_may_use_todays_name_for_a_tool_granted_under_the_old_one(self):
+        errors, _ = role(["Read", "KillShell"], "Stop it with `TaskStop`.")
+        self.assertEqual(errors, [])
+
+    def test_prose_may_use_the_old_name_for_a_tool_granted_under_todays(self):
+        errors, _ = role(["Read", "TaskStop"], "Stop it with `KillShell`.")
+        self.assertEqual(errors, [])
+
+    def test_a_renamed_tool_the_role_does_not_hold_is_still_an_error(self):
+        """Canonicalizing both sides must not retire the check it runs inside."""
+        errors, _ = role(["Read"], "Stop it with `TaskStop`.")
+        self.assertIn("prose uses `TaskStop` but it is not granted", errors)
+
+    def test_the_agent_tool_is_left_to_the_dispatch_check_under_both_spellings(self):
+        for spelling in ("Task", "Agent"):
+            with self.subTest(spelling=spelling):
+                errors, _ = role(["Read"], f"Dispatch with `{spelling}`.")
+                self.assertEqual(errors, [])
+
+    def test_the_canonical_agent_scope_is_the_one_an_agent_toolset_keeps(self):
+        errors, _ = c.agent_scopes(["Agent(anantys.code-auditor)", "Read"])
+        self.assertEqual(errors, [])
+
+    def test_a_canonical_agent_scope_is_not_stripped(self):
+        _, widened = c.agent_scopes(["Agent(anantys.code-auditor)"])
+        self.assertEqual(widened, ["Agent(anantys.code-auditor)"])
 
 
 def agent(grants, body, agents=()):

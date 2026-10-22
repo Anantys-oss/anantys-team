@@ -136,15 +136,45 @@ MCP_IN_PROSE = re.compile(r"`([a-z_]+)`|mcp__[\w-]+__([\w.-]+)")
 # registry — so the check here is an exact-membership test and needs no anchor.
 # The cost of that is a set that goes stale as the registry grows: a tool added
 # upstream is unchecked until it is listed, which is silence, not noise.
+#
+# A rename is not that cost, and it is not silence. The registry keeps a rename
+# map — in 2.1.278, `{Task: Agent, KillShell: TaskStop, KillBash: TaskStop,
+# ListPeers: ListAgents, Brief: SendUserMessage, ListMcpResources:
+# ListMcpResourcesTool, ReadMcpResource: ReadMcpResourceTool,
+# ReadMcpResourceDir: ReadMcpResourceDirTool}` — and canonicalizes every tool
+# name through it before resolving a grant. So each pair is *one* tool with two
+# accepted spellings, and a set holding only one of them is not a shorter
+# registry, it is a wrong one: the two names it conflates are judged
+# differently. `Task` and `KillShell` are the two legacy spellings this set was
+# written with, and the canonical names they alias to were absent — which made
+# writing today's name for a tool the repo already grants an error.
+RENAMED = {
+    "Task": "Agent",
+    "KillShell": "TaskStop",
+    "KillBash": "TaskStop",
+    "ListPeers": "ListAgents",
+    "Brief": "SendUserMessage",
+    "ListMcpResources": "ListMcpResourcesTool",
+    "ReadMcpResource": "ReadMcpResourceTool",
+    "ReadMcpResourceDir": "ReadMcpResourceDirTool",
+}
 FIRST_PARTY = frozenset({
     "AskUserQuestion", "Bash", "BashOutput", "Edit", "ExitPlanMode", "Glob",
-    "Grep", "KillShell", "NotebookEdit", "Read", "Skill", "SlashCommand",
-    "Task", "TaskCreate", "TaskList", "TaskUpdate", "TodoWrite", "WebFetch",
-    "WebSearch", "Write",
-})
-# `Bash` and `Task` are named in prose constantly and are already judged more
-# precisely elsewhere — by the command comparison and the dispatch check — so a
-# membership test on them would only duplicate those findings.
+    "Grep", "NotebookEdit", "Read", "Skill", "SlashCommand", "TaskCreate",
+    "TaskList", "TaskUpdate", "TodoWrite", "WebFetch", "WebSearch", "Write",
+} | set(RENAMED) | set(RENAMED.values()))
+
+
+def canonical(name):
+    """The name the loader resolves `name` to — see `RENAMED`."""
+    return RENAMED.get(name, name)
+
+
+# The tool a dispatch needs, under the spelling every check here compares in.
+AGENT = canonical("Task")
+# `Bash` and the agent tool are named in prose constantly and are already judged
+# more precisely elsewhere — by the command comparison and the dispatch check —
+# so a membership test on them would only duplicate those findings.
 FIRST_PARTY_IN_PROSE = re.compile(r"`([A-Z][A-Za-z]+)`")
 BASH_FENCE = re.compile(r"```(?:bash|sh|shell)\n(.*?)```", re.S)
 INLINE_CODE = re.compile(r"`([a-z][\w./-]*(?: [^`\n]*)?)`")
@@ -348,8 +378,9 @@ def agent_scopes(grants):
     Measured against the loader in Claude Code 2.1.278. Resolving an agent's
     toolset walks the declared list, splits each entry into `{toolName,
     ruleContent}`, and looks the *tool* up by the bare name; the resolved set
-    holds whole tools. `ruleContent` is read for exactly one tool — `Task`,
-    where it is the comma-separated list of subagent types the agent may spawn.
+    holds whole tools. `ruleContent` is read for exactly one tool — the agent
+    tool, `Agent` or its legacy spelling `Task`, where it is the comma-separated
+    list of subagent types the agent may spawn.
     For every other tool it is discarded, and nothing re-adds it as a permission
     rule: an agent's `tools:` never reaches the allow-rule table that a skill's
     `allowed-tools` feeds.
@@ -369,7 +400,7 @@ def agent_scopes(grants):
     errors, widened = [], []
     for grant in grants:
         name, paren, _ = grant.partition("(")
-        if not paren or name == "Task":
+        if not paren or canonical(name) == AGENT:
             widened.append(grant)
             continue
         errors.append(
@@ -403,7 +434,10 @@ def check(path, grants, body, known_mcp, agents=(), is_agent=False):
     # errors on that state by name, so running this comparison would answer the
     # same edit twice — and would do it by reporting every tool the prose names.
     if grants:
-        askable = FIRST_PARTY - {g.partition("(")[0] for g in grants} - {"Bash", "Task"}
+        # Canonicalized on both sides: a grant written `Task` holds `Agent`, so
+        # prose naming `Agent` must not come back as a tool the role lacks.
+        held = {canonical(g.partition("(")[0]) for g in grants}
+        askable = {t for t in FIRST_PARTY if canonical(t) not in held | {"Bash", AGENT}}
         # One error per tool, not per mention: a role names the tool it needs in
         # every step that needs it, and twelve copies of one finding is a wall.
         used = {
@@ -452,15 +486,16 @@ def check(path, grants, body, known_mcp, agents=(), is_agent=False):
                 held = f"only {sorted(bash_grants)} are" if bash_grants else "no Bash grant is"
                 errors.append(f"prose runs `{cmd}` but {held} granted")
 
-    # Dispatching an agent needs `Task`, and the prose names the agent, never the
-    # tool — so this direction is invisible to the mention check below. It is the
-    # direction that matters most: a dispatched agent runs with the dispatcher's
-    # grants, so `Task` is not one capability but the whole union, delegated.
-    # `Task(a,b)` is a held `Task`, narrowed to those agent types — the one
-    # scope an agent's `tools:` keeps, and the reason `agent_scopes` leaves it
-    # alone. A literal membership test reads it as a different tool entirely.
-    if dispatched and "Task" not in {g.partition("(")[0] for g in grants}:
-        errors.append(f"prose dispatches {', '.join(dispatched)} but `Task` is not granted")
+    # Dispatching an agent needs the agent tool, and the prose names the agent,
+    # never the tool — so this direction is invisible to the mention check below.
+    # It is the direction that matters most: a dispatched agent runs with the
+    # dispatcher's grants, so this is not one capability but the whole union,
+    # delegated. `Agent(a,b)` is a held `Agent`, narrowed to those agent types —
+    # the one scope an agent's `tools:` keeps, and the reason `agent_scopes`
+    # leaves it alone. A literal membership test reads it as a different tool
+    # entirely, and a test against one spelling reads the other one that way too.
+    if dispatched and AGENT not in {canonical(g.partition("(")[0]) for g in grants}:
+        errors.append(f"prose dispatches {', '.join(dispatched)} but `{AGENT}` is not granted")
 
     # Browser primitives are used implicitly ("take a screenshot" is `computer`),
     # so only named, discretionary grants are held to being mentioned.
@@ -480,7 +515,7 @@ def check(path, grants, body, known_mcp, agents=(), is_agent=False):
         # the two grants here whose names are also common words, and both were
         # silent on roles that never exercise them.
         if not re.search(rf"\b{re.escape(name)}\b", body) and not (
-            grant == "Task" and dispatched
+            canonical(name) == AGENT and dispatched
         ):
             warnings.append(f"grants `{grant}` but the prose never mentions it")
 

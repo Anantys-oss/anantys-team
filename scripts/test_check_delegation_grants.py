@@ -33,7 +33,20 @@ def test_dispatch_escalating_beyond_grants_is_an_error():
 
 def test_dispatch_without_task_grant_is_an_error():
     errors, _ = check([skill("s", {"Read"}, "dispatch `a`")], {"a": {"Read"}})
-    assert any("no Task grant" in e for e in errors), errors
+    assert any("no Agent grant" in e for e in errors), errors
+
+
+def test_either_spelling_of_the_agent_tool_covers_a_dispatch():
+    """The loader resolves `Task` and `Agent` to one tool; so must this gate."""
+    for spelling in ("Task", "Agent"):
+        errors, _ = check([skill("s", {spelling, "Read"}, "dispatch `a`")], {"a": {"Read"}})
+        assert not any("grant" in e and "dispatches" in e for e in errors), (spelling, errors)
+
+
+def test_an_agents_agent_tool_is_not_an_escalation_past_the_old_spelling():
+    """An agent granting `Agent` under a skill granting `Task` escalates nothing."""
+    errors, _ = check([skill("s", {"Task", "Read"}, "dispatch `a`")], {"a": {"Agent", "Read"}})
+    assert errors == [], errors
 
 
 def test_unmentioned_agent_is_not_a_dispatch():

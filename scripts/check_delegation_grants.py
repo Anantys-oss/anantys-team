@@ -2,7 +2,7 @@
 """Check that dispatching an agent does not silently widen a skill's grants.
 
 `allowed-tools` reads like a capability ceiling. It is not one. A skill that
-holds `Task` and names an agent in its prose gains, for the length of that
+holds the agent tool and names an agent in its prose gains, for the length of that
 dispatch, everything the agent's own `tools:` list holds — and nothing in the
 skill's frontmatter says so. The human auditing the skill sees the narrow list.
 
@@ -33,6 +33,9 @@ from itertools import takewhile
 from pathlib import Path
 
 FRONTMATTER = re.compile(r"\A---\n(.*?)\n---\n(.*)\Z", re.S)
+# The two accepted spellings of the tool a dispatch needs — `Agent` in Claude
+# Code 2.1.278, `Task` before the rename the loader still resolves. See `covers`.
+AGENT_TOOL = frozenset({"Agent", "Task"})
 # "you do not dispatch it", "never invoke `x`" — the prose declining the dispatch.
 # The agent must be the *object* of the negated verb. A bare negated verb is not a
 # disclaimer: `run` and `invoke` are what these roles say about tests, commands and
@@ -144,12 +147,22 @@ def covers(grants, needed):
     server tool would otherwise be reported as an escalation past a ceiling
     that already contains it, and the error would land on the skill's file.
 
+    A renamed tool is covered under either of its spellings. The loader keeps a
+    rename map and resolves every grant through it, so `Task` and `Agent` are
+    one tool; a literal membership test on the name this gate happens to have
+    been written with reports a role that writes the other one as holding
+    nothing. The full map lives in `check_tool_grants.RENAMED` — the gate that
+    owns the registry — and is not re-read here, because this gate needs exactly
+    one pair: the agent tool, named by every dispatch check below.
+
     Not modelled: whether `Bash(git:*)` subsumes `Bash(git log:*)`. The loader's
     prefix semantics for the scoped form are not established anywhere in this
     tree, and guessing them here would be the third reading this docstring
     exists to avoid. It over-reports, which is the safe direction.
     """
     if grants is None or needed in grants:
+        return True
+    if needed in AGENT_TOOL and AGENT_TOOL & set(grants):
         return True
     if needed.startswith("Bash(") and "Bash" in grants:
         return True
@@ -171,9 +184,9 @@ def check(skills, agents):
             dispatched.add(agent)
             if all(declines(b, agent) for b in named):
                 continue  # recommended to the human, not run by the skill
-            if not covers(grants, "Task"):
+            if not covers(grants, "Agent"):
                 errors.append(
-                    f"{name}: dispatches `{agent}` but has no Task grant — "
+                    f"{name}: dispatches `{agent}` but has no Agent grant — "
                     f"the prose describes a step the skill cannot take"
                 )
             if agent_grants is None:
