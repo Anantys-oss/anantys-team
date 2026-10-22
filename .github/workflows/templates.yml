@@ -1,0 +1,18 @@
+name: templates
+
+# Its own file rather than a line in a shared `gates` job: this gate rules on the
+# artifacts the skills write into a user's repo, and those are checked whether or
+# not the plugin-manifest gates are in the tree yet.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  templates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 -m unittest discover -s scripts
+      - run: python3 scripts/check_template_paths.py
