@@ -121,9 +121,12 @@ Then ask the operator only what you could not infer, in one batch:
   serving** (a `/version` or `/healthz` endpoint, a deployed-SHA banner, a `docker inspect` — the
   build-identity check `run` uses to enforce a plan's `**Under test:**` line; it is per environment,
   since staging lags `main` between deploys), test credentials, and any known drift that must not
-  be filed as a defect.
-- **`local` only:** the reset procedure for a fresh test subject, and a payment sandbox instrument
-  (test card / token) if any journey touches money — without one, every checkout case is BLOCKED.
+  be filed as a defect. Also, **if any journey touches money, that environment's payment sandbox
+  instrument** (test card / token) — ask it of every environment the product can safely charge, not
+  just the local one: a non-production `shared` env is charged with its own sandbox keys, and
+  without a declared instrument every checkout case there is BLOCKED. On a `Production: yes` env,
+  do not ask — those scenarios are BLOCKED by construction (see Environments).
+- **`local` only:** the reset procedure for a fresh test subject.
 - **`shared` only:** how the operator's signed-in browser session is made available to you, whether
   a real record exhibiting the behaviour under test exists there (a shared env has no fixtures), and
   how deploy lag shows up (a fix merged but not yet deployed), and **whether it is production**
@@ -132,7 +135,10 @@ Then ask the operator only what you could not infer, in one batch:
 
 Write only the environments the operator named, with real values — never copy a template block
 full of `<placeholders>` into the contract. Re-running `init` on an existing file adds or updates
-environment blocks and leaves the others untouched.
+environment blocks and leaves the others untouched — except that an **untouched block missing a
+field this list now asks for is still incomplete**. On every re-run, check each existing block for
+the per-environment fields above and ask for the ones absent; a contract written before a field
+existed never gains it otherwise, and the gap reads as a declined option rather than an old file.
 
 **Re-running `init` on a flat file migrates it first.** If the existing `.anantys/qa.md` has no
 `## Environment:` blocks (the legacy layout, see Environments), rewrite its flat `## Surfaces` /
