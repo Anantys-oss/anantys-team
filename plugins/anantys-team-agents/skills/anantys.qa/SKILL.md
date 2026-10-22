@@ -120,19 +120,29 @@ Then ask the operator only what you could not infer, in one batch:
   checks whose failure would waste a whole campaign, **how that environment reports the code it is
   serving** (a `/version` or `/healthz` endpoint, a deployed-SHA banner, a `docker inspect` — the
   build-identity check `run` uses to enforce a plan's `**Under test:**` line; it is per environment,
-  since staging lags `main` between deploys), test credentials, and any known drift that must not
-  be filed as a defect.
+  since staging lags `main` between deploys), test credentials, **how to find the record under
+  test** (the lookup method — a query, an admin URL, an API call — never a specific id, since the
+  record changes every campaign and the method does not), **the client state to clear between
+  runs** (storage keys, cookies), and any known drift that must not be filed as a defect.
 - **`local` only:** the reset procedure for a fresh test subject, and a payment sandbox instrument
   (test card / token) if any journey touches money — without one, every checkout case is BLOCKED.
 - **`shared` only:** how the operator's signed-in browser session is made available to you, whether
   a real record exhibiting the behaviour under test exists there (a shared env has no fixtures), and
   how deploy lag shows up (a fix merged but not yet deployed), and **whether it is production**
   (`Production: yes | no`). A `shared` block is always written with `Reset — NONE`, never a reset
-  command — do not ask for one.
+  command — do not ask for one. Ask instead what must **not** be cleared, and write it: the
+  operator's session is unrecoverable from inside a run, because the agent is forbidden to sign in.
+
+The **Test subject** and **Client state** answers are per environment, not `local` only. They sit
+under their own headings in both kinds of block — a `shared` env has no reset command to carry them,
+and they are the two facts it needs most: it cannot create the record, and its session is the
+operator's own.
 
 Write only the environments the operator named, with real values — never copy a template block
 full of `<placeholders>` into the contract. Re-running `init` on an existing file adds or updates
-environment blocks and leaves the others untouched.
+environment blocks and leaves the others untouched — **except that a block missing the Test subject
+or Client state heading gains it**, asking the operator for that environment's answer. Those two are
+newer than some contracts; without this, an existing file never acquires them and the gap is silent.
 
 **Re-running `init` on a flat file migrates it first.** If the existing `.anantys/qa.md` has no
 `## Environment:` blocks (the legacy layout, see Environments), rewrite its flat `## Surfaces` /
@@ -140,6 +150,10 @@ environment blocks and leaves the others untouched.
 `## Environment: local (kind: local, default)` block **before** adding any new one, and show the
 converted file in the confirmation below. Appending a `shared` block to a flat file leaves the local
 sections read by nothing and no environment marked default — the local campaign stops resolving.
+The flat `## Reset` section bundled three things; **split it** on the way across — the reset command
+and server-side leftovers stay under Reset, the test-subject lookup and the client-state list each
+move to their own heading. Carried over whole, both would land under a heading the new `shared`
+block then declares NONE.
 
 Confirm the file back to the operator before writing. `.anantys/qa.md` is committed — so it must
 contain **no secrets**, only the commands that retrieve them.
@@ -228,7 +242,9 @@ local dev stack *or* a deployed one. Each environment is one of two **kinds**:
   **preview**, or **production**. It is **NEVER reset** — it may hold real data and other people rely
   on it — so a test subject is created **additively** (a new record; a new PR → a real run), and it
   is driven through the **operator's already-signed-in browser session**: the agent reuses that
-  session, and never signs in, never resets, never runs a destructive command against it.
+  session, and never signs in, **never signs out**, never resets, never runs a destructive command
+  against it. Signing out is the one of those five that costs nothing to do and cannot be undone —
+  it is neither a reset nor a write, so only this clause forbids it.
 
 **How each environment is driven is read from its `Driven by:` line**, never assumed: the
 operator's connected browser (e.g. Claude-in-Chrome), or a named local command. A `shared` env is
@@ -348,7 +364,10 @@ operator's go before any write.
    effect (a stale auth cookie or leftover cache silently invalidates every assertion that follows) —
    verify by observing the app, not by trusting the command's exit code. On a **`shared`**
    environment there is **NO reset**: never reset staging / preview / prod — reuse the operator's
-   session and create any needed test data additively (see Environments).
+   session and create any needed test data additively (see Environments). No reset is not no client
+   hygiene: clear the storage keys and cookies that env's **Client state** section lists, and **never
+   the session** — the agent cannot sign back in, so a sign-out ends the campaign for good. Then
+   locate the record with that env's **Test subject** lookup; no record, no scenario — BLOCKED.
 3. **Walk the scenarios in order**, in a real browser driven as the environment's `Driven by:`
    line says (see Environments). On production, skip the unsafe scenario classes and record them
    `BLOCKED`. Per scenario: establish the precondition,
@@ -500,6 +519,9 @@ whole number on its own; show a non-zero value below 1% as `<1%` (never `0%`) an
   It is persistent and may hold real data; create test subjects additively and drive it through the
   operator's existing browser session, after they confirm the target. Reset is for a `local` env
   only; on production, never charge, record consent for, or notify a real person.
+- **Never sign the operator out of a `shared` environment.** It is not a reset and not a destructive
+  write, so the rule above does not cover it — and it is unrecoverable, because the agent is
+  forbidden to sign in. Clear that env's listed storage keys and cookies; leave the session alone.
 - **Never start, restart or repair the stack.** A failed preflight stops the campaign and goes back
   to the operator.
 - **Never modify product code.** You observe and report; fixing is a separate session, which is
