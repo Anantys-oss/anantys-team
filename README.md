@@ -80,6 +80,27 @@ anantys-team/
 - **plugin** = the installable, versioned unit a user enables in one shot.
 - **skills** = the actual capabilities Claude invokes.
 
+## What constrains a role (and what doesn't)
+
+A role's frontmatter is a tool-**name** list, not a permission policy. Worth knowing before you
+trust one with a repo:
+
+- **`tools:` and `disallowedTools:` match names only.** `Bash(git diff:*)` is parsed, the rule in
+  parentheses is **discarded**, and the bare `Bash` tool is granted — identical to writing `Bash`.
+  The one exception is the agent-spawn tool, where `Agent(a,b)` does restrict which agent types may
+  be spawned. Nothing warns you: a scoped spelling installs clean, shows up in the component
+  inventory, and `claude plugin validate --strict` stays quiet about it.
+- **`permissionMode:`, `hooks:` and `mcpServers:` are ignored for plugin agents.** The loader logs a
+  warning pointing you at a loose `.claude/agents/` copy, which is the only place those bind.
+
+So `anantys.code-auditor` holds an **unrestricted shell** and its "writes no code" contract is
+behavioural, stated in the agent's own prose. If you need it enforced, deny in your own settings —
+rule content *is* honoured there, but the rules are session-wide, not per-agent:
+
+```json
+{ "permissions": { "deny": ["Bash(git commit:*)", "Bash(git push:*)", "Bash(git checkout:*)"] } }
+```
+
 ## License
 
 Provided as-is for consulting and educational use.
