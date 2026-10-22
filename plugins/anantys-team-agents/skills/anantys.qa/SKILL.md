@@ -182,13 +182,29 @@ Then transform into scenarios (identical for every source):
 
 Write `qa-plan.md` following `templates/qa-plan.md`. Every assertion gets a stable id
 (`A1`, `B5`, …) — ids are referenced by runs, notes and reports forever, so **never renumber
-them**. On a regeneration, keep existing ids and their adjudication annotations; append new ones.
+them**. On a regeneration, keep existing ids and their adjudication annotations; append new ones —
+and write the `**Under test:**` line below if the existing plan has none, which is the only moment
+a plan predating that rule can gain one.
 
-If the source carries an **under-test precondition** — a `--from pr:` head branch, or a brief's
-`_Under test:_` line — copy it into the plan header as `**Under test:** <branch> @ <head commit> —
-<environment>` (plus `pr: <ref>` for a PR source). Record the head **commit**, not only the branch:
-once the PR merges, `run` can only recognise the shipped code by commit ancestry (step 1). `run` reads `qa-plan.md`, never the brief, so a precondition that lives only in the
-brief is never enforced: a PR-derived campaign would run green against a stack serving `main`.
+**Every plan carries an `**Under test:**` line — one of two forms, never nothing.** Write it as
+`**Under test:** <branch> @ <head commit> — <environment>` (plus `pr: <ref>` for a PR source).
+Record the head **commit**, not only the branch: once the PR merges, `run` can only recognise the
+shipped code by commit ancestry (step 1). `run` reads `qa-plan.md`, never the brief, so a
+precondition that lives only in the brief is never enforced: a PR-derived campaign would run green
+against a stack serving `main`.
+
+A `--from pr:` head branch and a brief's `_Under test:_` line supply the precondition. **A spec-kit
+dir does not** — and it is the *default* source, used on the feature that was finished minutes ago
+and therefore sits on an unmerged branch, which is exactly the case the line exists for. Establish
+it there from the checkout the spec dir lives in — `git branch --show-current` and
+`git rev-parse --short HEAD` — and have the operator confirm which environment serves that code;
+the checkout describes your working copy, never a remote stack.
+
+The other form is for a feature already merged and deployed when the plan was written:
+`**Under test:** none — merged and deployed`. Write that, never an absent line — an omitted
+precondition and an unestablished one are indistinguishable afterwards, and `run` reads silence as
+the merged case (step 1). Silence on the default source would disarm the check on the one path the
+skill is named for.
 
 Show the operator the scenario list and the blocker list before writing.
 
@@ -339,7 +355,11 @@ operator's go before any write.
    - Record the observed branch/commit in the `qa-runs.md` run section, beside `Subject:`, so a
      later reader can tell which build a green run was green against.
 
-   The line is absent for a merged/deployed feature, and then there is nothing extra to check.
+   `**Under test:** none — merged and deployed` is the merged/deployed case, and then there is
+   nothing extra to check. A plan carrying **no** line at all is not that case — the precondition
+   was never established, which a plan written before `plan` was required to write one cannot tell
+   you apart from the merged one. Treat it as a missing probe: ask the operator which build the
+   environment is serving and stop until they answer.
 
    **On a `shared` env, confirm the target before anything is written:** echo the environment name,
    its base URL, the build it serves, whether it is production, and the scenarios that will create
