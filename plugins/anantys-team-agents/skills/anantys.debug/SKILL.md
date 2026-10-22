@@ -1,7 +1,7 @@
 ---
 name: anantys.debug
 description: Debug by observing the running app, not by guessing — a tight reproduce → inspect runtime (browser console, network, logs) → fix → re-prove loop. The proof is the observed behavior, never a plausible-looking diff. Use to diagnose and fix a bug where you can exercise the app live (a "Ralf loop").
-allowed-tools: mcp__claude-in-chrome__tabs_context_mcp, mcp__claude-in-chrome__tabs_create_mcp, mcp__claude-in-chrome__list_connected_browsers, mcp__claude-in-chrome__select_browser, mcp__claude-in-chrome__navigate, mcp__claude-in-chrome__computer, mcp__claude-in-chrome__read_page, mcp__claude-in-chrome__javascript_tool, mcp__claude-in-chrome__read_console_messages, mcp__claude-in-chrome__read_network_requests, Read, Write, Edit, Bash, Glob, Grep, TaskCreate, TaskUpdate, TaskList
+allowed-tools: ToolSearch, mcp__claude-in-chrome__tabs_context_mcp, mcp__claude-in-chrome__tabs_create_mcp, mcp__claude-in-chrome__list_connected_browsers, mcp__claude-in-chrome__select_browser, mcp__claude-in-chrome__navigate, mcp__claude-in-chrome__computer, mcp__claude-in-chrome__read_page, mcp__claude-in-chrome__javascript_tool, mcp__claude-in-chrome__read_console_messages, mcp__claude-in-chrome__read_network_requests, Read, Write, Edit, Bash, Glob, Grep, TaskCreate, TaskUpdate, TaskList
 ---
 
 ## Mission
@@ -12,7 +12,13 @@ This is a **Ralf loop** — the model's limit is rarely the model; it's the feed
 
 ## Hard preconditions
 
-1. **A way to exercise the app live.** For web bugs, call `mcp__claude-in-chrome__tabs_context_mcp` first. Two states look like "no browser" and are not: the Chrome tools may be **deferred** in this session — load them with one `ToolSearch` call before concluding they are missing — and several browsers may be connected with none selected, which `list_connected_browsers` + `select_browser` resolves. STOP and say so only when no browser is connected at all. For non-browser bugs, confirm you can run the failing path (a command, a test, a request) and read its output/logs.
+1. **A way to exercise the app live.** For web bugs, call `mcp__claude-in-chrome__tabs_context_mcp` first. Two states look like "no browser" and are not: the Chrome tools may be **deferred** in this session, and several browsers may be connected with none selected — `list_connected_browsers` + `select_browser` resolves the second. For the first, load every tool this loop needs in **one** `ToolSearch` call, before the probe, not one tool at a time (each extra call is a wasted round-trip):
+
+   ```text
+   ToolSearch query: select:mcp__claude-in-chrome__tabs_context_mcp,mcp__claude-in-chrome__tabs_create_mcp,mcp__claude-in-chrome__list_connected_browsers,mcp__claude-in-chrome__select_browser,mcp__claude-in-chrome__navigate,mcp__claude-in-chrome__computer,mcp__claude-in-chrome__read_page,mcp__claude-in-chrome__javascript_tool,mcp__claude-in-chrome__read_console_messages,mcp__claude-in-chrome__read_network_requests
+   ```
+
+   Size the batch to the whole loop, not to the probe: `read_network_requests` is needed at step 4, long after the precondition passed, and discovering it missing there costs a second call. STOP and say so only when no browser is connected at all. For non-browser bugs, confirm you can run the failing path (a command, a test, a request) and read its output/logs.
 2. **A concrete repro.** Get the exact steps, URL, input, or failing test from the user. If you can't reproduce it, say so and gather more signal — never "fix" a bug you haven't seen fail.
 
 ## Workflow

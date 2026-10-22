@@ -1,7 +1,7 @@
 ---
 name: anantys.design
 description: Iterative frontend design fixer — drive a real browser against a dev URL, keep a TODO of design fixes, and resolve each one with a refresh + screenshot as proof. Use when refining the visual design of web pages in a tight edit→reload→verify loop.
-allowed-tools: mcp__claude-in-chrome__tabs_context_mcp, mcp__claude-in-chrome__tabs_create_mcp, mcp__claude-in-chrome__list_connected_browsers, mcp__claude-in-chrome__select_browser, mcp__claude-in-chrome__navigate, mcp__claude-in-chrome__computer, mcp__claude-in-chrome__read_page, mcp__claude-in-chrome__javascript_tool, mcp__claude-in-chrome__resize_window, Read, Write, Edit, Bash, TaskCreate, TaskUpdate, TaskList
+allowed-tools: ToolSearch, mcp__claude-in-chrome__tabs_context_mcp, mcp__claude-in-chrome__tabs_create_mcp, mcp__claude-in-chrome__list_connected_browsers, mcp__claude-in-chrome__select_browser, mcp__claude-in-chrome__navigate, mcp__claude-in-chrome__computer, mcp__claude-in-chrome__read_page, mcp__claude-in-chrome__javascript_tool, mcp__claude-in-chrome__resize_window, Read, Write, Edit, Bash, TaskCreate, TaskUpdate, TaskList
 ---
 
 ## Mission
@@ -18,7 +18,13 @@ The user typically provides a page/URL and a list of design issues to fix.
 
 ## Hard Preconditions (check BEFORE doing anything)
 
-1. **A browser MUST be available.** Call `mcp__claude-in-chrome__tabs_context_mcp` first. Two states look like "no browser" and are not: the Chrome tools may be **deferred** in this session — load them with one `ToolSearch` call before concluding they are missing — and several browsers may be connected with none selected, which `list_connected_browsers` + `select_browser` resolves. Only when no browser is connected at all, STOP and tell the user this skill requires a connected browser (e.g. the Claude-in-Chrome extension) — do not proceed blind.
+1. **A browser MUST be available.** Call `mcp__claude-in-chrome__tabs_context_mcp` first. Two states look like "no browser" and are not: the Chrome tools may be **deferred** in this session, and several browsers may be connected with none selected — `list_connected_browsers` + `select_browser` resolves the second. For the first, load every tool this loop needs in **one** `ToolSearch` call, before the probe, not one tool at a time (each extra call is a wasted round-trip):
+
+   ```text
+   ToolSearch query: select:mcp__claude-in-chrome__tabs_context_mcp,mcp__claude-in-chrome__tabs_create_mcp,mcp__claude-in-chrome__list_connected_browsers,mcp__claude-in-chrome__select_browser,mcp__claude-in-chrome__navigate,mcp__claude-in-chrome__computer,mcp__claude-in-chrome__read_page,mcp__claude-in-chrome__javascript_tool,mcp__claude-in-chrome__resize_window
+   ```
+
+   Size the batch to the whole loop, not to the probe: `resize_window` is needed only at the mobile pass in step 6, and discovering it missing there costs a second call. Only when no browser is connected at all, STOP and tell the user this skill requires a connected browser (e.g. the Claude-in-Chrome extension) — do not proceed blind.
 2. **A dev URL MUST be provided** (e.g. `https://dev.example.com/some/page`). This is the surface that renders your local working-tree changes. If the user did not give one, ask for it. Do not validate against production or guess a URL.
 3. Confirm the dev URL actually serves your local file edits (CSS/template/component changes appear after a reload). If edits don't show up, surface it — do not keep editing into the void.
 
