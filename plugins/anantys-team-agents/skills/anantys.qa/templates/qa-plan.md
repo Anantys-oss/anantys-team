@@ -11,12 +11,15 @@ It is a **runnable campaign, not a reading list**: worked top to bottom, one ass
 Derived from [`tasks.md`](./tasks.md) (what is built) and [`spec.md`](./spec.md) (what each case
 cites). Environment: [`.anantys/qa.md`](../../.anantys/qa.md). Runs: [`qa-runs.md`](./qa-runs.md).
 
-**Under test:** <branch> @ <head commit> — <environment> (pr: <ref>). A `--from pr:` campaign
-records the head branch and commit it was derived from here, and `run` verifies the environment is
-actually serving that code before walking a single scenario — a plan built from an unmerged PR, run
-against a stack serving `main`, reports green having verified nothing. Once the PR has merged and
-deployed, a deployed commit that contains it satisfies the line; there is no need to edit it. Omit
-it for a feature that was already merged and deployed when the plan was written.
+**Under test:** <branch> @ <head commit> — <environment> (pr: <ref>). Every campaign records the
+branch and commit it was derived from here — a `--from pr:` head, or, for a spec-kit dir, the
+checkout the spec lives in — and `run` verifies the environment is actually serving that code
+before walking a single scenario: a plan built from an unmerged branch, run against a stack serving
+`main`, reports green having verified nothing. Once the PR has merged and deployed, a deployed
+commit that contains it satisfies the line; there is no need to edit it. A feature already merged
+and deployed when the plan was written takes the line's other form, `**Under test:** none — merged
+and deployed` — never an absent line, which `run` cannot tell from a precondition nobody
+established.
 
 **How to use.** Preflight first — stop if it fails. Reset (a `local` env only — never a `shared`
 one). Then walk §2 in order. Each scenario states its **precondition**, its **steps**, and what to
