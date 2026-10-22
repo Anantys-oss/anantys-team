@@ -30,7 +30,9 @@ Invoked as `/anantys.qa <action> [args]`. If no action is given, infer it: no `.
 
 `testplan` — the action's former name — is still accepted as an alias of `plan`.
 
-**Every action ends its reply with the progress table** (see "Progress table"), `init` excepted.
+**Every action ends its reply with the progress table** (see "Progress table"), `init` excepted —
+except when `init` declares a *new* environment, which reopens every existing campaign and prints
+their tables (see `init`).
 
 ---
 
@@ -134,6 +136,20 @@ Write only the environments the operator named, with real values — never copy 
 full of `<placeholders>` into the contract. Re-running `init` on an existing file adds or updates
 environment blocks and leaves the others untouched.
 
+**Declaring a new environment reopens every existing campaign.** A checkbox in `qa-plan.md` is
+checked only when **every declared environment** is PASS (see Environments) — so the moment `init`
+adds one, every checked box in the repo asserts a pass on an environment that has never run. After
+writing the contract, reconcile each `qa-plan.md` found under `.anantys/qa/` and the spec-kit dirs:
+
+- Append `` · `<new-env>`: not run `` to every assertion that already carries a result suffix.
+- Add the new environment's progress table (all Not run) beside the existing ones.
+- **Uncheck** every checked box whose new environment has no result — the result suffixes are
+  untouched, so nothing is lost; the box simply stops over-claiming.
+
+Then tell the operator which plans were reopened and how many boxes. This is the one case where
+`init` prints progress tables — one per reopened plan. Nothing here applies when `init` only
+updates an existing environment: the declared set is unchanged, so no plan is.
+
 **Re-running `init` on a flat file migrates it first.** If the existing `.anantys/qa.md` has no
 `## Environment:` blocks (the legacy layout, see Environments), rewrite its flat `## Surfaces` /
 `## Preflight` / `## Reset` / `## Credentials` / … sections as one
@@ -182,7 +198,12 @@ Then transform into scenarios (identical for every source):
 
 Write `qa-plan.md` following `templates/qa-plan.md`. Every assertion gets a stable id
 (`A1`, `B5`, …) — ids are referenced by runs, notes and reports forever, so **never renumber
-them**. On a regeneration, keep existing ids and their adjudication annotations; append new ones.
+them**. On a regeneration, carry over, verbatim, three things per surviving assertion: its **id**,
+its **adjudication annotations**, and its **per-environment result suffix** (`` `local`: PASS ·
+`staging`: FAIL ``); append new ones as Not run. The suffix is the authoritative record of every
+result the campaign has — `retest`, `status` and `report` read it, not `qa-runs.md` — so a
+regeneration that rewrites the assertion lines without it silently resets a fully-walked campaign
+to Not run, and the next `status` says "can't ship: nothing tested" about a feature that was green.
 
 If the source carries an **under-test precondition** — a `--from pr:` head branch, or a brief's
 `_Under test:_` line — copy it into the plan header as `**Under test:** <branch> @ <head commit> —
@@ -467,6 +488,8 @@ under its header. Which tables, and who writes them:
 
 - `plan` writes the **default** environment's table (all Not run), and keeps any existing ones —
   recomputed, since a regeneration can change N.
+- `init` adds a newly declared environment's table (all Not run) to every plan it reopens, and
+  prints them; it writes no table for an environment it merely updated.
 - `run` / `retest` add or refresh the **selected** environment's table.
 - `note` refreshes **every** table: a REMOVED assertion changes N for all of them. `note --env all`
   prints them all; `note --env <name>` prints that environment's.
