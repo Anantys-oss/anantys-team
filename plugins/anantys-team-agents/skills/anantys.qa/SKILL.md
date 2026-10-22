@@ -1,5 +1,6 @@
 ---
 name: anantys.qa
+argument-hint: "[init|plan|run|retest|note|report|status] [--env <name>] [args]"
 description: Run a browser-driven QA campaign against a completed feature. Derives an executable test plan from a spec-kit tasks.md, a freeform feature brief (--brief), a set of tracker issues (--from linear:SKU-…), or one or more GitHub pull requests (--from pr:<url>), executes it in a real browser — against a local dev stack or a deployed environment (staging / a preview), selected with --env — recording PASS/FAIL/BLOCKED per assertion, accumulates operator adjudications so a defect is never re-filed twice, and emits a copy-pasteable fix brief for the dev agent. Environment specifics live in a project-local .anantys/qa.md, never in the skill. Use to QA a finished feature — however it was built — before release.
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep, Task, TaskCreate, TaskUpdate, TaskList, AskUserQuestion
 ---
@@ -17,6 +18,10 @@ Three properties make this useful rather than ceremonial:
 ## Actions
 
 Invoked as `/anantys.qa <action> [args]`. If no action is given, infer it: no `.anantys/qa.md` → `init`; no `qa-plan.md` → `plan`; otherwise → `status`.
+
+```text
+$ARGUMENTS
+```
 
 | Action | What it does |
 |---|---|

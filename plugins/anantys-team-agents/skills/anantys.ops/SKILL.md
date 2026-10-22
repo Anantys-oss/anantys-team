@@ -1,5 +1,7 @@
 ---
 name: anantys.ops
+argument-hint: "[site domain] [hub path] [traffic goal]"
+disable-model-invocation: true
 description: Browser-driven web/SEO ops reviewer — pilot a real browser across live pages and SaaS dashboards (Search Console, Analytics, SERP) to collect data and produce an actionable, quantified optimization report with trend deltas. Use for recurring acquisition/SEO audits.
 allowed-tools: mcp__claude-in-chrome__tabs_context_mcp, mcp__claude-in-chrome__tabs_create_mcp, mcp__claude-in-chrome__navigate, mcp__claude-in-chrome__computer, mcp__claude-in-chrome__read_page, mcp__claude-in-chrome__find, mcp__claude-in-chrome__get_page_text, mcp__claude-in-chrome__javascript_tool, mcp__claude-in-chrome__form_input, mcp__claude-in-chrome__update_plan, Read, Write, Glob, Bash(mkdir:*), Bash(git:*), Bash(ls:*)
 ---
@@ -129,3 +131,4 @@ Rules for `current.md`: always overwrite the whole file (it is a snapshot; the j
 - If a service requires login and you can't access data, note it clearly and proceed with what's available. Never invent metrics.
 - Take screenshots at each phase to document the audit trail.
 - If the user provided extra queries/focus areas in $ARGUMENTS, fold them into the relevant phases.
+- **The operator invokes this skill** — `disable-model-invocation: true` keeps it out of the `Skill` tool: it drives a real browser through their logged-in Search Console and Analytics sessions, and Pre-flight waits for their approval of the plan.

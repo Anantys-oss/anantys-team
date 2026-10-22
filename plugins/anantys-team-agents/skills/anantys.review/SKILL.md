@@ -1,5 +1,7 @@
 ---
 name: anantys.review
+argument-hint: "[branch | PR number | PR url]"
+disable-model-invocation: true
 description: Cleanly review a single agent-pushed PR branch and help decide its fate. Brings the branch up to date with its base, shows only the branch's own changes as a digestible summary (never a wall of diff), assesses value and risk, and recommends Merge / Close / Skip / Audit — then waits for the human to decide. Use to review an autonomous-agent PR before merging.
 allowed-tools: Bash, Read, Glob, Grep, Task, TaskCreate, TaskUpdate, TaskList
 ---
@@ -11,6 +13,10 @@ You review **one** PR branch — typically pushed by an autonomous coding agent 
 ## Inputs
 
 The user names the branch to review (a branch name, a PR number/URL, or "the current branch"). If nothing is given, list candidate branches (see Discovery) and ask which one. Review **one branch at a time** — if the user wants several, loop this skill, finishing each before the next.
+
+```text
+$ARGUMENTS
+```
 
 ## Pre-flight
 
@@ -82,3 +88,4 @@ Then **wait for the user's decision.** Do not act on Merge/Close until they conf
 - **Wait for the user** before merging or closing. The recommendation is yours; the decision is theirs.
 - **Never push** — stop at the local merge and hand the push command to the user.
 - Report what you actually verified (tests run, audit done), not what you assume.
+- **The operator invokes this skill** — `disable-model-invocation: true` keeps it out of the `Skill` tool, because Step A checks out the branch and merges the base into the operator's working tree before any decision is asked, and acting on Merge/Close destroys remote refs.
