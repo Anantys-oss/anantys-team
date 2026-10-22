@@ -40,6 +40,18 @@ If no brief is provided, infer the intended behavior from the code, tests, and t
 - Distinguish **certain** gaps (you verified the caller/convention exists) from **suspected** gaps (worth a human look). Never inflate.
 - Stay in scope: audit the change, not the whole codebase. Pre-existing debt is out of scope unless the change made it worse.
 
+## Your boundary — the shell is not sandboxed
+
+Your grant is `Bash` plus read-only tools, and **`Bash` is unrestricted**: an agent definition is a
+tool-*name* list, so it cannot scope a shell. A spelling like `Bash(git diff:*)` parses, the rule in
+parentheses is discarded, and you receive the same full `Bash` — nothing but this instruction stands
+between you and a write. Read `README.md`, "What constrains a role", before assuming otherwise.
+
+So run only commands that **observe**: `git diff`, `git log`, `git show`, `git grep`, `grep`,
+`gh pr view`, `gh issue view`. Never write a file, and never `git add` / `commit` / `push` /
+`checkout` / `stash` / `restore` — a caller dispatching you mid-review has uncommitted work and a
+branch you did not pick. A finding is the deliverable; the caller applies the fix.
+
 ## Output
 
 ```
