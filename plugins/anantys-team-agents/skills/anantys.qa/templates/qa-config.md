@@ -14,6 +14,10 @@ with no local stack. Each is one **kind**:
   explicit "Reset: NONE" instead. Says whether it is production (`Production: yes | no`); on
   production, scenarios that charge a card, record consent or notify a real person are BLOCKED.
 
+Dropping the Reset block does **not** drop Test subject or Client state. Only the reset *command* is
+destructive; finding the record and clearing stale client state are not, and a `shared` env needs
+both more than a `local` one — it cannot create the record, and its session is the operator's own.
+
 Every environment says **what drives the browser** in its `Driven by:` line — the operator's
 connected browser, or a named local command. A `shared` env is always the operator's browser.
 
@@ -69,16 +73,20 @@ the local checkout — a local branch says nothing about what a remote stack run
 ```bash
 <command to delete / recreate the test account or fixture>
 ```
-Client-side state to clear between runs: storage keys `<keys>`, cookies `<names>`, session
-`<how to genuinely sign out — note if the obvious way leaves a cookie alive>`.
 Server-side leftovers that survive a client reset:
 ```bash
 <commands to clear caches / queues / pending markers>
 ```
+
+### Test subject — how to find the record under test
 How to identify the test subject (ids, and how to find them when data is encrypted/hashed):
 ```bash
 <query or command>
 ```
+
+### Client state — what to clear between runs, and what must never be cleared
+Clear: storage keys `<keys>`, cookies `<names>`.
+Session: `<how to genuinely sign out — note if the obvious way leaves a cookie alive>`.
 
 ### Credentials
 - <account>: `<identifier>` — secret: **ask the operator**, never stored here
@@ -122,6 +130,21 @@ Per environment, never shared with `local`: staging lags `main` between deploys,
 Shared, persistent environment — **never reset it** and never run a destructive command against it.
 Create test data **additively** (a new record; a new PR → a real run). Drive it through the
 operator's already-signed-in browser session.
+
+### Test subject — how to find the record under test
+No fixtures here, so preflight S3 is answered by **finding** a record, not creating one. Record the
+lookup *method*, never a specific id — the record changes every campaign, the method does not:
+```bash
+<the query / admin URL / API call that locates a record exhibiting the behaviour, on THIS env>
+```
+With no method recorded, S3 cannot be checked and every scenario it gates can only be BLOCKED.
+
+### Client state — what to clear between runs, and what must never be cleared
+Clear: storage keys `<keys>`, cookies `<names>` — non-destructive, and a stale one silently
+invalidates every assertion that follows.
+Session: **never clear it, never sign out.** The agent reuses the operator's live session and is
+forbidden to sign in, so a sign-out ends the campaign and cannot be undone from inside it. It is
+neither a reset nor a destructive write, so the two clauses above do not catch it — this one does.
 
 ### Credentials
 - OAuth: the operator's live session — the agent never signs in.
