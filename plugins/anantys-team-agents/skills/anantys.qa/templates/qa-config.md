@@ -13,6 +13,9 @@ with no local stack. Each is one **kind**:
   additively; driven through the operator's already-signed-in browser. Has **no** Reset block — an
   explicit "Reset: NONE" instead. Says whether it is production (`Production: yes | no`); on
   production, scenarios that charge a card, record consent or notify a real person are BLOCKED.
+  **Off production it is exercised like any other env** — so a money journey needs *this* env's own
+  payment sandbox instrument. Credentials are per environment and never borrowed from `local`: a
+  `shared` block missing the instrument BLOCKS every checkout case it was declared to cover.
 
 Every environment says **what drives the browser** in its `Driven by:` line — the operator's
 connected browser, or a named local command. A `shared` env is always the operator's browser.
@@ -125,6 +128,8 @@ operator's already-signed-in browser session.
 
 ### Credentials
 - OAuth: the operator's live session — the agent never signs in.
+- Payment sandbox: `<test card / token for THIS env — its own sandbox keys, never the local ones>`
+  (omit on a `Production: yes` env; without it every checkout case here is BLOCKED)
 
 ### Agent limits — steps a browser agent cannot perform
 - The same browser limits as local; plus **no reset** and **no destructive writes**.
