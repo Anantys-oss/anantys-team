@@ -1,15 +1,23 @@
 # QA campaign template — `qa-plan.md`
 
-Written by `/anantys.qa plan` into the feature's spec-kit directory, beside `tasks.md`.
+Written by `/anantys.qa plan` into the feature directory, beside the feature source — `tasks.md`
+in a spec-kit dir, `brief.md` under `.anantys/qa/<slug>/` for every other source.
 It is a **runnable campaign, not a reading list**: worked top to bottom, one assertion at a time.
+
+The feature directory sits at a depth `plan` cannot know (`specs_dir` is configurable, and a
+brief-derived campaign lives one level deeper), so **no link in this template may climb out of it**.
+Paths outside the feature directory are written from the repo root as plain code spans, never as
+`../` links.
 
 ---
 
 ```markdown
 # QA campaign — <feature>
 
-Derived from [`tasks.md`](./tasks.md) (what is built) and [`spec.md`](./spec.md) (what each case
-cites). Environment: [`.anantys/qa.md`](../../.anantys/qa.md). Runs: [`qa-runs.md`](./qa-runs.md).
+Derived from the feature source beside this file — a spec-kit dir: [`tasks.md`](./tasks.md) (what
+is built) and [`spec.md`](./spec.md) (what each case cites); any other source:
+[`brief.md`](./brief.md) (both roles in one file). Environment contract: `.anantys/qa.md` at the
+repo root. Runs: [`qa-runs.md`](./qa-runs.md).
 
 **Under test:** <branch> @ <head commit> — <environment> (pr: <ref>). A `--from pr:` campaign
 records the head branch and commit it was derived from here, and `run` verifies the environment is
