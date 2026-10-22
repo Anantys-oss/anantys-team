@@ -117,18 +117,21 @@ Then ask the operator only what you could not infer, in one batch:
 - **Per environment:** the real base URLs (a dev stack behind a reverse proxy is rarely on
   `localhost:<port>`), **what drives the browser** (`Driven by:` — the operator's connected
   browser, or a named local command such as a screenshot script or headless runner), the preflight
-  checks whose failure would waste a whole campaign, **how that environment reports the code it is
-  serving** (a `/version` or `/healthz` endpoint, a deployed-SHA banner, a `docker inspect` — the
+  checks whose failure would waste a whole campaign (each one **environment-wide and binary** — a
+  condition that varies per feature is not a preflight check), **how that environment reports the
+  code it is serving** (a `/version` or `/healthz` endpoint, a deployed-SHA banner, a `docker
+  inspect` — the
   build-identity check `run` uses to enforce a plan's `**Under test:**` line; it is per environment,
   since staging lags `main` between deploys), test credentials, and any known drift that must not
   be filed as a defect.
 - **`local` only:** the reset procedure for a fresh test subject, and a payment sandbox instrument
   (test card / token) if any journey touches money — without one, every checkout case is BLOCKED.
-- **`shared` only:** how the operator's signed-in browser session is made available to you, whether
-  a real record exhibiting the behaviour under test exists there (a shared env has no fixtures), and
-  how deploy lag shows up (a fix merged but not yet deployed), and **whether it is production**
+- **`shared` only:** how the operator's signed-in browser session is made available to you, **how a
+  test subject is created additively** there (a shared env has no fixtures), how deploy lag shows
+  up (a fix merged but not yet deployed), and **whether it is production**
   (`Production: yes | no`). A `shared` block is always written with `Reset — NONE`, never a reset
-  command — do not ask for one.
+  command — do not ask for one. Never write "a record for the feature exists" as a preflight check:
+  that is a feature fact, and a missing subject record is a `BLOCKED` assertion, not a stop.
 
 Write only the environments the operator named, with real values — never copy a template block
 full of `<placeholders>` into the contract. Re-running `init` on an existing file adds or updates
@@ -319,7 +322,10 @@ operator's go before any write.
 
 1. **Preflight.** Run every check for the selected environment in `.anantys/qa.md`. On failure,
    **stop and tell the operator** — do not start services yourself, and do not "work around" a failed
-   preflight. A campaign run on a half-up stack produces confident nonsense. Then read the plan's
+   preflight. A campaign run on a half-up stack produces confident nonsense. A recorded check that
+   is really a per-feature precondition (a particular record must exist) is **not** a preflight:
+   mark the assertions it covers `BLOCKED` with that reason, walk on, and say so in the run header.
+   Then read the plan's
    **Under test** line in `qa-plan.md`. If it names a branch/commit, verify the selected environment
    is actually serving that code before walking a single scenario — a plan derived from an unmerged
    PR, run against a stack serving `main`, reports green having verified nothing. How to verify it:
