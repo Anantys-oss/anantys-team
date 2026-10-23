@@ -80,6 +80,42 @@ anantys-team/
 - **plugin** = the installable, versioned unit a user enables in one shot.
 - **skills** = the actual capabilities Claude invokes.
 
+### The install boundary
+
+`marketplace add` clones this whole repo. `plugin install` then copies **only the
+directory the catalog entry points at** (`source: ./plugins/anantys-team-agents`)
+into a versioned cache, and that copy — not the clone — is what a role runs from:
+
+```text
+~/.claude/plugins/
+├── marketplaces/anantys-oss/                        # the full repo clone, dev-time only
+└── cache/anantys-oss/anantys-team-agents/<version>/ # ← what an installed role sees
+    ├── .claude-plugin/plugin.json
+    ├── skills/
+    └── agents/
+```
+
+`<version>` is the one in `plugin.json` (a commit suffix may be appended, and a
+plugin that declares no version caches under `unknown`). Read the real paths off
+a live install rather than trusting this diagram:
+
+```bash
+jq -r '.plugins | to_entries[] | "\(.key)\t\(.value[0].installPath)"' \
+  ~/.claude/plugins/installed_plugins.json
+```
+
+So the boundary is load-bearing, in both directions:
+
+- **Anything a role needs at runtime must sit inside `plugins/anantys-team-agents/`** —
+  the way `anantys.qa/templates/` does. A sibling of `plugins/` is present in a git
+  checkout and **absent for every installed user**: a repo-root `docs/note.md` that a
+  `SKILL.md` links as `../../../../docs/note.md` resolves, from the cache copy, to
+  `cache/anantys-oss/docs/note.md` — a path `plugin install` never wrote. The link
+  works for exactly the one reader who does not need it, the contributor who wrote it.
+- **Anything that only serves contributors should stay outside it** — this README, CI
+  config, measurements, review notes. It ships to no one, which is the point; shipping
+  it only grows what every install downloads.
+
 ## License
 
 Provided as-is for consulting and educational use.
