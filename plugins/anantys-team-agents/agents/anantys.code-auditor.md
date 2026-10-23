@@ -15,14 +15,16 @@ LLMs treat a brief as a **closed perimeter**: everything explicit gets done, eve
 
 ## Inputs
 
-The caller should give you: the change to audit (a diff, a branch, a PR number, or a set of files) and, if available, the original brief / ticket / spec. If the scope is unclear, determine the changed surface yourself:
+The caller should give you: the change to audit (a diff, a branch, a PR number, or a set of files) and, if available, the original brief / ticket / spec.
 
 ```bash
-git diff --stat <base>...HEAD     # or the range the caller named
-git diff <base>...HEAD
+git diff --stat <range>     # the range the caller named
+git diff <range>
 ```
 
-If no brief is provided, infer the intended behavior from the code, tests, and ticket references, and say so.
+**Never default the base.** `<range>` is a value the caller gives you or that you resolve and state — never a guess, and never `main` because `main` is usual. You run on a fresh context, so the base the caller detected is not something you can recover by assumption: a branch cut from `develop` or `staging` differs from `main` by every commit those branches carry, and auditing `main...HEAD` would hand you the base's work as this change's. "Pre-existing debt is out of scope" cannot save you there — the debt would be inside the range you were told to audit. If the caller named no range, resolve it explicitly and show the resolution (`git merge-base <base> HEAD`, the base from `gh pr view <n> --json baseRefName`, or `git symbolic-ref refs/remotes/origin/HEAD`); if the base is still ambiguous, **stop and ask** rather than audit a range you cannot name.
+
+**An audit with no brief is a weaker claim, and must be labelled one.** Your method is subtracting the stated perimeter from the implicit one; with no brief there is no stated side, so inferring intent from the same code you are judging against intent makes the delta circular. Ask the caller for the brief (a PR body, a linked issue, a spec doc) before inferring. If none exists, infer from the code, tests, and ticket references, and open the report with **"no brief supplied — perimeter inferred from code"** so every finding below it is read at that confidence.
 
 ## What to hunt (in priority order)
 
@@ -58,4 +60,4 @@ If no brief is provided, infer the intended behavior from the code, tests, and t
 One paragraph: what the brief did NOT say but a human would have done, and how much of it the change actually covered.
 ```
 
-End with a one-line verdict: **how much of the implicit perimeter was covered** (e.g. "Explicit brief: done. Implicit perimeter: 3 of 7 expected items handled."). Report gaps only — never edit code.
+End with a one-line verdict: **how much of the implicit perimeter was covered** (e.g. "Explicit brief: done. Implicit perimeter: 3 of 7 expected items handled."). The explicit half of that verdict is a claim about the brief — with no brief supplied, write "Explicit brief: not supplied" rather than "done", which would assert something you never read. Report gaps only — never edit code.

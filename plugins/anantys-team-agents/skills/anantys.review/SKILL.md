@@ -42,8 +42,10 @@ git push origin <branch>       # only if they want the resolution on the PR
 
 A conflict resolution you commit and never surface is work thrown away silently.
 
-### Step B — Identify the PR
-`gh pr view <branch> --json number,state,author,url,isDraft,title` (fallback: skip if no `gh`). Show PR number, author, state, URL up front — context before verdict.
+### Step B — Identify the PR, and collect what it claims
+`gh pr view <branch> --json number,state,author,url,isDraft,title,body` (fallback: skip if no `gh`). Show PR number, author, state, URL up front — context before verdict.
+
+**The `body` is the brief, and it is an input, not decoration.** Step D asks whether the diff does what the PR *claims*, and the claims live there — a field list without `body` leaves that question with nothing to read, so the review silently degrades into judging the diff against itself. Read it, and follow any `#<n>` / issue link it cites (`gh issue view <n> --json title,body`) for the original ask. If there is no body and no linked issue, say so in the report: **"no stated intent — scope assessed against the diff alone"** is a finding about the PR, not a detail to omit.
 
 ### Step C — Show only the branch's own changes
 Diff against the **merge base**, so base changes don't pollute the review:
@@ -60,10 +62,14 @@ Read the actual diff, but **present it as a digestible summary, not a raw dump**
 ### Step D — Assess (this is the value you add)
 Go beyond "it compiles." Check, and report concisely:
 - **What it does** — 1-2 sentences.
-- **Correctness & scope** — does the diff actually do what the PR claims? Anything out of scope / unrelated?
+- **Correctness & scope** — does the diff actually do what the PR claims? Compare against Step B's body/linked issue, and name which one you read; if neither existed, say the claim side was empty rather than inventing it from the diff.
 - **Tests** — is the new behavior tested? Run the relevant tests if quick; report results honestly.
 - **Conventions & safety** — matches the codebase's patterns? Any security/data-integrity/migration concern?
 - **Blind spots** — for a large or sensitive change, dispatch the `anantys.code-auditor` agent (fresh context) to surface what the agent *omitted* (implicit contracts, edge cases), and fold its findings in.
+  **Hand it the scope and the brief — it has neither.** A fresh context knows nothing you resolved: not the base you were careful not to assume in Pre-flight 2, not Step B's body. Name all three in the dispatch:
+  - the range, resolved to a value — `$(git merge-base <base> HEAD)...HEAD`, the same one Step C used. An auditor left to fill in `<base>` itself will reach for `main`, and on a `develop`- or `staging`-based branch that range carries the *base's* commits; it then reports the base's work as this branch's omissions, and its own "pre-existing debt is out of scope" rule cannot catch it, because it believes that debt is the change.
+  - the brief — Step B's body and linked issue, verbatim, or the explicit fact that there was none. The auditor's whole method is subtracting the explicit perimeter from the implicit one; with no brief it infers intent from the code it was dispatched to judge against intent, and the delta it returns is ungrounded.
+  - the worktree — you are on the branch (Step A), so the files are the audit surface; it does not need to re-resolve the branch.
 
 ### Step E — Recommend, then STOP
 Give one clear recommendation with a one-line rationale:
@@ -100,7 +106,8 @@ nothing you have done is durable until they do.
 - **Skip:** return to base, leave the branch untouched.
 
 - **Audit:** stay on the branch — the audit reads the checked-out tree. Dispatch the
-  `anantys.code-auditor` agent over the branch's own range (`<merge-base>...HEAD`), and run the
+  `anantys.code-auditor` agent with Step D's three inputs — the resolved range
+  (`$(git merge-base <base> HEAD)...HEAD`), the brief, the worktree — and run the
   tests you skipped in Step D. If Step D already dispatched the auditor, do not dispatch it again:
   the open question is whatever its findings left unresolved, so name that and answer it. Report
   what came back, then **re-recommend — Merge, Close, or Skip only.** Audit is not a verdict you
@@ -118,6 +125,9 @@ later `git branch -d` can't, and it is the one step in this whole skill that can
 - **Summarize the diff** — a readable table + assessment beats a wall of raw diff.
 - **Base wins on conflicts** — the branch adapts to the base.
 - **Show PR info before the verdict** — context first.
+- **A dispatched agent inherits nothing** — it runs on a fresh context by design, so anything you
+  resolved (the base, the range, the brief) reaches it only if you put it in the dispatch. An
+  unnamed base is not an open question to the agent; it is a default, and the default is wrong.
 - **Wait for the user** before merging or closing. The recommendation is yours; the decision is theirs.
 - **Never push** — stop at the local merge and hand the push command to the user.
 - **Nothing irreversible before it is durable.** You don't push, so every merge and conflict
