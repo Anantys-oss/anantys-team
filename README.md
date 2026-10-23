@@ -80,6 +80,38 @@ anantys-team/
 - **plugin** = the installable, versioned unit a user enables in one shot.
 - **skills** = the actual capabilities Claude invokes.
 
+## Discovery — how the catalog says when this team is relevant
+
+A catalog entry is not only an install address; it is the only thing Claude Code reads when
+*ranking* marketplace browse results and when deciding whether to offer the plugin unprompted.
+Two entry fields carry that, and both are consumed by the client, not by us:
+
+- **`tags`** — searchability in marketplace browse. The entry's `category` organizes; tags are
+  what a search matches.
+- **`relevance`** — `topic` fills the spinner tip ("Working with *a QA campaign*?"), and
+  `signals` decide when it fires: at session start and as the session runs. We declare one
+  signal kind, **`filesRead`** — glob patterns over files Claude has actually read this session.
+  The patterns name the artifacts this team itself writes (`.anantys/qa.md`, `qa-plan.md`,
+  `qa-runs.md`, a copied `brief.md`) plus the spec-kit layout `plan` reads by default
+  (`specs/*/tasks.md`). A repo where someone already ran `/anantys.qa init` is the one case where
+  "is this plugin relevant?" has an evidenced answer rather than a guess.
+
+Two things to know before editing either field:
+
+- **A wrong-shaped `relevance` breaks the whole entry, not just the field.** The catalog parser
+  validates each plugin entry as a unit and, on failure, replaces it with a stub whose source reads
+  `unsupported` — the plugin stops being installable, with only a log line to say why. (A
+  `relevance` that is not an object at all is the gentle case: it is dropped and the entry
+  survives.) The shape is capped: `topic` ≤ 64 chars, `signals` must declare **at least one** of
+  `cli` / `hosts` / `filesRead` / `manifestDeps` / `cwd`, each list ≤ 10 entries (`hosts` ≤ 20),
+  each pattern ≤ 256 chars. `claude plugin validate .` catches every one of these before a user
+  ever sees it. Run it after any manifest change and compare its **warning list** against the one
+  from before the change: a pass is not the bar, a list that did not grow is.
+- **Deliberately not declared.** `cli` and `hosts` match only commands and URLs seen in *bash*
+  — these roles drive the browser through MCP tools, so neither would fire, and a signal that
+  never fires is worse than none: it reads as coverage. `keywords` in `plugin.json` is a second
+  discovery list that would drift from `tags`; one list is enough.
+
 ## License
 
 Provided as-is for consulting and educational use.
