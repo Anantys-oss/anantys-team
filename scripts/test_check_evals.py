@@ -65,6 +65,18 @@ GOOD_README = """\
 | Grader | Must match | Must not match |
 |--------|-----------|----------------|
 | `nothing-was-pushed` — `git\\s+push` | `git push -u origin x` | `git pull --rebase` |
+
+| Case | Witness |
+|------|---------|
+| `a-case` | `the-workspace-survived` |
+"""
+
+GOOD_SCAFFOLD = """\
+#!/usr/bin/env bash
+set -euo pipefail
+cat > src/checkout.js <<'JS'
+const total = subtotal - coupon;
+JS
 """
 
 
@@ -72,14 +84,19 @@ class SuiteFixture:
     """A plugin tree the checker can be pointed at."""
 
     def __init__(
-        self, case=GOOD_CASE, readme=GOOD_README, skill="anantys.qa", agent=None
+        self,
+        case=GOOD_CASE,
+        readme=GOOD_README,
+        skill="anantys.qa",
+        agent=None,
+        scaffold=GOOD_SCAFFOLD,
     ):
         self.tmp = tempfile.TemporaryDirectory()
         root = pathlib.Path(self.tmp.name)
         self.evals = root / "plugins" / "p" / "evals"
         (self.evals / "a-case").mkdir(parents=True)
         (self.evals / "a-case" / "case.yaml").write_text(case)
-        (self.evals / "a-case" / "scaffold.sh").write_text("#!/bin/sh\n")
+        (self.evals / "a-case" / "scaffold.sh").write_text(scaffold)
         (self.evals / "README.md").write_text(readme)
         if skill:
             (root / "plugins" / "p" / "skills" / skill).mkdir(parents=True)
@@ -432,6 +449,85 @@ class TestMutations(unittest.TestCase):
         )
         with SuiteFixture(case=case) as fixture:
             self.assertTrue([e for e in fixture.errors() if "witnesses" in e])
+
+
+class TestFixtureSupply(unittest.TestCase):
+    """A `contains` pattern the case's own scaffold writes into the workspace."""
+
+    # One `contains` grader beside the known-good case's witness. The pattern is
+    # the number the fixture below puts in the file, which is the shape
+    # `asserts-the-spec-value` had: an outcome grader a read makes green.
+    OUTCOME = """\
+  - type: regex
+    name: asserts-the-value
+    target: trace
+    pattern: 108\\.0
+    match: contains
+
+"""
+    ROW = "| `asserts-the-value` — `108\\.0` | `== 108.0` | `110.0` |\n"
+
+    def fixture(self, scaffold, **kwargs):
+        case = GOOD_CASE.replace("  - type: llm", self.OUTCOME + "  - type: llm")
+        return SuiteFixture(
+            case=case, readme=GOOD_README + self.ROW, scaffold=scaffold, **kwargs
+        )
+
+    def test_a_pattern_the_scaffold_writes_into_the_fixture_is_caught(self):
+        scaffold = GOOD_SCAFFOLD + "cat > spec.md <<'MD'\nreturns 108.00\nMD\n"
+        with self.fixture(scaffold) as fixture:
+            errors = [e for e in fixture.errors() if "asserts-the-value" in e]
+        self.assertTrue(
+            any("satisfied by spec.md" in e for e in errors),
+            f"expected the fixture-supply error, got {errors}",
+        )
+
+    def test_the_same_pattern_is_clean_when_the_fixture_does_not_supply_it(self):
+        with self.fixture(GOOD_SCAFFOLD) as fixture:
+            self.assertEqual(fixture.errors(), [])
+
+    def test_the_declared_witness_may_be_supplied_by_the_fixture(self):
+        # `the-changed-symbol-was-traced` is satisfied by reading the file the
+        # scaffold wrote, on purpose: a witness separates a run from a crash,
+        # and the empty trace a sealed sandbox leaves holds nothing the scaffold
+        # wrote. Declaring this grader the witness has to exempt it.
+        scaffold = GOOD_SCAFFOLD + "cat > spec.md <<'MD'\nreturns 108.00\nMD\n"
+        readme = GOOD_README.replace(
+            "| `a-case` | `the-workspace-survived` |",
+            "| `a-case` | `asserts-the-value` |",
+        )
+        case = GOOD_CASE.replace("  - type: llm", self.OUTCOME + "  - type: llm")
+        with SuiteFixture(
+            case=case, readme=readme + self.ROW, scaffold=scaffold
+        ) as fixture:
+            self.assertEqual(fixture.errors(), [])
+
+    def test_the_path_a_witness_names_is_not_fixture_content(self):
+        # The discriminator is the heredoc body, never the `cat >` target: a
+        # witness pattern naming the file it asserts a read of would otherwise
+        # report itself.
+        written = check_evals.scaffold_fixture(
+            "cat > specs/412-order-total/spec.md <<'MD'\nAC2.\nMD\n"
+        )
+        self.assertEqual(written, {"specs/412-order-total/spec.md": "AC2."})
+
+    def test_a_printf_written_file_is_not_read_as_fixture_content(self):
+        # Only the heredoc idiom is parsed. The handful of `printf` writes in
+        # this suite hold one line of code each, and keeping the parser to one
+        # shape is what keeps this checker shell-free.
+        self.assertEqual(check_evals.scaffold_fixture("printf 'x\\n' > a.js\n"), {})
+
+    def test_a_case_with_no_witness_row_is_an_error(self):
+        with SuiteFixture(readme=GOOD_README.replace("| `a-case` |", "| `b` |")) as f:
+            self.assertTrue([e for e in f.errors() if "no witness row" in e])
+
+    def test_a_declared_witness_that_is_not_scored_is_an_error(self):
+        # The role was silently reassigned: the grader README names is gone, and
+        # `witnesses()` alone would accept whichever one is left.
+        readme = GOOD_README.replace("`the-workspace-survived`", "`the-source-was-read`")
+        with SuiteFixture(readme=readme) as fixture:
+            errors = [e for e in fixture.errors() if "the-source-was-read" in e]
+        self.assertTrue(any("is the witness" in e for e in errors), errors)
 
 
 class TestVectorTable(unittest.TestCase):

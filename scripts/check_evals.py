@@ -76,6 +76,25 @@ authoring time:
      supposed to be the loader's own reading of these files. `check_scaffold`
      carries the command that reproduces each one at zero cost.
 
+  4. **The fixture the scaffold writes.** Rule 1 checks each pattern against
+     hand-written spellings; nothing checked it against the workspace the
+     case's own `scaffold.sh` builds. A `contains` pattern the fixture already
+     supplies is green on every run that read the file, whatever the run
+     concluded — and `asserts-the-spec-value` was one: a bare `108\\.0`, against
+     a spec file whose AC2 line spells `108.00` twice and which the case's
+     witness grader mandates a read of. The witness implied the outcome, so the
+     run that asserted the code's `110.00` to keep its suite green scored as the
+     run that obeyed the rule, and the case's only live verdict was an `llm`
+     grader the budget ceiling takes away.
+
+     The witness is the exemption, not the target: it has to separate a run from
+     a crash, and the empty trace a sealed sandbox leaves contains nothing the
+     scaffold wrote, so fixture-supply costs it nothing.
+     `the-changed-symbol-was-traced` is *meant* to be satisfied by reading
+     `src/notifications.py`. Which grader holds that role per case is therefore
+     authorial intent, and it is declared in the README's witness table — the
+     same shape as rule 1's vectors: prose that nothing ran until now.
+
 What this checker deliberately does not do: score a role. That needs the agent
 runs, a credential, and a human reading the result. It asserts only that the
 suite is capable of scoring one.
@@ -268,6 +287,85 @@ def code_spans(cell: str) -> list[str]:
     ]
 
 
+def parse_witness_table(readme: str) -> dict[str, str]:
+    """Rows of `| `case-name` | `grader-name` |` — one declared witness a case."""
+    return {
+        spans[0]: spans[1]
+        for row in readme.splitlines()
+        if len(cells := split_row(row)) == 2
+        and len(spans := [s for c in cells for s in code_spans(c)]) == 2
+    }
+
+
+HEREDOC = re.compile(
+    r"^(?:cat|tee)\s+(?:-a\s+)?>>?\s*(\S+)\s*<<-?\s*'?([A-Za-z_]\w*)'?$"
+)
+
+
+def scaffold_fixture(script: str) -> dict[str, str]:
+    """The files a scaffold writes through a heredoc, path to content.
+
+    Every file in this suite that carries prose is written as
+    `cat > <path> <<'TAG'`; the handful written with `printf` hold one line of
+    code each. Reading the heredocs keeps this checker what the rest of it is —
+    static, on a bare `python3`, with no shell and no temp tree — and the thing
+    a pattern must not be satisfied by is the file content, never the path: a
+    witness naming `412-order-total/spec.md` matches the path it asserts a read
+    of, which is the assertion, not a defect.
+    """
+    files: dict[str, list[str]] = {}
+    lines = script.splitlines()
+    index = 0
+    while index < len(lines):
+        match = HEREDOC.match(lines[index].strip())
+        index += 1
+        if not match:
+            continue
+        path, tag = match.groups()
+        body: list[str] = []
+        while index < len(lines) and lines[index].strip() != tag:
+            body.append(lines[index])
+            index += 1
+        files.setdefault(path, []).append("\n".join(body))
+    return {path: "\n".join(bodies) for path, bodies in files.items()}
+
+
+def check_fixture_supply(
+    where, graders: list[dict], witness: str | None, script: pathlib.Path
+) -> list[str]:
+    """A `contains` pattern the scaffold's own workspace already satisfies.
+
+    Skipped for the declared witness, which is allowed to be satisfied by the
+    fixture — see rule 4 in the module docstring.
+    """
+    if not script.is_file():
+        return []
+    fixture = scaffold_fixture(script.read_text())
+    errors = []
+    for grader in graders:
+        name = grader.get("name", "<unnamed>")
+        if name == witness or grader.get("arm") == "with-only":
+            continue
+        if grader.get("type") != "regex" or grader.get("match") != "contains":
+            continue
+        try:
+            compiled = re.compile(grader.get("pattern", ""))
+        except re.error:
+            continue
+        for path, body in sorted(fixture.items()):
+            if compiled.search(body):
+                errors.append(
+                    f"{where}: grader '{name}' is satisfied by {path}, which "
+                    f"{script.parent.name}/{script.name} writes — every run "
+                    f"that read that file is green whatever it concluded, so "
+                    f"the grader scores the read and not the outcome; require "
+                    f"the spelling only a correct run produces, or declare this "
+                    f"grader the case's witness"
+                )
+                break
+    return errors
+
+
 def parse_vector_table(readme: str) -> dict[str, dict]:
     """Rows of `| `grader-name` — `pattern` | must match | must not match |`."""
     vectors: dict[str, dict] = {}
@@ -290,7 +388,9 @@ def parse_vector_table(readme: str) -> dict[str, dict]:
 def check_suite(evals_dir: pathlib.Path) -> list[str]:
     errors: list[str] = []
     readme = evals_dir / "README.md"
-    vectors = parse_vector_table(readme.read_text()) if readme.is_file() else {}
+    readme_text = readme.read_text() if readme.is_file() else ""
+    vectors = parse_vector_table(readme_text)
+    declared = parse_witness_table(readme_text)
     documented = set()
 
     for case_file in sorted(evals_dir.glob("*/case.yaml")):
@@ -309,6 +409,13 @@ def check_suite(evals_dir: pathlib.Path) -> list[str]:
             )
 
         errors += check_scaffold(where, case, case_file.parent)
+        witness = declared.get(case_file.parent.name)
+        errors += check_fixture_supply(
+            where,
+            graders,
+            witness,
+            case_file.parent / (case.get("scaffold_script") or "scaffold.sh"),
+        )
 
         for grader in graders:
             if UNREADABLE in grader:
@@ -382,7 +489,22 @@ def check_suite(evals_dir: pathlib.Path) -> list[str]:
                         f"({', '.join(sorted(WRITERS))}) — it can never pass"
                     )
 
-        if not witnesses(graders):
+        scored = witnesses(graders)
+        if scored and witness is None:
+            errors.append(
+                f"{readme.relative_to(REPO)}: no witness row for case "
+                f"'{case_file.parent.name}' — which grader holds that role is "
+                f"authorial intent, and it decides both the vacuity rule and "
+                f"which `contains` pattern the fixture is allowed to supply"
+            )
+        elif witness is not None and witness not in scored:
+            errors.append(
+                f"{where}: '{witness}' is the witness README.md declares for "
+                f"this case, and it is not a scored free grader here — it is "
+                f"absent, or `arm: with-only`, or paid, or satisfied by the "
+                f"empty trace; some other grader has silently taken the role"
+            )
+        if not scored:
             errors.append(
                 f"{where}: no scored grader witnesses what the run did — every "
                 f"verdict here is either an absence an empty trace satisfies, or a "
