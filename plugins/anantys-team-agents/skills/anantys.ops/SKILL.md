@@ -33,7 +33,7 @@ If a browser is not available (`tabs_context_mcp` returns nothing usable), STOP 
 Load prior context so every metric can be reported with a trend delta:
 
 1. **Read `<workspace>/current.md`** if it exists — the living status file with current KPIs, targets, and pending actions from the last audit.
-2. **List `<workspace>/journal/`** (via `Glob`/`ls`) and **read the last 3 entries** (most recent first). Extract date, KPIs (clicks, impressions, CTR, position, daily visitors), top queries + positions, recommendations made, actions completed.
+2. **List `<workspace>/journal/`** (via `Glob`/`ls`) and **read the last 3 entries** (most recent first). Extract date, KPIs (clicks, impressions, CTR, position, daily organic visitors, organic share of all users), top queries + positions, recommendations made, actions completed.
 3. **Build a comparison baseline** so you can compute deltas (e.g. "+12% clicks vs last audit", "position 7.2 → 5.0").
 
 If no prior data exists, note this is the first audit and skip comparisons. Whenever you later report a metric, **include the delta vs the previous audit** when available.
@@ -54,7 +54,7 @@ Navigate to the hub/landing URL the user gave. Screenshot it, then extract (via 
 - Structured data (`<script type="application/ld+json">`), canonical URL, `hreflang` alternates (`link[rel=alternate][hreflang]` — count and locales, or "none"), Open Graph / Twitter Card tags, mobile viewport meta.
 - Content depth and keyword coverage.
 
-Record all findings.
+Record all findings — they populate §2 of the report, social cards included.
 
 ## Phase 1b: Top Page Deep-Dive
 
@@ -62,7 +62,7 @@ A hub/index is rarely the page that earns clicks — the individual content page
 
 That ranking is the *only* selection criterion, and on a first audit neither source exists yet — Phase 0 found no prior data and Phase 2 has not run. **Do not fall back to guessing which pages matter**: run Phase 2 first, then return here. State in the report which order you used.
 
-For each, navigate + screenshot + extract via JS: title (+length), meta description (+length), H1/H2/H3, structured data, canonical, word count (`document.body.innerText.split(/\s+/).length`), internal links, FAQ presence, OG image. Then evaluate: does the title match the target query and beat competitors? Is the meta description click-worthy (numbers/freshness)? Content depth, rich-snippet readiness, internal linking. Record per-page findings in a table — these pages have the highest CTR leverage.
+For each, navigate + screenshot + extract via JS: title (+length), meta description (+length), H1/H2/H3, structured data, canonical, word count (`document.body.innerText.split(/\s+/).length`), internal links, FAQ presence, OG image. Then evaluate: does the title match the target query and beat competitors? Is the meta description click-worthy (numbers/freshness)? Content depth, rich-snippet readiness, internal linking. Record per-page findings in a table — these pages have the highest CTR leverage, and the table is §6 of the report.
 
 ## Phase 2: Search Console (28 days)
 
@@ -76,6 +76,10 @@ Navigate to the property's Search Console performance URL (28-day window, broken
 ## Phase 3: Analytics
 
 Navigate to the Analytics (e.g. GA4) report URL. If not logged in, tell the user and wait. Screenshot, then extract: active users (daily/weekly/monthly trend), traffic-source breakdown (organic vs direct vs referral vs social), top pages by views, engagement (session duration, bounce/engagement rate), geographic split if shown.
+
+**The source breakdown is not decoration — it is the goal metric's denominator.** The objective is *organic* visitors, and active users is every channel. Multiply the daily active users by the organic share and report **that** number as "daily organic visitors" in §1; never compare total users against an organic target. If the breakdown is unavailable, say so and label §1's number "all channels" rather than passing it off as organic.
+
+The rest of this phase lands in **§11** — source split, engagement, geography, each against the previous audit. `current.md`'s Acquisition Mix section is what makes that delta computable on the next run, so write it there too (Phase 6).
 
 ## Phase 4: SERP Analysis
 
@@ -100,18 +104,19 @@ Compile findings into a markdown report at **`<workspace>/journal/<YYYY-MM-DD>-a
 ```
 # SEO Audit Report — <domain>
 Date: <today>
-Objective: <current> -> <target> daily visitors
+Objective: <current> -> <target> daily organic visitors
 
-## 1. Current Performance Summary   (Daily visitors, GSC clicks/impressions, CTR, avg position — with deltas)
-## 2. Landing Page Health            (title/meta/H1/structure/links/structured-data, OK or IMPROVE)
+## 1. Current Performance Summary   (Daily organic visitors — Phase 3's active users × organic share, GSC clicks/impressions, CTR, avg position — with deltas)
+## 2. Landing Page Health            (title/meta/H1/structure/links/structured-data/hreflang, Open Graph + Twitter Card, OK or IMPROVE)
 ## 3. Top Performing Queries         (table: query, clicks, impressions, CTR, position)
 ## 4. High-Potential Queries         (high impressions, low CTR — quick wins)
 ## 5. Uncovered Queries              (relevant but not ranking — from SERP analysis)
-## 6. Pages to Improve               (rank but low CTR — title/meta/content fixes)
+## 6. Pages to Improve               (rank but low CTR — title/meta/content fixes; carries Phase 1b's per-page word count, FAQ block, OG image)
 ## 7. SERP Positioning vs Competitors (per target query: who ranks, where you sit)
 ## 8. Optimization Roadmap           (Quick wins / Medium-term / Long-term, checkboxes)
 ## 9. New Landing Page Ideas         (slug, target query, demand evidence + its source, priority)
 ## 10. Technical SEO Checklist       (robots, sitemap, Core Web Vitals — Phase 4b; mobile, canonical, hreflang, internal links — Phases 1/1b. One row each: value, source, OK/IMPROVE/`n/a — not collected`)
+## 11. Acquisition Mix & Engagement  (Phase 3: traffic-source split incl. the organic share, session duration, bounce/engagement rate, geography — each with a delta)
 ```
 
 **§9 demand evidence** is the Phase 2/Phase 4 observation that justifies the page — GSC impressions for the nearest query the site already ranks for, or the SERP's PAA/rich-result/ad count for the uncovered query. Cite which one. Do **not** write an estimated monthly search volume: no granted tool reports one, and inventing it is the one number in this report a reader would act on without checking.
@@ -130,8 +135,9 @@ Overwrite **`<workspace>/current.md`** — the living snapshot that persists bet
 ## Completed Actions     (carried forward from previous current.md, marked [x])
 ## Next Actions          (priority-ordered; flag how many audits each has been pending)
 ## New Landing Pages     (Slug | Target Query | Demand Evidence | Priority | Status: idea / drafted / live)
+## Acquisition Mix       (Source | Users | Share | Delta — the organic row is §1's denominator; plus session duration, bounce/engagement, top geographies)
 ## Key Findings This Session
-## Audit History         (Date | Clicks | Impressions | CTR | Pos | VU/day | Journal — accumulates all past rows)
+## Audit History         (Date | Clicks | Impressions | CTR | Pos | Organic VU/day | Organic share | Journal — accumulates all past rows)
 ```
 
 Rules for `current.md`: always overwrite the whole file (it is a snapshot; the journal is the append log). Carry forward completed actions; if a prior "Next Action" was done, move it to Completed, else keep it and flag its age. Accumulate the Audit History table from the previous `current.md`, and carry forward every New Landing Pages row with its demand evidence — an idea whose justification is dropped at the next audit gets re-proposed or silently abandoned on no evidence either way.
@@ -141,8 +147,9 @@ Rules for `current.md`: always overwrite the whole file (it is a snapshot; the j
 - **Read-only on the codebase.** Modify NO application/code files. The only files you write are the journal entry and `current.md` under the workspace.
 - **Be specific** — never "improve content"; say exactly what to add/change.
 - **Quantify everything** with real numbers from the dashboards; include trend deltas when prior audits exist.
-- **Prioritize by impact** toward the stated traffic goal — compute the gap (e.g. "+60 daily visitors needed — where do they come from?").
+- **Prioritize by impact** toward the stated traffic goal — compute the gap against the *organic* number, not total users (e.g. "+60 daily organic visitors needed — where do they come from?").
 - If a service requires login and you can't access data, note it clearly and proceed with what's available. Never invent metrics.
 - Take screenshots at each phase to document the audit trail.
 - If the user provided extra queries/focus areas in $ARGUMENTS, fold them into the relevant phases.
-- **Every field the report declares needs a phase that collects it.** "Quantify everything" and "never invent metrics" are only compatible if each column in §1-§10 traces to an observation above — so write the source next to the value. If a field has no collecting phase, write `n/a — not collected` rather than an estimate, and say so in the summary. Adding a column to the report template means adding its collection step too; a field that is always blank or always guessed is worse than an absent one, because the roadmap built on it reads as measured.
+- **Every field the report declares needs a phase that collects it.** "Quantify everything" and "never invent metrics" are only compatible if each column in §1-§11 traces to an observation above — so write the source next to the value. If a field has no collecting phase, write `n/a — not collected` rather than an estimate, and say so in the summary. Adding a column to the report template means adding its collection step too; a field that is always blank or always guessed is worse than an absent one, because the roadmap built on it reads as measured.
+- **And every field a phase collects needs a section that consumes it.** The same trace, read backwards: before a phase extracts something, know which numbered section or `current.md` row it lands in. A field with no sink is a dashboard the reader never sees — it costs a login wait and a screenshot and then evaporates, and because `current.md` has no row for it, it can never acquire the trend delta this skill exists to report. If you cannot name its sink, stop collecting it.
