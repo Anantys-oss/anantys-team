@@ -32,8 +32,8 @@ If a browser is not available (`tabs_context_mcp` returns nothing usable), STOP 
 
 Load prior context so every metric can be reported with a trend delta:
 
-1. **Read `<workspace>/current.md`** if it exists — the living status file with current KPIs, targets, and pending actions from the last audit.
-2. **List `<workspace>/journal/`** (via `Glob`/`ls`) and **read the last 3 entries** (most recent first). Extract date, KPIs (clicks, impressions, CTR, position, daily visitors), top queries + positions, recommendations made, actions completed.
+1. **Read `<workspace>/current.md`** if it exists — the living status file with current KPIs, targets, and pending actions from the last audit. Carry out its **Top Pages Performance** rows: they are the prior-audit source Phase 1b selects its deep-dive set from, and the only one written in a table built for the purpose.
+2. **List `<workspace>/journal/`** (via `Glob`/`ls`) and **read the last 3 entries** (most recent first). Extract date, KPIs (clicks, impressions, CTR, position, daily visitors), top queries + positions, **top pages with their clicks/impressions**, recommendations made, actions completed.
 3. **Build a comparison baseline** so you can compute deltas (e.g. "+12% clicks vs last audit", "position 7.2 → 5.0").
 
 If no prior data exists, note this is the first audit and skip comparisons. Whenever you later report a metric, **include the delta vs the previous audit** when available.
@@ -61,6 +61,10 @@ Record all findings.
 A hub/index is rarely the page that earns clicks — the individual content pages it links to are. Cross-reference the hub's links with Search Console top-pages data (Phase 2 or prior audit) to pick the **top 5-10 pages by clicks/impressions**.
 
 That ranking is the *only* selection criterion, and on a first audit neither source exists yet — Phase 0 found no prior data and Phase 2 has not run. **Do not fall back to guessing which pages matter**: run Phase 2 first, then return here. State in the report which order you used.
+
+Note which prior-audit rows actually reach you: "page" data means pages **with their clicks or impressions**, which is Phase 0's `current.md` Top Pages Performance table or its journal page rows. A baseline carrying only query-level numbers does not satisfy this phase, however many audits deep it is.
+
+Phase 2 can be unreachable too — a login wall, or no property for the domain — and then there is no click data on this run either. The global rule stands (proceed with what's available, invent nothing), so deep-dive the pages the hub itself makes most prominent and record **`basis: hub prominence — no click data`** on the per-page table and in report §6. The "highest CTR leverage" claim below is a property of a click-ranked set; a set picked another way does not inherit it, and a reader who cannot see which basis chose the set has no way to discount the findings.
 
 For each, navigate + screenshot + extract via JS: title (+length), meta description (+length), H1/H2/H3, structured data, canonical, word count (`document.body.innerText.split(/\s+/).length`), internal links, FAQ presence, OG image. Then evaluate: does the title match the target query and beat competitors? Is the meta description click-worthy (numbers/freshness)? Content depth, rich-snippet readiness, internal linking. Record per-page findings in a table — these pages have the highest CTR leverage.
 
@@ -107,7 +111,7 @@ Objective: <current> -> <target> daily visitors
 ## 3. Top Performing Queries         (table: query, clicks, impressions, CTR, position)
 ## 4. High-Potential Queries         (high impressions, low CTR — quick wins)
 ## 5. Uncovered Queries              (relevant but not ranking — from SERP analysis)
-## 6. Pages to Improve               (rank but low CTR — title/meta/content fixes)
+## 6. Pages to Improve               (rank but low CTR — title/meta/content fixes; name the basis the deep-dive set was picked on)
 ## 7. SERP Positioning vs Competitors (per target query: who ranks, where you sit)
 ## 8. Optimization Roadmap           (Quick wins / Medium-term / Long-term, checkboxes)
 ## 9. New Landing Page Ideas         (slug, target query, demand evidence + its source, priority)
@@ -145,4 +149,6 @@ Rules for `current.md`: always overwrite the whole file (it is a snapshot; the j
 - If a service requires login and you can't access data, note it clearly and proceed with what's available. Never invent metrics.
 - Take screenshots at each phase to document the audit trail.
 - If the user provided extra queries/focus areas in $ARGUMENTS, fold them into the relevant phases.
+- **A claim about a set names the basis the set was picked on.** "The highest-leverage pages" is a measurement, not a label: if the set came from anything other than click data, say which basis chose it, in the report, beside the findings drawn from it.
+- **Anything a later phase needs, an earlier phase has to carry.** When a phase reads prior context, the list of what it extracts is a contract with whoever consumes it downstream — a field no phase collects is a source that does not exist, however confidently a later phase names it.
 - **Every field the report declares needs a phase that collects it.** "Quantify everything" and "never invent metrics" are only compatible if each column in §1-§10 traces to an observation above — so write the source next to the value. If a field has no collecting phase, write `n/a — not collected` rather than an estimate, and say so in the summary. Adding a column to the report template means adding its collection step too; a field that is always blank or always guessed is worse than an absent one, because the roadmap built on it reads as measured.
