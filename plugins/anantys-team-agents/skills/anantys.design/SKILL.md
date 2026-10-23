@@ -20,7 +20,7 @@ The user typically provides a page/URL and a list of design issues to fix.
 
 1. **A browser MUST be available.** Call `mcp__claude-in-chrome__tabs_context_mcp` first. If the browser tools are not loaded/available in this session, STOP and tell the user this skill requires a connected browser (e.g. the Claude-in-Chrome extension) — do not proceed blind.
 2. **A dev URL MUST be provided** (e.g. `https://dev.example.com/some/page`). This is the surface that renders your local working-tree changes. If the user did not give one, ask for it. Do not validate against production or guess a URL.
-3. Confirm the dev URL actually serves your local file edits (CSS/template/component changes appear after a reload). If edits don't show up, surface it — do not keep editing into the void.
+3. Confirm the dev URL actually serves your local file edits (CSS/template/component changes appear after a reload). If edits don't show up, surface it — do not keep editing into the void. **Check this once per asset kind you intend to edit — markup, stylesheet, component — not once overall.** A dev server commonly serves templates straight from disk while stylesheets and components go through a bundler or a watcher, and a Tailwind-style JIT only emits the utility classes it finds when it last scanned the source. Validating the loop on a template edit therefore proves nothing about CSS. For each kind that needs a build step, get the command (or the watcher) and how you can tell it finished — step 4 spends that knowledge on every iteration.
 
 ## Workflow
 
@@ -58,11 +58,12 @@ For **each** task, in order:
 3. **Implement the fix in the SOURCE FILES** (the project's templates / components / stylesheets). Never leave the fix as a live DOM/CSS injection — injection is only for prototyping/diagnosis.
    - **When a CSS conflict resists**, prefer a **dedicated specific class** (remove the conflicting framework/theme class in the markup, add your own) over escalating `!important`. If you must out-specify a themed `!important` rule, scope it at higher specificity and document why.
    - Match surrounding code style; keep changes minimal and DRY.
-4. **Reload the dev URL** (`navigate` to the same URL) so the page serves your file changes. (A normal navigate re-fetches; live-injected `<style>` tags are wiped, which is what you want.)
+4. **Reload the dev URL** (`navigate` to the same URL) so the page serves your file changes. (A normal navigate re-fetches; live-injected `<style>` tags are wiped, which is what you want.) A reload re-fetches what the app *serves*, which is your edit only once every build step from precondition 3 has run — so **confirm the edit arrived before you read anything**: the watcher logged a rebuild, or the rule you just wrote reads back off the page (`[...document.styleSheets].flatMap(s => { try { return [...s.cssRules].map(r => r.cssText) } catch { return [] } }).filter(t => t.includes('<your selector>'))`).
 5. **Prove resolution**:
    - Re-read the relevant computed style with `javascript_tool` (`getComputedStyle`) to confirm the exact value changed.
    - Take a `screenshot` of the affected region.
 6. **If not resolved, iterate** (back to step 2) — do NOT mark the task done. The screenshot + computed value are the only acceptable proof. A plausible-looking diff is not proof.
+   - **An unchanged computed value whose arrival you did not confirm means the hypothesis is untested, not wrong.** It presents exactly like a conflict that resists — the value didn't move, so something must be out-specifying you — and the remedy ladder in step 3 then escalates to a dedicated class or an `!important` that ships in the source and is credited to a screenshot taken once the build finally caught up. Fix the propagation and re-run the *same* edit first; never escalate specificity against a stale asset.
 7. **Mark `completed`** only when the screenshot/computed value confirms it.
 
 ### 5. Global audit pass
