@@ -24,7 +24,7 @@ The user should provide (ask for anything missing — do NOT guess or hardcode):
 - **Analytics URL** (e.g. a GA4 report URL) for the property.
 - **Target queries** for SERP analysis (the keywords that matter to this business).
 - **Traffic goal** (e.g. "from ~40 to 100 daily organic visitors").
-- **Workspace path** for outputs (default `./seo/` — see "Outputs").
+- **Workspace path** for outputs (default `./seo/`). Two files land there and nothing else: `journal/<YYYY-MM-DD>-analysis.md` (Phase 5) and `current.md` (Phase 6).
 
 If a browser is not available (`tabs_context_mcp` returns nothing usable), STOP and tell the user this skill needs a connected browser. If a Google service shows a login screen, inform the user and wait — never fabricate dashboard numbers.
 
@@ -41,7 +41,7 @@ If no prior data exists, note this is the first audit and skip comparisons. When
 ## Pre-flight
 
 1. Call `tabs_context_mcp`; create a fresh tab with `tabs_create_mcp`.
-2. Present a plan via `update_plan`: the domains you'll visit, and the approach (hub audit → top pages deep-dive → Search Console → Analytics → SERP → report).
+2. Present a plan via `update_plan`: the domains you'll visit, and the approach (hub audit → top pages deep-dive → Search Console → Analytics → SERP → technical crawl → report; on a first audit the deep-dive moves after Search Console — see Phase 1b).
 3. Wait for user approval before proceeding.
 
 ## Phase 1: Hub / Landing Page Audit
@@ -51,7 +51,7 @@ Navigate to the hub/landing URL the user gave. Screenshot it, then extract (via 
 - Title (`document.title`) — 50-60 chars ideal — and meta description — 150-160 chars ideal.
 - Heading hierarchy (single H1, logical H2/H3).
 - Internal & external link counts and destinations.
-- Structured data (`<script type="application/ld+json">`), canonical URL, Open Graph / Twitter Card tags, mobile viewport meta.
+- Structured data (`<script type="application/ld+json">`), canonical URL, `hreflang` alternates (`link[rel=alternate][hreflang]` — count and locales, or "none"), Open Graph / Twitter Card tags, mobile viewport meta.
 - Content depth and keyword coverage.
 
 Record all findings.
@@ -59,6 +59,8 @@ Record all findings.
 ## Phase 1b: Top Page Deep-Dive
 
 A hub/index is rarely the page that earns clicks — the individual content pages it links to are. Cross-reference the hub's links with Search Console top-pages data (Phase 2 or prior audit) to pick the **top 5-10 pages by clicks/impressions**.
+
+That ranking is the *only* selection criterion, and on a first audit neither source exists yet — Phase 0 found no prior data and Phase 2 has not run. **Do not fall back to guessing which pages matter**: run Phase 2 first, then return here. State in the report which order you used.
 
 For each, navigate + screenshot + extract via JS: title (+length), meta description (+length), H1/H2/H3, structured data, canonical, word count (`document.body.innerText.split(/\s+/).length`), internal links, FAQ presence, OG image. Then evaluate: does the title match the target query and beat competitors? Is the meta description click-worthy (numbers/freshness)? Content depth, rich-snippet readiness, internal linking. Record per-page findings in a table — these pages have the highest CTR leverage.
 
@@ -79,6 +81,18 @@ Navigate to the Analytics (e.g. GA4) report URL. If not logged in, tell the user
 
 For each **target query** the user provided, navigate to a clean search URL (`https://www.google.com/search?q=<encoded query>&hl=<lang>`), screenshot, and use `get_page_text`/`find` to locate the site's domain in results. Record: the site's position (or absence), competitors ranking above/below, featured snippets / People-Also-Ask / rich results, and ad presence (competitors bidding). Check the first 2 result pages max — do not scroll endlessly.
 
+Keep the per-query **demand evidence** (PAA question count, rich-result types, how many ads) alongside the position — these are the only demand numbers the granted tools can observe for a query the site does not yet rank for, and §9 of the report is scored on them.
+
+## Phase 4b: Technical Crawl
+
+Report §10 is a checklist of site-wide facts that no page-level phase above collects. Gather them here, each from a named source:
+
+- **`https://<domain>/robots.txt`** — navigate + `get_page_text`. Record: reachable?, `Disallow` rules that block indexable paths, declared `Sitemap:` lines.
+- **Sitemap** — navigate the URL `robots.txt` declared (else try `/sitemap.xml`). Record: reachable?, URL count, index-of-sitemaps or flat, newest `<lastmod>`.
+- **Core Web Vitals** — navigate `https://pagespeed.web.dev/analysis?url=<encoded hub URL>`, screenshot, read LCP / INP / CLS for **mobile**, and note whether the numbers are field (CrUX) or lab data. If the page shows "not enough data", record that verbatim — it is a real finding about traffic volume, not a missing measurement.
+
+`hreflang`, `canonical`, mobile viewport and internal links come from Phases 1/1b. Any item still unobtained after this phase is written `n/a — not collected` in §10, never inferred.
+
 ## Phase 5: Analysis & Report
 
 Compile findings into a markdown report at **`<workspace>/journal/<YYYY-MM-DD>-analysis.md`** (`mkdir -p` the dir). Then give a brief in-conversation summary linking the file. Suggested structure (adapt to the business):
@@ -96,9 +110,11 @@ Objective: <current> -> <target> daily visitors
 ## 6. Pages to Improve               (rank but low CTR — title/meta/content fixes)
 ## 7. SERP Positioning vs Competitors (per target query: who ranks, where you sit)
 ## 8. Optimization Roadmap           (Quick wins / Medium-term / Long-term, checkboxes)
-## 9. New Landing Page Ideas         (slug, target query, est. monthly searches, priority)
-## 10. Technical SEO Checklist       (sitemap, robots, Core Web Vitals, mobile, canonical, hreflang, internal links)
+## 9. New Landing Page Ideas         (slug, target query, demand evidence + its source, priority)
+## 10. Technical SEO Checklist       (robots, sitemap, Core Web Vitals — Phase 4b; mobile, canonical, hreflang, internal links — Phases 1/1b. One row each: value, source, OK/IMPROVE/`n/a — not collected`)
 ```
+
+**§9 demand evidence** is the Phase 2/Phase 4 observation that justifies the page — GSC impressions for the nearest query the site already ranks for, or the SERP's PAA/rich-result/ad count for the uncovered query. Cite which one. Do **not** write an estimated monthly search volume: no granted tool reports one, and inventing it is the one number in this report a reader would act on without checking.
 
 ## Phase 6: Update Status File
 
@@ -113,12 +129,12 @@ Overwrite **`<workspace>/current.md`** — the living snapshot that persists bet
 ## Top Pages Performance (Page | Clicks 28d | Impressions | CTR | Position)
 ## Completed Actions     (carried forward from previous current.md, marked [x])
 ## Next Actions          (priority-ordered; flag how many audits each has been pending)
-## New Landing Pages     (Slug | Target Query | Priority | Status)
+## New Landing Pages     (Slug | Target Query | Demand Evidence | Priority | Status: idea / drafted / live)
 ## Key Findings This Session
 ## Audit History         (Date | Clicks | Impressions | CTR | Pos | VU/day | Journal — accumulates all past rows)
 ```
 
-Rules for `current.md`: always overwrite the whole file (it is a snapshot; the journal is the append log). Carry forward completed actions; if a prior "Next Action" was done, move it to Completed, else keep it and flag its age. Accumulate the Audit History table from the previous `current.md`.
+Rules for `current.md`: always overwrite the whole file (it is a snapshot; the journal is the append log). Carry forward completed actions; if a prior "Next Action" was done, move it to Completed, else keep it and flag its age. Accumulate the Audit History table from the previous `current.md`, and carry forward every New Landing Pages row with its demand evidence — an idea whose justification is dropped at the next audit gets re-proposed or silently abandoned on no evidence either way.
 
 ## Rules
 
@@ -129,3 +145,4 @@ Rules for `current.md`: always overwrite the whole file (it is a snapshot; the j
 - If a service requires login and you can't access data, note it clearly and proceed with what's available. Never invent metrics.
 - Take screenshots at each phase to document the audit trail.
 - If the user provided extra queries/focus areas in $ARGUMENTS, fold them into the relevant phases.
+- **Every field the report declares needs a phase that collects it.** "Quantify everything" and "never invent metrics" are only compatible if each column in §1-§10 traces to an observation above — so write the source next to the value. If a field has no collecting phase, write `n/a — not collected` rather than an estimate, and say so in the summary. Adding a column to the report template means adding its collection step too; a field that is always blank or always guessed is worse than an absent one, because the roadmap built on it reads as measured.
