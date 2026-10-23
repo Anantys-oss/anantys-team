@@ -20,6 +20,14 @@ like a teammate would:
 **Agents** are dispatched as isolated subagents (via the `Task`/Agent tool) — a deliberately
 *fresh context* so their review/testing isn't biased by the reasoning that produced the code.
 
+Fresh context means a fresh **conversation**, not a fresh repo: Claude Code still loads your
+project's instruction files (`CLAUDE.md`, `AGENTS.md`, `CLAUDE.local.md`) into every subagent.
+Both agents use them as *convention* only, and the Code Auditor falls back to the pre-change tree
+for its baseline when the range under audit edits them. Both are also pinned to `model: opus` —
+that overrides a configured default subagent model, and on an org with a restricted model
+allowlist Claude Code steps down to the nearest permitted model with only a terminal warning,
+which is why each report prints the model it actually ran on.
+
 Every role is **project-agnostic**: no hardcoded domains, paths, or design tokens. They ask
 for what they need (a dev URL, a property, target queries) or infer it from the project.
 More roles can be added over time without changing how you install the team.
