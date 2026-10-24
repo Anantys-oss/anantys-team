@@ -410,7 +410,10 @@ operator's go before any write.
 4. **Post a one-line result after each scenario.** The operator is watching; a campaign that
    reports only at the end is one where a bad reset costs you the whole run.
 5. **Append a run section to `qa-runs.md`**, its header naming the environment and the mode —
-   never overwrite prior runs. Prior runs are how a later reader recognises a re-occurrence.
+   never overwrite prior runs. Prior runs are how a later reader recognises a re-occurrence. Write
+   each result as the word `PASS`, `FAIL` or `BLOCKED` (`templates/qa-plan.md`) — `retest`, `status`
+   and `report` all re-read this file by those three tokens, so a glyph in the Result column makes a
+   past result unselectable.
 6. Update the per-assertion status in `qa-plan.md` **for the selected environment only**, and only
    for the assertions this run walked; then refresh that environment's progress table.
 7. **Finish:** write `qa-report.md` as `report` does — every run, both modes, so a defect this run
