@@ -98,6 +98,13 @@ For each FAIL: what you saw, what the case expected, the URL, and the console/ne
 Appended by `run` / `retest` — **never overwritten**. Prior runs are how a later reader
 recognises a re-occurrence instead of re-diagnosing it from scratch.
 
+The **Result** column holds exactly one of `PASS`, `FAIL`, `BLOCKED` — the words, not a glyph.
+This file is the only record of a per-assertion result, and `retest` selects its subset by reading
+"every assertion whose latest result on this environment is FAIL or BLOCKED"; a run log that writes
+`❌` offers that query nothing to match. Reserve `✅` for the progress table's **Done** column,
+where it means PASS *or* DEFECT *or* BLOCKED — the same glyph in both places would name a result
+and the absence of one.
+
 ```markdown
 # Run log — <feature>
 
@@ -112,9 +119,9 @@ Environment: `<name>` (`local` | `shared`). Subject: <account/fixture id>. Build
 
 | ID | Result | Evidence |
 |----|--------|----------|
-| A1 | ✅ | <observation> |
-| A4 | ❌ | <what was seen> vs <what was expected> — <url> |
-| C2 | ⛔ BLOCKED | <why unreachable> |
+| A1 | PASS | <observation> |
+| A4 | FAIL | <what was seen> vs <what was expected> — <url> |
+| C2 | BLOCKED | <why unreachable> |
 
 ### Defects opened this run
 - **<id>** — <one line>
