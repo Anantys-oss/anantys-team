@@ -1,7 +1,7 @@
 ---
 name: anantys.debug
 description: Debug by observing the running app, not by guessing — a tight reproduce → inspect runtime (browser console, network, logs) → fix → re-prove loop. The proof is the observed behavior, never a plausible-looking diff. Use to diagnose and fix a bug where you can exercise the app live (a "Ralf loop").
-allowed-tools: ToolSearch, mcp__claude-in-chrome__tabs_context_mcp, mcp__claude-in-chrome__tabs_create_mcp, mcp__claude-in-chrome__list_connected_browsers, mcp__claude-in-chrome__select_browser, mcp__claude-in-chrome__navigate, mcp__claude-in-chrome__computer, mcp__claude-in-chrome__read_page, mcp__claude-in-chrome__javascript_tool, mcp__claude-in-chrome__read_console_messages, mcp__claude-in-chrome__read_network_requests, Read, Write, Edit, Bash, Glob, Grep, TaskCreate, TaskUpdate, TaskList
+allowed-tools: ToolSearch, mcp__claude-in-chrome__tabs_context_mcp, mcp__claude-in-chrome__tabs_create_mcp, mcp__claude-in-chrome__list_connected_browsers, mcp__claude-in-chrome__select_browser, mcp__claude-in-chrome__navigate, mcp__claude-in-chrome__computer, mcp__claude-in-chrome__read_page, mcp__claude-in-chrome__javascript_tool, mcp__claude-in-chrome__read_console_messages, mcp__claude-in-chrome__read_network_requests, mcp__Claude_in_Chrome, mcp__Claude_Browser, mcp__Claude_Preview, Read, Write, Edit, Bash, Glob, Grep, TaskCreate, TaskUpdate, TaskList
 ---
 
 ## Mission
@@ -12,14 +12,32 @@ This is a **Ralf loop** — the model's limit is rarely the model; it's the feed
 
 ## Hard preconditions
 
-1. **A way to exercise the app live.** For web bugs, call `mcp__claude-in-chrome__tabs_context_mcp` first. Two states look like "no browser" and are not: the Chrome tools may be **deferred** in this session, and several browsers may be connected with none selected — `list_connected_browsers` + `select_browser` resolves the second. For the first, load every tool this loop needs in **one** `ToolSearch` call, before the probe, not one tool at a time (each extra call is a wasted round-trip):
+1. **A way to exercise the app live.** For web bugs, call `tabs_context_mcp` first. Three states look like "no browser" and are not: the toolset may be registered under **another server name** than `mcp__claude-in-chrome__` (resolve it first — see "Which browser server" — every name below is written with that prefix and must be rewritten with the one you resolved), the Chrome tools may be **deferred** in this session, and several browsers may be connected with none selected — `list_connected_browsers` + `select_browser` resolves the third. For the deferred case, load every tool this loop needs in **one** `ToolSearch` call, before the probe, not one tool at a time (each extra call is a wasted round-trip):
 
    ```text
    ToolSearch query: select:mcp__claude-in-chrome__tabs_context_mcp,mcp__claude-in-chrome__tabs_create_mcp,mcp__claude-in-chrome__list_connected_browsers,mcp__claude-in-chrome__select_browser,mcp__claude-in-chrome__navigate,mcp__claude-in-chrome__computer,mcp__claude-in-chrome__read_page,mcp__claude-in-chrome__javascript_tool,mcp__claude-in-chrome__read_console_messages,mcp__claude-in-chrome__read_network_requests
    ```
 
-   Size the batch to the whole loop, not to the probe: `read_network_requests` is needed at step 4, long after the precondition passed, and discovering it missing there costs a second call. STOP and say so only when no browser is connected at all. For non-browser bugs, confirm you can run the failing path (a command, a test, a request) and read its output/logs.
+   Size the batch to the whole loop, not to the probe: `read_network_requests` is needed at step 4, long after the precondition passed, and discovering it missing there costs a second call. STOP and say so only when no browser is connected under any name. For non-browser bugs, confirm you can run the failing path (a command, a test, a request) and read its output/logs.
 2. **A concrete repro.** Get the exact steps, URL, input, or failing test from the user. If you can't reproduce it, say so and gather more signal — never "fix" a bug you haven't seen fail.
+
+## Which browser server
+
+The same browser toolset is registered under several server names, so the absence of one
+spelling is **not** the absence of a browser. Resolve which one this session exposes before the
+probe, and use that prefix for every browser call — and inside every `ToolSearch select:` — that
+follows:
+
+| prefix | surface |
+|---|---|
+| `mcp__claude-in-chrome__` | the Chrome extension |
+| `mcp__Claude_in_Chrome__` | the Cowork desktop server |
+| `mcp__Claude_Browser__`, `mcp__Claude_Preview__` | the Claude Desktop pane (both names are live) |
+
+A browser bridged from another machine through Claude Code Remote appears under
+`mcp__remote-devices__…` and is deliberately **not** granted to this skill, which also carries
+computer-use of that machine: report *that* rather than "no browser", and fall back to the
+non-browser repro path.
 
 ## Workflow
 

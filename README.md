@@ -27,7 +27,11 @@ More roles can be added over time without changing how you install the team.
 ## Requirements
 
 - [Claude Code](https://claude.com/claude-code)
-- A connected browser for the browser tools (e.g. the **Claude-in-Chrome** extension).
+- A connected browser for the browser tools — the **Claude-in-Chrome** extension, the Cowork
+  desktop server, or the Claude Desktop browser pane; the roles resolve which server name this
+  session exposes. A browser bridged from another machine through Claude Code Remote
+  (`mcp__remote-devices__…`) is deliberately not granted, since that server also carries
+  computer-use of that machine.
 
 ## Install
 
