@@ -18,7 +18,8 @@ _Source: <hand-written | linear:SKU-… | pr:owner/repo#42>. Assembled <YYYY-MM-
 
 _Under test: <the branch and head commit the campaign must run against, and the environment serving it>._
 A brief assembled from an unmerged PR is worthless if the stack is serving `main` — state the
-precondition here so a run stops instead of QA-ing the wrong code.
+precondition here so a run stops instead of QA-ing the wrong code. **One line per branch** when the
+feature spans several PRs: a run must serve every one of them, and a half-deployed set stops.
 
 ## Requirements
 

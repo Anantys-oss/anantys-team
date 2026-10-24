@@ -18,6 +18,9 @@ against a stack serving `main`, reports green having verified nothing. Once the 
 deployed, a deployed commit that contains it satisfies the line; there is no need to edit it. Omit
 it for a feature that was already merged and deployed when the plan was written.
 
+**One line per source PR** when the campaign came from several: `run` requires the environment to
+serve them all, and stops on a set it only partially serves.
+
 **How to use.** Preflight first — stop if it fails. Reset (a `local` env only — never a `shared`
 one). Then walk §2 in order. Each scenario states its **precondition**, its **steps**, and what to
 **assert**. Record PASS/FAIL/BLOCKED **per assertion and per environment**, never one verdict per
@@ -107,8 +110,8 @@ recognises a re-occurrence instead of re-diagnosing it from scratch.
 ## Run <n> — <date> — `run` | `retest` — env: `<name>` — mode: autonomous | interactive
 
 Environment: `<name>` (`local` | `shared`). Subject: <account/fixture id>. Build observed:
-<branch/commit the env was serving, from its build-identity check — omit only when the plan has no
-**Under test:** line>. Path walked: <one line>.
+<branch/commit the env was serving, from its build-identity check — one entry per **Under test:**
+line; omit only when the plan has no such line>. Path walked: <one line>.
 
 | ID | Result | Evidence |
 |----|--------|----------|
