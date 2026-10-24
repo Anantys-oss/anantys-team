@@ -77,6 +77,13 @@ Navigate to the Analytics (e.g. GA4) report URL. If not logged in, tell the user
 
 ## Phase 4: SERP Analysis
 
+The SERP you are about to read comes through the operator's **own signed-in browser profile** — the same one Phases 2 and 3 require to be logged into Search Console and Analytics — and the tool grant has no way to open a signed-out or guest window. A position read here is therefore personalized by that account's history and localized by its IP: it is what *the operator* sees, not what a new visitor sees. Two consequences:
+
+- **Record it with its provenance**, never as a bare number: `SERP, signed-in profile, <location Google shows at the page footer>`. Capture that footer location — it is the one confounder the page tells you.
+- **Search Console's average position (Phase 2) is the position of record** — aggregated over real impressions, and the only position a trend may be computed from. A SERP reading is evidence about *who* ranks and *what* the result page looks like, not a measurement of where you rank.
+
+When the two disagree by more than a rank or two, that gap is itself a finding — personalization or locale — to record in §7, not an error to average away.
+
 For each **target query** the user provided, navigate to a clean search URL (`https://www.google.com/search?q=<encoded query>&hl=<lang>`), screenshot, and use `get_page_text`/`find` to locate the site's domain in results. Record: the site's position (or absence), competitors ranking above/below, featured snippets / People-Also-Ask / rich results, and ad presence (competitors bidding). Check the first 2 result pages max — do not scroll endlessly.
 
 ## Phase 5: Analysis & Report
@@ -94,7 +101,8 @@ Objective: <current> -> <target> daily visitors
 ## 4. High-Potential Queries         (high impressions, low CTR — quick wins)
 ## 5. Uncovered Queries              (relevant but not ranking — from SERP analysis)
 ## 6. Pages to Improve               (rank but low CTR — title/meta/content fixes)
-## 7. SERP Positioning vs Competitors (per target query: who ranks, where you sit)
+## 7. SERP Positioning vs Competitors (per target query: who ranks, where you sit — observed
+##    through the signed-in profile; state that, and flag any gap vs §3's Search Console position)
 ## 8. Optimization Roadmap           (Quick wins / Medium-term / Long-term, checkboxes)
 ## 9. New Landing Page Ideas         (slug, target query, est. monthly searches, priority)
 ## 10. Technical SEO Checklist       (sitemap, robots, Core Web Vitals, mobile, canonical, hreflang, internal links)
@@ -109,7 +117,8 @@ Overwrite **`<workspace>/current.md`** — the living snapshot that persists bet
 > Last audit: <YYYY-MM-DD>   Journal: <path to latest entry>
 
 ## KPI Dashboard         (Metric | Current | Previous | Delta | Target)
-## SERP Positions        (Query | Position | Trend | Target)
+## SERP Positions        (Query | GSC avg position | Trend | SERP observed (signed-in) | Target —
+##                        the trend is computed from the GSC column only; see Phase 4)
 ## Top Pages Performance (Page | Clicks 28d | Impressions | CTR | Position)
 ## Completed Actions     (carried forward from previous current.md, marked [x])
 ## Next Actions          (priority-ordered; flag how many audits each has been pending)
@@ -129,3 +138,4 @@ Rules for `current.md`: always overwrite the whole file (it is a snapshot; the j
 - If a service requires login and you can't access data, note it clearly and proceed with what's available. Never invent metrics.
 - Take screenshots at each phase to document the audit trail.
 - If the user provided extra queries/focus areas in $ARGUMENTS, fold them into the relevant phases.
+- **Every position carries its provenance.** Search Console's average position and a SERP reading from the operator's signed-in profile are two different measurements of two different things; they never share a column, and only the first one carries a trend.
