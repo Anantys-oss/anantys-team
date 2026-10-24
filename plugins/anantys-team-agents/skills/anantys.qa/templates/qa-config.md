@@ -17,6 +17,13 @@ with no local stack. Each is one **kind**:
 Every environment says **what drives the browser** in its `Driven by:` line — the operator's
 connected browser, or a named local command. A `shared` env is always the operator's browser.
 
+**Each environment's blocks are self-contained — never a delta against another environment.** The
+kinds above differ, but the *file* does not express that difference by cross-reference: a block
+never says "as local" or "the same as staging". A project with no local stack marks a `shared` env
+default and has no `local` block at all, so an inherited field resolves to nothing and the action
+reading it cannot tell an empty inheritance from a genuine "none". Write every field out in the
+block it belongs to, even when two environments say the same thing.
+
 A file with **no** `## Environment:` blocks (the flat layout an earlier `init` wrote) is read as a
 single `local` environment named `local`, marked default — it keeps working unchanged. Re-run
 `init` to add a `shared` one: it first rewrites the flat sections as the `local` block below.
@@ -127,7 +134,16 @@ operator's already-signed-in browser session.
 - OAuth: the operator's live session — the agent never signs in.
 
 ### Agent limits — steps a browser agent cannot perform
-- The same browser limits as local; plus **no reset** and **no destructive writes**.
+- <signup CAPTCHA> → hand the tab to the operator, resume after
+- <viewports below the browser's clamp> → needs device emulation
+- <emailed verification code> → operator relays the code
+- No reset, and no destructive write of any kind — a fresh subject is created additively instead
+- <any limit specific to this env — an SSO step the agent cannot complete, a feature flag only an
+  admin can flip>
+
+Written out in full, not inherited from `local`: a project with no local stack has no `local` block
+to inherit from, and `plan` reads this list to mark a case `BLOCKED` by construction rather than
+letting a run discover the wall at step 4.
 
 ### Known drift — never file these as defects
 - A fix merged to `main` is not live until the next deploy — a defect a merged-but-undeployed PR
