@@ -1,7 +1,7 @@
 ---
 name: anantys.ops
 description: Browser-driven web/SEO ops reviewer — pilot a real browser across live pages and SaaS dashboards (Search Console, Analytics, SERP) to collect data and produce an actionable, quantified optimization report with trend deltas. Use for recurring acquisition/SEO audits.
-allowed-tools: mcp__claude-in-chrome__tabs_context_mcp, mcp__claude-in-chrome__tabs_create_mcp, mcp__claude-in-chrome__navigate, mcp__claude-in-chrome__computer, mcp__claude-in-chrome__read_page, mcp__claude-in-chrome__find, mcp__claude-in-chrome__get_page_text, mcp__claude-in-chrome__javascript_tool, mcp__claude-in-chrome__form_input, mcp__claude-in-chrome__update_plan, Read, Write, Glob, Bash(mkdir:*), Bash(git:*), Bash(ls:*)
+allowed-tools: ToolSearch, mcp__claude-in-chrome__tabs_context_mcp, mcp__claude-in-chrome__tabs_create_mcp, mcp__claude-in-chrome__list_connected_browsers, mcp__claude-in-chrome__select_browser, mcp__claude-in-chrome__navigate, mcp__claude-in-chrome__computer, mcp__claude-in-chrome__read_page, mcp__claude-in-chrome__find, mcp__claude-in-chrome__get_page_text, mcp__claude-in-chrome__javascript_tool, mcp__claude-in-chrome__form_input, mcp__Claude_in_Chrome, mcp__Claude_Browser, mcp__Claude_Preview, AskUserQuestion, Read, Write, Glob, Bash(mkdir:*), Bash(git:*), Bash(ls:*)
 ---
 
 ## Mission
@@ -26,7 +26,31 @@ The user should provide (ask for anything missing — do NOT guess or hardcode):
 - **Traffic goal** (e.g. "from ~40 to 100 daily organic visitors").
 - **Workspace path** for outputs (default `./seo/` — see "Outputs").
 
-If a browser is not available (`tabs_context_mcp` returns nothing usable), STOP and tell the user this skill needs a connected browser. If a Google service shows a login screen, inform the user and wait — never fabricate dashboard numbers.
+If `tabs_context_mcp` returns nothing usable, check the three states that look like "no browser" and are not: the toolset may be registered under **another server name** than `mcp__claude-in-chrome__` (resolve it first — see "Which browser server" — every name below is written with that prefix and must be rewritten with the one you resolved), the Chrome tools may be **deferred** in this session, and several browsers may be connected with none selected — `list_connected_browsers` + `select_browser` resolves the third. For the deferred case, load every tool this audit needs in **one** `ToolSearch` call, before the probe, not one tool at a time (each extra call is a wasted round-trip):
+
+```text
+ToolSearch query: select:mcp__claude-in-chrome__tabs_context_mcp,mcp__claude-in-chrome__tabs_create_mcp,mcp__claude-in-chrome__list_connected_browsers,mcp__claude-in-chrome__select_browser,mcp__claude-in-chrome__navigate,mcp__claude-in-chrome__computer,mcp__claude-in-chrome__read_page,mcp__claude-in-chrome__find,mcp__claude-in-chrome__get_page_text,mcp__claude-in-chrome__javascript_tool,mcp__claude-in-chrome__form_input
+```
+
+Size the batch to the whole audit, not to the probe: `find` and `get_page_text` are first needed at Phase 4, and `form_input` only if a dashboard asks for a date range — discovering any of them missing there costs a second call. Only when no browser is connected under any name, STOP and tell the user this skill needs a connected browser. If a Google service shows a login screen, inform the user and wait — never fabricate dashboard numbers.
+
+## Which browser server
+
+The same browser toolset is registered under several server names, so the absence of one
+spelling is **not** the absence of a browser. Resolve which one this session exposes before the
+probe, and use that prefix for every browser call — and inside every `ToolSearch select:` — that
+follows:
+
+| prefix | surface |
+|---|---|
+| `mcp__claude-in-chrome__` | the Chrome extension |
+| `mcp__Claude_in_Chrome__` | the Cowork desktop server |
+| `mcp__Claude_Browser__`, `mcp__Claude_Preview__` | the Claude Desktop pane (both names are live) |
+
+A browser bridged from another machine through Claude Code Remote appears under
+`mcp__remote-devices__…` and is deliberately **not** granted to this skill, which also carries
+computer-use of that machine: report *that* rather than "no browser", and ask the user for a
+browser on this machine.
 
 ## Phase 0: Historical Context
 
@@ -41,8 +65,8 @@ If no prior data exists, note this is the first audit and skip comparisons. When
 ## Pre-flight
 
 1. Call `tabs_context_mcp`; create a fresh tab with `tabs_create_mcp`.
-2. Present a plan via `update_plan`: the domains you'll visit, and the approach (hub audit → top pages deep-dive → Search Console → Analytics → SERP → report).
-3. Wait for user approval before proceeding.
+2. State the plan in your reply: the domains you'll visit, and the approach (hub audit → top pages deep-dive → Search Console → Analytics → SERP → report).
+3. **Get explicit approval with `AskUserQuestion` before navigating anywhere.** This audit drives a browser into the user's logged-in Google properties, so the approval is a real gate, not a formality — do not continue on silence.
 
 ## Phase 1: Hub / Landing Page Audit
 
