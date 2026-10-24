@@ -67,16 +67,29 @@ environment's entry. The checkbox is checked only when **every** declared enviro
 
 …
 
-## 3. Blockers — a FAIL here stops the release
+## 3. Blockers — a blocker clears only when it is PROVEN; anything else stops the release
 
 1. **Money**: <ids> — <what they protect>
 2. **Legal**: <ids> — consent recorded before the product is delivered
 3. **Data**: <ids> — no overwrite of existing user data
 4. **Journey**: <ids> — the product never claims a state it has not reached
 
+Give every entry above a status: `PROVEN | FAILED | UNPROVEN`. It is computed from the assertions
+the entry names, by the same rule as an assertion's
+checkbox (§2): **PROVEN** = every named assertion is PASS on every declared environment.
+**FAILED** = at least one is FAIL. **UNPROVEN** = neither — at least one is BLOCKED or not run, so
+the blocker was never observed to hold. Only PROVEN clears the release. UNPROVEN is not a milder
+FAILED: a money path nobody could reach is indistinguishable from a broken one, and `plan` itself
+marks the §4 gaps `BLOCKED` by construction, so UNPROVEN is the *expected* opening state, not an
+edge case. Never carry a blocker's status over from another environment.
+
 Everything else is a defect to file, not a blocker.
 
-⚠️ Passing every blocker is not the same as having tested everything. See §4.
+⚠️ Passing every blocker is not the same as having tested everything. See §4. And "no FAIL" is not
+the same as passing: count the UNPROVEN ones before answering whether this ships.
+
+> **Blocker** here means a release-stopping requirement. It is a different word from the `BLOCKED`
+> assertion result; a blocker whose assertions are `BLOCKED` is UNPROVEN, and it stops the release.
 
 ## 4. Known gaps — never observed, only inferred. Never record these as PASS
 
@@ -101,8 +114,9 @@ recognises a re-occurrence instead of re-diagnosing it from scratch.
 ```markdown
 # Run log — <feature>
 
-> **Status as of run <n>, per environment:** `local`: <open blockers, or "no open defects"> ·
-> `staging`: <…>. A result on one environment says nothing about another.
+> **Status as of run <n>, per environment:** `local`: <the blockers not yet PROVEN, each FAILED or
+> UNPROVEN — or "every blocker PROVEN"> · `staging`: <…>. A result on one environment says nothing
+> about another. "No open defects" is not a status: it hides the blockers nobody could reach.
 
 ## Run <n> — <date> — `run` | `retest` — env: `<name>` — mode: autonomous | interactive
 
