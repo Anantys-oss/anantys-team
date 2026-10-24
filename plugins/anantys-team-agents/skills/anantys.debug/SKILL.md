@@ -44,7 +44,7 @@ non-browser repro path.
 ### 1. Reproduce first
 
 - Drive the app to the failing state (navigate + interact, or run the failing command/test).
-- **Capture the failure signal** before touching anything: `read_console_messages` for JS errors, `read_network_requests` for a bad call's status and response, the server log line, the assertion diff, a screenshot. This is your baseline — you'll compare against it.
+- **Capture the failure signal** before touching anything: `read_console_messages` for JS errors, `read_network_requests` for a bad call's status and response, the server log line, the assertion diff, a screenshot (`computer` with `{"action": "screenshot"}` — there is no `screenshot` tool). This is your baseline — you'll compare against it.
 - If it doesn't reproduce, stop and widen the net (env, data, timing) rather than guessing at a fix.
 
 ### 2. Locate by evidence, not assumption

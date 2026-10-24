@@ -71,6 +71,8 @@ Turn the user's requests into a tracked task list with `TaskCreate` (one task pe
 
 Create a tab, navigate to the dev URL, take a baseline screenshot, and read the rules. Keep this tab for the whole session.
 
+**A screenshot is an action, not a tool:** take one with `computer` and `{"action": "screenshot"}`. No browser toolset registers a `screenshot` tool under any of its server names, so every "screenshot" in this skill means that call — and this skill's proof step has no fallback for an agent that goes looking for a tool by that name.
+
 ### 4. Per-TODO loop (the core discipline)
 
 For **each** task, in order:
@@ -85,7 +87,7 @@ For **each** task, in order:
 4. **Reload the dev URL** (`navigate` to the same URL) so the page serves your file changes. (A normal navigate re-fetches; live-injected `<style>` tags are wiped, which is what you want.)
 5. **Prove resolution**:
    - Re-read the relevant computed style with `javascript_tool` (`getComputedStyle`) to confirm the exact value changed.
-   - Take a `screenshot` of the affected region.
+   - Screenshot the affected region — `computer` with `{"action": "screenshot"}` (see step 3).
 6. **If not resolved, iterate** (back to step 2) — do NOT mark the task done. The screenshot + computed value are the only acceptable proof. A plausible-looking diff is not proof.
 7. **Mark `completed`** only when the screenshot/computed value confirms it.
 

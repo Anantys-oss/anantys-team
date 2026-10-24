@@ -64,7 +64,7 @@ If no prior data exists, note this is the first audit and skip comparisons. When
 
 ## Pre-flight
 
-1. Call `tabs_context_mcp`; create a fresh tab with `tabs_create_mcp`.
+1. Call `tabs_context_mcp`; create a fresh tab with `tabs_create_mcp`. Every "screenshot" in the phases below is `computer` with `{"action": "screenshot"}` — no browser toolset registers a `screenshot` tool.
 2. State the plan in your reply: the domains you'll visit, and the approach (hub audit → top pages deep-dive → Search Console → Analytics → SERP → report).
 3. **Get explicit approval with `AskUserQuestion` before navigating anywhere.** This audit drives a browser into the user's logged-in Google properties, so the approval is a real gate, not a formality — do not continue on silence.
 
