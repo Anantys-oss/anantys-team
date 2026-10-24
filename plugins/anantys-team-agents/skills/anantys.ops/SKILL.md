@@ -41,6 +41,7 @@ Load prior context so every metric can be reported with a trend delta:
 2. **List `<workspace>/journal/`** (via `Glob`/`ls`) and **read the last 3 entries** (most recent first). Extract date, KPIs (clicks, impressions, CTR, position, daily organic visitors, organic share of all users), top queries + positions, recommendations made, actions completed.
 1. **Read `<workspace>/current.md`** if it exists — the living status file with current KPIs, targets, and pending actions from the last audit. Carry out its **Top Pages Performance** rows: they are the prior-audit source Phase 1b selects its deep-dive set from, and the only one written in a table built for the purpose.
 2. **List `<workspace>/journal/`** (via `Glob`/`ls`) and **read the last 3 entries** (most recent first). Extract date, KPIs (clicks, impressions, CTR, position, daily visitors), top queries + positions, **top pages with their clicks/impressions**, recommendations made, actions completed.
+2. **List `<workspace>/journal/`** (via `Glob`/`ls`) and **read the last 3 entries** (most recent first). Extract date, KPIs (clicks, impressions, CTR, position, daily visitors), top queries + positions, recommendations made, actions completed. **Keep the complete filename list, not just the 3 you read** — one file per past audit, it is the row index Phase 6 rebuilds the Audit History from when `current.md` is missing.
 3. **Build a comparison baseline** so you can compute deltas (e.g. "+12% clicks vs last audit", "position 7.2 → 5.0").
 
 If no prior data exists, note this is the first audit and skip comparisons. Whenever you later report a metric, **include the delta vs the previous audit** when available.
@@ -126,7 +127,7 @@ Report §10 is a checklist of site-wide facts that no page-level phase above col
 
 ## Phase 5: Analysis & Report
 
-Compile findings into a markdown report at **`<workspace>/journal/<YYYY-MM-DD>-analysis.md`** (`mkdir -p` the dir). Then give a brief in-conversation summary linking the file. Suggested structure (adapt to the business):
+Compile findings into a markdown report at **`<workspace>/journal/<YYYY-MM-DD>-analysis.md`** (`mkdir -p` the dir). **If that path already exists, write `<YYYY-MM-DD>-analysis-2.md`** (next free integer) — a second audit on the same day must not overwrite the first. The journal is the append log and the only durable record of a past audit; a clobbered entry is a baseline no later run can read. Then give a brief in-conversation summary linking the file. Suggested structure (adapt to the business):
 
 ```
 # SEO Audit Report — <domain>
@@ -174,10 +175,11 @@ Overwrite **`<workspace>/current.md`** — the living snapshot that persists bet
 ```
 
 Rules for `current.md`: always overwrite the whole file (it is a snapshot; the journal is the append log). Carry forward completed actions; if a prior "Next Action" was done, move it to Completed, else keep it and flag its age. Accumulate the Audit History table from the previous `current.md`, and carry forward every New Landing Pages row with its demand evidence — an idea whose justification is dropped at the next audit gets re-proposed or silently abandoned on no evidence either way.
+Rules for `current.md`: always overwrite the whole file (it is a snapshot; the journal is the append log). Carry forward completed actions; if a prior "Next Action" was done, move it to Completed, else keep it and flag its age. Accumulate the Audit History table from the previous `current.md` — and because Phase 0 reads that file only *"if it exists"*, **when it is absent do not let the table start over**: rebuild one row per journal entry from the filename list Phase 0 kept, dating each row from its filename, filling metrics from the entries you actually read and marking unrecoverable cells `—`. A one-row history is a claim that this is the first audit; never make that claim while `<workspace>/journal/` holds entries.
 
 ## Rules
 
-- **Read-only on the codebase.** Modify NO application/code files. The only files you write are the journal entry and `current.md` under the workspace.
+- **Read-only on the codebase.** Modify NO application/code files. The only files you write are the journal entry and `current.md` under the workspace, and **`current.md` is the only one you may overwrite** — journal entries are append-only.
 - **Be specific** — never "improve content"; say exactly what to add/change.
 - **Quantify everything** with real numbers from the dashboards; include trend deltas when prior audits exist.
 - **Prioritize by impact** toward the stated traffic goal — compute the gap against the *organic* number, not total users (e.g. "+60 daily organic visitors needed — where do they come from?").
