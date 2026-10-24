@@ -85,6 +85,13 @@ The rest of this phase lands in **§11** — source split, engagement, geography
 
 ## Phase 4: SERP Analysis
 
+The SERP you are about to read comes through the operator's **own signed-in browser profile** — the same one Phases 2 and 3 require to be logged into Search Console and Analytics — and the tool grant has no way to open a signed-out or guest window. A position read here is therefore personalized by that account's history and localized by its IP: it is what *the operator* sees, not what a new visitor sees. Two consequences:
+
+- **Record it with its provenance**, never as a bare number: `SERP, signed-in profile, <location Google shows at the page footer>`. Capture that footer location — it is the one confounder the page tells you.
+- **Search Console's average position (Phase 2) is the position of record** — aggregated over real impressions, and the only position a trend may be computed from. A SERP reading is evidence about *who* ranks and *what* the result page looks like, not a measurement of where you rank.
+
+When the two disagree by more than a rank or two, that gap is itself a finding — personalization or locale — to record in §7, not an error to average away.
+
 For each **target query** the user provided, navigate to a clean search URL (`https://www.google.com/search?q=<encoded query>&hl=<lang>`), screenshot, and use `get_page_text`/`find` to locate the site's domain in results. Record: the site's position (or absence), competitors ranking above/below, featured snippets / People-Also-Ask / rich results, and ad presence (competitors bidding). Check the first 2 result pages max — do not scroll endlessly.
 
 Keep the per-query **demand evidence** (PAA question count, rich-result types, how many ads) alongside the position — these are the only demand numbers the granted tools can observe for a query the site does not yet rank for, and §9 of the report is scored on them.
@@ -115,6 +122,9 @@ Objective: <current> -> <target> daily organic visitors
 ## 5. Uncovered Queries              (relevant but not ranking — from SERP analysis)
 ## 6. Pages to Improve               (rank but low CTR — title/meta/content fixes; carries Phase 1b's per-page word count, FAQ block, OG image)
 ## 7. SERP Positioning vs Competitors (per target query: who ranks, where you sit)
+## 6. Pages to Improve               (rank but low CTR — title/meta/content fixes)
+## 7. SERP Positioning vs Competitors (per target query: who ranks, where you sit — observed
+##    through the signed-in profile; state that, and flag any gap vs §3's Search Console position)
 ## 8. Optimization Roadmap           (Quick wins / Medium-term / Long-term, checkboxes)
 ## 9. New Landing Page Ideas         (slug, target query, demand evidence + its source, priority)
 ## 10. Technical SEO Checklist       (robots, sitemap, Core Web Vitals — Phase 4b; mobile, canonical, hreflang, internal links — Phases 1/1b. One row each: value, source, OK/IMPROVE/`n/a — not collected`)
@@ -132,7 +142,8 @@ Overwrite **`<workspace>/current.md`** — the living snapshot that persists bet
 > Last audit: <YYYY-MM-DD>   Journal: <path to latest entry>
 
 ## KPI Dashboard         (Metric | Current | Previous | Delta | Target)
-## SERP Positions        (Query | Position | Trend | Target)
+## SERP Positions        (Query | GSC avg position | Trend | SERP observed (signed-in) | Target —
+##                        the trend is computed from the GSC column only; see Phase 4)
 ## Top Pages Performance (Page | Clicks 28d | Impressions | CTR | Position)
 ## Completed Actions     (carried forward from previous current.md, marked [x])
 ## Next Actions          (priority-ordered; flag how many audits each has been pending)
@@ -155,3 +166,4 @@ Rules for `current.md`: always overwrite the whole file (it is a snapshot; the j
 - If the user provided extra queries/focus areas in $ARGUMENTS, fold them into the relevant phases.
 - **Every field the report declares needs a phase that collects it.** "Quantify everything" and "never invent metrics" are only compatible if each column in §1-§11 traces to an observation above — so write the source next to the value. If a field has no collecting phase, write `n/a — not collected` rather than an estimate, and say so in the summary. Adding a column to the report template means adding its collection step too; a field that is always blank or always guessed is worse than an absent one, because the roadmap built on it reads as measured.
 - **And every field a phase collects needs a section that consumes it.** The same trace, read backwards: before a phase extracts something, know which numbered section or `current.md` row it lands in. A field with no sink is a dashboard the reader never sees — it costs a login wait and a screenshot and then evaporates, and because `current.md` has no row for it, it can never acquire the trend delta this skill exists to report. If you cannot name its sink, stop collecting it.
+- **Every position carries its provenance.** Search Console's average position and a SERP reading from the operator's signed-in profile are two different measurements of two different things; they never share a column, and only the first one carries a trend.
