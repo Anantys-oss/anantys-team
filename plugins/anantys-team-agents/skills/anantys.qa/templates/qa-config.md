@@ -85,6 +85,16 @@ How to identify the test subject (ids, and how to find them when data is encrypt
 - OAuth: the operator's account. Ask for any emailed code; never read a mailbox
 - Payment sandbox: `<test card / token>`
 
+### Client identity — the browser state every assertion is read through
+- Language: `<navigator.languages[0]>` — which copy the app serves
+- Timezone: `<Intl.DateTimeFormat().resolvedOptions().timeZone>` — how dates and "today" render
+- Number / currency format: `<(1234.5).toLocaleString()>` — what a money assertion compares against
+
+Record what the operator's browser actually reports, not what the project prefers. `run` reads these
+back and a difference is **known drift**, never a defect. An assertion written under one locale and
+walked under another mismatches on copy, date and amount at once — and that mismatch does not
+reproduce in the fresh session `report` is addressed to.
+
 ### Agent limits — steps a browser agent cannot perform
 - <signup CAPTCHA> → hand the tab to the operator, resume after
 - <viewports below the browser's clamp> → needs device emulation
@@ -125,6 +135,13 @@ operator's already-signed-in browser session.
 
 ### Credentials
 - OAuth: the operator's live session — the agent never signs in.
+
+### Client identity — the browser state every assertion is read through
+- Language: `<navigator.languages[0]>` · Timezone: `<Intl.DateTimeFormat().resolvedOptions().timeZone>`
+  · Number / currency format: `<(1234.5).toLocaleString()>`
+- The locale this deployment serves for that language: `<observed>` — one Chrome profile drives every
+  environment, so the three values above are the operator's; which copy, date and amount format the
+  *deployed* app answers with for them is this environment's, and is the part a run can only observe.
 
 ### Agent limits — steps a browser agent cannot perform
 - The same browser limits as local; plus **no reset** and **no destructive writes**.

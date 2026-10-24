@@ -122,6 +122,12 @@ Then ask the operator only what you could not infer, in one batch:
   build-identity check `run` uses to enforce a plan's `**Under test:**` line; it is per environment,
   since staging lags `main` between deploys), test credentials, and any known drift that must not
   be filed as a defect.
+- **Per environment, the client too** — the language, timezone and number format the operator's
+  browser reports (`navigator.languages[0]`,
+  `Intl.DateTimeFormat().resolvedOptions().timeZone`, `(1234.5).toLocaleString()`), and the locale
+  that environment serves for them. The plan pins the *server* half of the subject down to a commit;
+  every assertion is nevertheless read **through** a browser, so an undeclared client identity makes
+  a copy, date or amount mismatch indistinguishable from a defect.
 - **`local` only:** the reset procedure for a fresh test subject, and a payment sandbox instrument
   (test card / token) if any journey touches money — without one, every checkout case is BLOCKED.
 - **`shared` only:** how the operator's signed-in browser session is made available to you, whether
@@ -179,6 +185,12 @@ Then transform into scenarios (identical for every source):
 - **Mark what a browser agent cannot do** — CAPTCHA, emailed codes, real payment credentials,
   true mobile viewports. These are `BLOCKED` by construction and need a named human step. Say so
   in the plan rather than letting a run discover it.
+- **An assertion on rendered copy, a date or an amount is locale-dependent.** `"Panier"` vs
+  `"Cart"`, `1 234,56` vs `1,234.56`, and anything relative to "today" are the *client's* answer,
+  not the product's. Write the expected value for the client identity in `.anantys/qa.md` and name
+  which one it is; where the behaviour can be asserted without a locale, assert it that way instead
+  (a total's *value*, not its formatting). An unlabelled expected string is a defect waiting to be
+  filed against a browser.
 
 Write `qa-plan.md` following `templates/qa-plan.md`. Every assertion gets a stable id
 (`A1`, `B5`, …) — ids are referenced by runs, notes and reports forever, so **never renumber
@@ -339,7 +351,16 @@ operator's go before any write.
    - Record the observed branch/commit in the `qa-runs.md` run section, beside `Subject:`, so a
      later reader can tell which build a green run was green against.
 
-   The line is absent for a merged/deployed feature, and then there is nothing extra to check.
+   The line is absent for a merged/deployed feature, and then there is nothing extra to check
+   about the build.
+
+   **Then read the client identity, always.** The build is half the subject; the browser you read
+   it through is the other half. Report `navigator.languages[0]`,
+   `Intl.DateTimeFormat().resolvedOptions().timeZone` and `(1234.5).toLocaleString()`, record them
+   beside `Client observed:` in the run section, and compare them to the selected environment's
+   block. A difference is **known drift** — note it and walk on, never file it as a defect. This
+   needs no probe and no operator, so unlike the build check it is never skipped: a plan with no
+   **Under test** line still has every assertion read through a locale.
 
    **On a `shared` env, confirm the target before anything is written:** echo the environment name,
    its base URL, the build it serves, whether it is production, and the scenarios that will create
@@ -438,7 +459,10 @@ name it at the top of the report. Write `qa-report.md` addressed to a **dev agen
 session** that has the spec context but not yours. For each open defect:
 
 - **Assertion id and what the spec requires** (with its requirement id).
-- **What you observed** — exact copy, URL, console/network error.
+- **What you observed** — exact copy, URL, console/network error, and, for a locale-dependent
+  assertion, the client identity it was observed under. The brief is addressed to a session driving
+  a *different* browser: a quoted string, date or amount with no locale beside it cannot be
+  reproduced there, and an irreproducible defect is closed as "works for me".
 - **Minimal repro** — the shortest path from a clean state.
 - **Blast radius** — money / legal / data / journey / cosmetic. Lead with the money and legal ones.
 - **What a fix must not break** — the assertions currently passing that the obvious fix would

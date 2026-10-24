@@ -93,6 +93,8 @@ An empty result (`[]`) is the goal. Anything returned is a new fix.
 
 If relevant, resize to 360–390px (`resize_window`) and re-screenshot to confirm no overflow. Check graceful/empty states (no data, error, loading) when they apply.
 
+Overflow is a function of string length, so it is **locale-dependent**: a row that fits in English breaks in German or Finnish. Name the language you resized in (`navigator.languages[0]`), and if the project ships others, say which ones you did not check rather than reporting the page as clear.
+
 ## Report
 
 End with a verification table — one row per TODO, with the proof:

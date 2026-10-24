@@ -108,7 +108,9 @@ recognises a re-occurrence instead of re-diagnosing it from scratch.
 
 Environment: `<name>` (`local` | `shared`). Subject: <account/fixture id>. Build observed:
 <branch/commit the env was serving, from its build-identity check — omit only when the plan has no
-**Under test:** line>. Path walked: <one line>.
+**Under test:** line>. Client observed: <language · timezone · number format the browser reported —
+the other half of the subject; always recorded, since every assertion was read through it>.
+Path walked: <one line>.
 
 | ID | Result | Evidence |
 |----|--------|----------|
