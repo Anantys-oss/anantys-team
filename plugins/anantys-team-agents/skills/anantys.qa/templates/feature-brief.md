@@ -30,7 +30,10 @@ implementation**: "an owner can renew a pending invitation", not "POST /invitati
 - **R2** …
 - **R3** …
 
-Mark the ones that touch **money / legal / data** — they become the blocker list.
+Mark the ones that touch **money / legal / data** — they become the blocker list, and a blocker
+clears only once observed to PASS. Note "blocker" (a release-stopping requirement) is a different
+word from the `BLOCKED` result below: a blocker nobody could reach is UNPROVEN and stops the
+release, so marking a requirement here is a commitment to find a way to observe it.
 
 ## What shipped
 

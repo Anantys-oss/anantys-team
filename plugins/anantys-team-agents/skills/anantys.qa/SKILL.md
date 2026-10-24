@@ -162,7 +162,9 @@ Resolve the source (see "Locating the feature"), then read it for the two roles 
   browser cannot reach), **not a FAIL**. Route every such item into the plan's §4 (Known gaps) and
   mark the assertions it covers `BLOCKED` with that reason, exactly as an adjudication would —
   skipping it makes the plan FAIL the very gaps it was told to expect, which is the case this whole
-  section exists to prevent. There is no Polish phase to drop. If a requirement carries no stable
+  section exists to prevent. `BLOCKED`-not-FAIL is a statement about the *defect list*, never about
+  the release: if such a gap sits under a blocker, that blocker opens UNPROVEN (§3) and stops the
+  release until someone observes it. Say which blockers start UNPROVEN when you show the list. There is no Polish phase to drop. If a requirement carries no stable
   id, assign one (`R1`, `R2`, …) and write it back into the **copy** (never the operator's original)
   — ids are referenced by runs, notes and reports forever.
 
@@ -444,9 +446,13 @@ session** that has the spec context but not yours. For each open defect:
 - **What a fix must not break** — the assertions currently passing that the obvious fix would
   regress. This is the part a fresh dev agent cannot know, and the reason over-fixes ship.
 
-Close with the release verdict: the blocker list, its status, and — explicitly — the assertions
-that were never observed. **Passing every blocker is not the same as having tested everything**;
-say which gaps a green list is hiding.
+Close with the release verdict: every blocker with its computed status — `PROVEN` (every assertion
+it names is PASS on every declared environment), `FAILED` (one is FAIL), `UNPROVEN` (one is BLOCKED
+or not run) per §3 of the plan — and, explicitly, the assertions that were never observed. The
+verdict is **ship** only when every blocker is PROVEN; a single UNPROVEN blocker withholds it just
+as a FAILED one does, and each UNPROVEN blocker gets the named human step that would prove it.
+**Passing every blocker is not the same as having tested everything**; say which gaps a green list
+is hiding.
 
 Tell the operator the file is ready to paste into a dev session. Do not open issues or PRs.
 
@@ -454,9 +460,11 @@ Tell the operator the file is ready to paste into a dev session. Do not open iss
 
 For the selected environment (`--env <name>`, else the most recent run's — say which), read
 `qa-plan.md` + `qa-runs.md` and report, without running anything: the progress table
-(PASS / DEFECT / BLOCKED / Not run), the blocker list with each blocker's status, the open
-defects, and the never-observed gaps. One short table, then the single sentence that answers
-"can this ship?".
+(PASS / DEFECT / BLOCKED / Not run), the blocker list with each blocker's computed status
+(`PROVEN` / `FAILED` / `UNPROVEN` — §3 of the plan), the open defects, and the never-observed gaps.
+One short table, then the single sentence that answers "can this ship?" — which is **yes only when
+every blocker is PROVEN**. Name the blockers that withhold it and whether each is FAILED or
+UNPROVEN; the two need different work from the operator (a fix versus a way to observe it).
 
 ---
 
@@ -508,6 +516,8 @@ whole number on its own; show a non-zero value below 1% as `<1%` (never `0%`) an
   life of the feature.
 - **Append runs, never overwrite them.** The history is what stops a fixed defect from being
   re-diagnosed six weeks later.
-- **BLOCKED is a real result.** Report it as loudly as a FAIL — an unreachable case is untested,
-  and a green blocker list that quietly contains one is worse than a red one.
+- **BLOCKED is a real result, and on a blocker it stops the release.** Report it as loudly as a
+  FAIL — an unreachable case is untested, and a green blocker list that quietly contains one is
+  worse than a red one. A blocker clears on PROVEN only; BLOCKED and not-run both leave it
+  UNPROVEN, which withholds the verdict exactly as a FAIL does.
 - Report what you actually observed. Never a PASS you inferred.
