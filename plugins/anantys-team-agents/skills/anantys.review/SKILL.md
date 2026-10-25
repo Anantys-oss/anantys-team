@@ -57,6 +57,17 @@ Go beyond "it compiles." Check, and report concisely:
 - **Conventions & safety** — matches the codebase's patterns? Any security/data-integrity/migration concern?
 - **Blind spots** — for a large or sensitive change, dispatch the `anantys.code-auditor` agent (fresh context) to surface what the agent *omitted* (implicit contracts, edge cases), and fold its findings in.
 
+> **Grant invariant for this step.** A subagent's `tools:` is resolved *against this
+> session's tool pool*, not against the full set: a tool this skill's `allowed-tools`
+> does not grant is dropped from the agent silently, and an empty intersection makes the
+> spawn fail outright ("would be spawned with zero tools — refusing"). So this skill's
+> `allowed-tools` must stay a **superset** of every agent it dispatches here.
+> `anantys.code-auditor` needs `Bash, Read, Glob, Grep` — all granted above; narrowing
+> that line narrows the auditor too, and it loses the `Grep` its "show the grep" proof
+> requirement depends on without saying so. `anantys.spec-tester` additionally needs
+> `Write, Edit`, which this skill does **not** grant — dispatch it from a full session,
+> or add those two tools here first.
+
 ### Step E — Recommend, then STOP
 Give one clear recommendation with a one-line rationale:
 - **Merge** — solid; merge into base, close PR, delete branch.
