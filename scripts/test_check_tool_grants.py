@@ -445,6 +445,16 @@ class Baseline(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertIn("fixed, so delete", report)
 
+    def test_a_widened_component_does_not_retire_its_declared_errors(self):
+        """Losing the grant key is not the fix landing — it is the opposite."""
+        self._declare(f"{self.OFFENCE}\n")
+        skill = self.root / "plugins/p/skills/s/SKILL.md"
+        skill.write_text("---\nname: s\n---\nDrive a browser.\n", encoding="utf-8")
+        code, report = self._run()
+        self.assertEqual(code, 0)
+        self.assertNotIn("fixed, so delete", report)
+        self.assertNotIn("ERROR", report)
+
 
 class SubjectSet(unittest.TestCase):
     """Which files the gate governs, which is not `plugins/*/`.
@@ -650,6 +660,45 @@ class FirstPartyTools(unittest.TestCase):
         tool the prose names would answer one edit twice, and loudly."""
         errors, _ = role([], "Use `WebFetch` and `WebSearch` here.")
         self.assertEqual([e for e in errors if "is not granted" in e], [])
+
+
+class WidestIsNotNarrowest(unittest.TestCase):
+    """`[]` loads as every tool, so no gap direction may report a shortage.
+
+    The guard above was written for the first-party direction alone. These are
+    the other four, each with the grant-holding control that proves the guard
+    suppresses the inversion and not the check: deleting `allowed-tools:` from
+    `anantys.ops` produced five errors prescribing the grants it had just made
+    redundant, plus a baseline row advising its own deletion.
+    """
+
+    BROWSER = "Drive a browser and call `tabs_context_mcp` on the dashboard."
+    SHELL = "Collect the run:\n\n```bash\nmkdir -p out\n```\n"
+    DISPATCH = "Hand the diff to anantys.code-auditor."
+
+    def test_a_named_browser_tool_is_no_gap_when_every_tool_is_held(self):
+        self.assertEqual(role([], self.BROWSER)[0], [])
+
+    def test_the_same_prose_is_a_gap_under_a_grant_list(self):
+        errors, _ = role(["Read"], self.BROWSER)
+        self.assertIn("prose uses browser tool `tabs_context_mcp` but it is not granted", errors)
+        self.assertIn("prose commits to driving a browser but grants no browser tool", errors)
+
+    def test_a_shell_command_is_no_gap_when_every_tool_is_held(self):
+        self.assertEqual(role([], self.SHELL)[0], [])
+
+    def test_the_same_command_is_a_gap_under_a_grant_list(self):
+        errors, _ = role(["Read"], self.SHELL)
+        self.assertIn("prose runs `mkdir -p out` but no Bash grant is granted", errors)
+
+    def test_a_dispatch_is_no_gap_when_every_tool_is_held(self):
+        self.assertEqual(role([], self.DISPATCH, ("anantys.code-auditor",))[0], [])
+
+    def test_the_same_dispatch_is_a_gap_under_a_grant_list(self):
+        errors, _ = role(["Read"], self.DISPATCH, ("anantys.code-auditor",))
+        self.assertIn(
+            "prose dispatches anantys.code-auditor but `Task` is not granted", errors
+        )
 
     def test_an_agent_toolset_is_read_the_same_way(self):
         errors, _ = agent(["Bash", "Read"], "Use `WebFetch` for the upstream doc.")

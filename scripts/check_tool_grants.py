@@ -383,10 +383,29 @@ def agent_scopes(grants):
 
 
 def check(path, grants, body, known_mcp, agents=(), is_agent=False):
+    """Every error below is a *gap* — prose needs what the grants withhold.
+
+    `parse` returns `[]` for an absent key and for an empty one, and both load
+    as every tool the session holds. A component with no grants therefore has
+    no gap to report: it is the widest thing in the tree, and each message
+    below would name a shortage and prescribe adding the grant the deletion
+    just made redundant. `check_platform` errors on that state by name.
+
+    The guard used to sit on one of the five gap directions, with `parse`'s
+    reasoning written beside it; the other four read the same `[]` and answered
+    the opposite. Deleting `allowed-tools:` from `anantys.ops` turned one
+    correct error into five inverted ones. One rule, one home — and one reading
+    of `[]`.
+
+    Nothing else is lost here: every remaining direction iterates `grants`, so
+    a void, unbounded or unmentioned grant needs a grant to exist at all.
+    """
     errors, warnings = [], []
     if is_agent:
         scope_errors, grants = agent_scopes(grants)
         errors += scope_errors
+    if not grants:
+        return errors, warnings
     lowered = body.lower()
     dispatched = sorted(a for a in agents if a in body)
 
@@ -398,21 +417,16 @@ def check(path, grants, body, known_mcp, agents=(), is_agent=False):
     for tool in sorted(mcp_used & known_mcp - mcp_granted):
         errors.append(f"prose uses browser tool `{tool}` but it is not granted")
 
-    # An empty grant list is not "holds nothing" here: `parse` returns it for an
-    # absent key too, which loads as every tool the session has. `check_platform`
-    # errors on that state by name, so running this comparison would answer the
-    # same edit twice — and would do it by reporting every tool the prose names.
-    if grants:
-        askable = FIRST_PARTY - {g.partition("(")[0] for g in grants} - {"Bash", "Task"}
-        # One error per tool, not per mention: a role names the tool it needs in
-        # every step that needs it, and twelve copies of one finding is a wall.
-        used = {
-            m.group(1)
-            for m in FIRST_PARTY_IN_PROSE.finditer(body)
-            if m.group(1) in askable and not WITHHELD.search(body[: m.start()])
-        }
-        for tool in sorted(used):
-            errors.append(f"prose uses `{tool}` but it is not granted")
+    askable = FIRST_PARTY - {g.partition("(")[0] for g in grants} - {"Bash", "Task"}
+    # One error per tool, not per mention: a role names the tool it needs in
+    # every step that needs it, and twelve copies of one finding is a wall.
+    used = {
+        m.group(1)
+        for m in FIRST_PARTY_IN_PROSE.finditer(body)
+        if m.group(1) in askable and not WITHHELD.search(body[: m.start()])
+    }
+    for tool in sorted(used):
+        errors.append(f"prose uses `{tool}` but it is not granted")
 
     # A role that says it drives a browser must be able to. Naming the tools is
     # optional in prose; having them is not.
@@ -557,6 +571,13 @@ def main(root):
             failed = True
             continue
         body, orphans = prose_surface(path, p[1])
+        # Retirement means "the fix landed", and a component that lost its grant
+        # key stopped matching for the opposite reason: `check` now has nothing
+        # to compare against. Advising deletion there is a destructive remedy —
+        # the record goes, and the declared error returns unbaselined the day a
+        # grant key does. Hold the rows; `check_platform` reports the widening.
+        if not p[0]:
+            matched |= {d for d in declared if d.startswith(f"{rel}: ")}
         errors, warnings = check(
             path, p[0], body, known_mcp, agents, path.parent.name == "agents"
         )
