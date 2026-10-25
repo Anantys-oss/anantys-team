@@ -36,6 +36,8 @@ write what the spec does support, and list the rest under **Not covered**.
 
 1. **Read the spec first, the code last.** Establish expected behavior from: the ticket/brief, acceptance criteria, API contract/schema, the spec doc — *before* opening the implementation. A **defect statement** is also a spec, scoped to one behavior: "after `<repro>`, `<observable>` MUST be `<expected>`; the bug produced `<observed>`." Treat it exactly like any other spec point — the expected value is authoritative, the fix that was just applied is not.
 2. **Write assertions from the spec's expected values**, computed independently. Never copy an expected value out of the implementation or a debugger ("change-detector" tests are forbidden). If the spec says "rounds half-up to 2 decimals", assert `2.46` for `2.455` because the spec says so — do not run the code to see what it returns and bless that.
+
+   Independently computed also means independently **fallible**. Rule 3 forbids the one cheap check on that number — running the code — so a slip in your own derivation is invisible to you, and it surfaces as a FAIL against code that is correct. **Derive each expected value twice, by different routes**, before it is allowed to accuse anything: the spec's own worked example if it has one, otherwise a second derivation — a different formula, a hand-walked case, the inverse operation. Record which route corroborated it.
 3. **Only read the implementation to discover the seams** — function names, signatures, import paths, how to instantiate/inject — never to decide what the *correct* output is.
 4. If the spec is ambiguous on a case, **list the ambiguity** and write the test against the most defensible interpretation, flagged with a comment, rather than silently matching the code.
 
@@ -55,7 +57,7 @@ write what the spec does support, and list the rest under **Not covered**.
    `UNRUN` — naming the target you could not verify. That suite is **not coverage**: no test in it
    has been shown able to fail. Dispatched, you cannot ask mid-run; an unverified target is a stop.
    Then report honestly:
-   - A test that **fails against current code** is a signal, not a bug in your work — surface it loudly: either the implementation is wrong, or the spec interpretation needs a human decision. Do NOT "fix" the test to make it pass.
+   - A test that **fails against current code** is a signal, not a bug in your work — surface it loudly: either the implementation is wrong, or the spec interpretation needs a human decision. Do NOT "fix" the test to make it pass. Both readings assume the expected value is right. A FAIL whose expectation you derived **once** has a third — *you computed it wrong* — and rule 2's second derivation is the only thing that rules it out, because rule 3 forbids the check that would. **Corroborate before filing.** An uncorroborated FAIL goes under Ambiguities as a derivation you could not confirm, never under ⚠️: that section is the one a human acts on, and a wrong number in it sends them to go read correct code.
    - A test that **errors** before asserting anything is not one outcome but two — classify it (4b) before you touch it.
    - A test that never ran at all, for any reason, still owes 4b's check: absence is decided by
      `Grep`, not by a result.
@@ -118,13 +120,15 @@ Run: ran `<exact command>`  |  NOT RUN — <target you could not confirm disposa
 - Could not confirm <target> disposable (<how you read it>). Run it yourself: <exact command>
 
 ### ⚠️ Tests failing against current implementation
-- <test name>: spec expects <X>, code produces <Y> at <file:line>.
+- <test name>: spec expects <X> (corroborated by <the spec's worked example | second derivation>), code produces <Y> at <file:line>.
   → Likely implementation bug OR spec ambiguity — needs a human decision. (Not auto-fixed.)
 - <test name>: MISSING — the spec requires <symbol / route / field>; it does not exist.
   → Test left erroring, not repointed. (4b)
 
 ### Ambiguities found in the spec
 - <case>: interpreted as <...> (flagged in test comment)
+- <case>: expects <X> by my derivation alone — nothing in the spec corroborates it, so the code's
+  <Y> may be right and the gap mine. Not filed as a defect; decide the value, then rerun.
 
 ### Not covered (and why)
 - <behavior> — <reason / needs spec clarification>
