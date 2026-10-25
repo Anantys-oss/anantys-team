@@ -147,6 +147,94 @@ class NotApplicable(Harness):
         self.assertEqual(self.run_check()[0], 0)
 
 
+class AgainstTheBaseline(Harness):
+    """A gap on the base is every branch's; only the one that opened it owes a fix.
+
+    Measured on 2026-10-25: without this split the gate reddened 104 of the 116 open
+    heads for three `anantys.qa` actions undocumented on `main`. The tmp tree is not a
+    git repo, so `merge_base` and `at` are the seam — the same seam
+    `test_check_plugins` uses.
+    """
+
+    def baseline(self, readme: str | None, **skills: str) -> None:
+        """Hold `README.md` and each named `SKILL.md` body at a merge base that exists."""
+        self.addCleanup(setattr, cda, "merge_base", cda.merge_base)
+        self.addCleanup(setattr, cda, "at", cda.at)
+        cda.merge_base = lambda: "base"
+        held = {self.root / "README.md": readme} | {
+            self.root / "plugins" / "pack" / "skills" / name / "SKILL.md": body
+            for name, body in skills.items()
+        }
+        cda.at = lambda commit, path: held.get(path)
+
+    def test_gap_already_at_the_baseline_warns(self) -> None:
+        self.skill("anantys.qa", "init", "status")
+        self.readme("/anantys.qa init")
+        self.baseline(
+            "# pack\n\n```bash\n/anantys.qa init\n```\n",
+            **{"anantys.qa": TABLE.format(rows="| `init` | does init |\n| `status` | does status |")},
+        )
+        rc, out = self.run_check()
+        self.assertEqual(rc, 0)
+        self.assertIn("`status`", out)
+        self.assertIn("not this branch's to fix", out)
+        self.assertIn("0 error(s), 1 warning(s)", out)
+
+    def test_action_this_branch_added_errors(self) -> None:
+        """Same README on both sides; the table grew here, so the gap is this branch's."""
+        self.skill("anantys.qa", "init", "status")
+        self.readme("/anantys.qa init")
+        self.baseline(
+            "# pack\n\n```bash\n/anantys.qa init\n```\n",
+            **{"anantys.qa": TABLE.format(rows="| `init` | does init |")},
+        )
+        rc, out = self.run_check()
+        self.assertEqual(rc, 1)
+        self.assertIn("`status`", out)
+        self.assertNotIn("not this branch's to fix", out)
+
+    def test_line_this_branch_removed_from_the_readme_errors(self) -> None:
+        """The table is unchanged; the reference lost the command, so the branch owns it."""
+        self.skill("anantys.qa", "init", "status")
+        self.readme("/anantys.qa init")
+        table = TABLE.format(rows="| `init` | does init |\n| `status` | does status |")
+        self.baseline(
+            "# pack\n\n```bash\n/anantys.qa init\n/anantys.qa status\n```\n",
+            **{"anantys.qa": table},
+        )
+        self.assertEqual(self.run_check()[0], 1)
+
+    def test_skill_absent_from_the_baseline_owns_every_gap(self) -> None:
+        """A skill this branch introduced has no inherited gaps — `at` returns None."""
+        self.skill("anantys.ops", "audit")
+        self.readme("/anantys.qa init")
+        self.baseline("# pack\n\n```bash\n/anantys.qa init\n```\n")
+        rc, out = self.run_check()
+        self.assertEqual(rc, 1)
+        self.assertIn("`audit`", out)
+
+    def test_no_merge_base_keeps_every_gap_an_error(self) -> None:
+        """Unattributable is not absolved: the standing finding is still reported."""
+        self.addCleanup(setattr, cda, "merge_base", cda.merge_base)
+        cda.merge_base = lambda: None
+        self.skill("anantys.qa", "status")
+        self.readme("/anantys.qa init")
+        rc, out = self.run_check()
+        self.assertEqual(rc, 1)
+        self.assertIn("no merge base", out)
+        self.assertIn("`status`", out)
+
+    def test_clean_tree_reads_no_baseline_at_all(self) -> None:
+        """Nothing to attribute, so no git call and no warning about one."""
+        self.addCleanup(setattr, cda, "merge_base", cda.merge_base)
+        cda.merge_base = lambda: self.fail("baseline read on a tree with no gap")
+        self.skill("anantys.qa", "init")
+        self.readme("/anantys.qa init")
+        rc, out = self.run_check()
+        self.assertEqual(rc, 0)
+        self.assertIn("0 error(s), 0 warning(s)", out)
+
+
 class Extraction(unittest.TestCase):
     """`invocation()` against lines written out, never against lines it built."""
 

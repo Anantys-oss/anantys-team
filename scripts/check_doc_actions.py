@@ -28,10 +28,23 @@ same skill, one of them live in this queue — so the match is on the final segm
 and `SPELLINGS` proves the extractor against lines written out literally rather than
 against lines built by the same split the extractor applies.
 
+A gap is an error only when this branch opened it. The three `anantys.qa` actions
+this gate was written from are undocumented *on `main`*, so every branch inherits
+them: overlaying these scripts onto each open head (`scripts/gate_matrix.py`) on
+2026-10-25 reddened 104 of 116 for a README nobody in the queue had touched, and the
+gate was green on exactly one head — the one that also edited the README. A gate
+wired into `pull_request` that fails on the base it merges into blocks the whole
+queue and names no remedy any single branch can reach, which is why `check_plugins`,
+`check_tool_grants` and `check_mcp_grants` all price inherited debt separately. So
+does this one, by the same mechanism: the gap set is recomputed at the merge base and
+a gap found there too is a warning. With no merge base nothing is attributable, and
+every gap stays an error — that is a lost distinction, not a pass.
+
 Exit 0 = clean (warnings allowed), 1 = at least one error.
 """
 
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -102,20 +115,67 @@ def fenced(text: str) -> list[str]:
     return out
 
 
-def actions(skill: Path) -> list[str]:
+def merge_base() -> str | None:
+    """The commit the working tree departs from, or ``None`` when git cannot say.
+
+    ``None`` is not a pass: the standing finding is still reported, and only the
+    ability to attribute it to the branch under review is lost.
+    """
+    for ref in ("origin/main", "main"):
+        try:
+            done = subprocess.run(
+                ["git", "merge-base", "HEAD", ref],
+                cwd=ROOT, capture_output=True, text=True, timeout=10,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return None
+        if done.returncode == 0 and done.stdout.strip():
+            return done.stdout.strip()
+    return None
+
+
+def at(commit: str, path: Path) -> str | None:
+    """``path``'s content at ``commit``, or ``None`` when it was not there."""
+    done = subprocess.run(
+        ["git", "show", f"{commit}:{path.relative_to(ROOT)}"],
+        cwd=ROOT, capture_output=True, text=True,
+    )
+    return done.stdout if done.returncode == 0 else None
+
+
+def actions(body: str) -> list[str]:
     """Canonical actions from the `## Actions` table: the first-column code span per row.
 
-    The table is the canonical list on purpose. `anantys.qa` names `testplan` in prose
-    below it as "the action's former name — still accepted"; an alias kept for people
-    who already typed it is not something the README owes a line, and requiring one
-    would make every deprecation a documentation error.
+    Takes the file's *text*, not its path, so the same rule reads the working tree and
+    the merge base. The table is the canonical list on purpose: `anantys.qa` names
+    `testplan` in prose below it as "the action's former name — still accepted"; an
+    alias kept for people who already typed it is not something the README owes a line,
+    and requiring one would make every deprecation a documentation error.
     """
-    body = skill.read_text(encoding="utf-8")
     block = re.search(r"^## Actions\b(.*?)(?=^## |\Z)", body, re.MULTILINE | re.DOTALL)
     if block is None:
         return []
     found = re.findall(r"^\|\s*`([^`]+)`\s*\|", block.group(1), re.MULTILINE)
     return [a for a in dict.fromkeys(found) if re.fullmatch(r"[\w-]+", a)]
+
+
+def gaps(readme: str | None, skills: list[tuple[str, str]]) -> set[tuple[str, str]]:
+    """`(skill directory, action)` for every table row no README command block shows.
+
+    One function for both trees, so "was this gap already here?" is answered by the
+    rule that reports it rather than by a second, drifting copy of it.
+    """
+    documented = {
+        (skill, action)
+        for skill, action in map(invocation, fenced(readme or ""))
+        if skill and action
+    }
+    return {
+        (name, action)
+        for name, body in skills
+        for action in actions(body)
+        if (tail(name), action) not in documented
+    }
 
 
 def main(argv: list[str] = ()) -> int:
@@ -139,28 +199,41 @@ def main(argv: list[str] = ()) -> int:
     readme = ROOT / README
     if not readme.is_file():
         warnings.append(f"no {README} — there is no reference to check the tables against")
-        documented: set[tuple[str, str]] = set()
-    else:
-        documented = {
-            (skill, action)
-            for skill, action in map(invocation, fenced(readme.read_text(encoding="utf-8")))
-            if skill and action
-        }
 
-    tables = 0
-    for skill in sorted((ROOT / PLUGINS).glob("*/skills/*/SKILL.md")):
-        declared = actions(skill)
-        if not declared:
-            continue
-        tables += 1
-        name = tail(skill.parent.name)
-        for action in declared:
-            if (name, action) not in documented:
-                errors.append(
-                    f"{skill.parent.name}: action `{action}` is in the Actions table and in "
-                    f"no {README} command block — the block is the only invocation reference "
-                    f"a reader sees before install, so the action is unreachable"
-                )
+    paths = sorted((ROOT / PLUGINS).glob("*/skills/*/SKILL.md"))
+    here = [(p.parent.name, p.read_text(encoding="utf-8")) for p in paths]
+    tables = sum(1 for _, body in here if actions(body))
+
+    shown = readme.read_text(encoding="utf-8") if readme.is_file() else None
+    found = gaps(shown, here)
+
+    # Only a tree with a gap has anything to attribute, so the baseline is read only
+    # then: a clean tree must not spend two `git` calls to say nothing, nor warn about
+    # a distinction that would change no verdict.
+    inherited: set[tuple[str, str]] = set()
+    base = merge_base() if found else None
+    if found and base is None:
+        warnings.append(
+            "no merge base, so no gap below is attributable to this branch — each is "
+            "reported as an error, inherited ones included"
+        )
+    elif base is not None:
+        before = ((p.parent.name, at(base, p)) for p in paths)
+        inherited = gaps(at(base, readme), [(n, b) for n, b in before if b is not None])
+
+    for name, action in sorted(found):
+        finding = (
+            f"{name}: action `{action}` is in the Actions table and in "
+            f"no {README} command block — the block is the only invocation reference "
+            f"a reader sees before install, so the action is unreachable"
+        )
+        if (name, action) in inherited:
+            warnings.append(
+                f"{finding} — undocumented at the merge base too, so not this branch's "
+                f"to fix; it is owned by the change that documents the action"
+            )
+        else:
+            errors.append(finding)
 
     # No table is not a clean tree, it is an unmeasured one: every skill here could have
     # grown subcommands in prose instead, and this gate would print nothing and exit 0.
