@@ -32,6 +32,8 @@ import sys
 from itertools import takewhile
 from pathlib import Path
 
+from loader_grants import grant_tokens
+
 FRONTMATTER = re.compile(r"\A---\n(.*?)\n---\n(.*)\Z", re.S)
 # "you do not dispatch it", "never invoke `x`" — the prose declining the dispatch.
 # The agent must be the *object* of the negated verb. A bare negated verb is not a
@@ -89,8 +91,9 @@ def parse(path):
             field = line.split(":", 1)[1].strip() or (",".join(items) or None)
     if field is None:
         return name, None, m.group(2)
-    # agents write tools: ["Bash", "Read"]; skills write a bare comma list
-    grants = {g.strip().strip('"[]') for g in field.split(",")}
+    # agents write tools: ["Bash", "Read"]; skills write the list on the key.
+    # Split with the loader's rule, not comma-only: see `loader_grants`.
+    grants = {g.strip('"[]') for g in grant_tokens(field)}
     return name, grants - {""}, m.group(2)
 
 

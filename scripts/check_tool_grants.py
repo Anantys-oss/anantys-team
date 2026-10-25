@@ -65,6 +65,8 @@ import sys
 from itertools import takewhile
 from pathlib import Path
 
+from loader_grants import grant_tokens
+
 # Grants that are inherently generic — never reported as unreferenced.
 GENERIC = {"Bash", "Read", "Write", "Edit", "Glob", "Grep"}
 
@@ -188,8 +190,12 @@ def parse(path):
             field = line.split(":", 1)[1].strip() or ",".join(items)
     if field is None:
         return [], m.group(2)
-    # agents use tools: ["Bash", "Read"]; skills use a bare comma-separated list
-    grants = [g.strip().strip('"[]') for g in field.split(",")]
+    # agents use tools: ["Bash", "Read"]; skills write the list on the key.
+    # `grant_tokens` is the loader's own split — commas *and* spaces outside
+    # parentheses — so one missing comma reaches `has_bare_bash` below as the
+    # bare `Bash` it actually loads as, instead of an opaque middle token that
+    # no check in this file matches.
+    grants = [g.strip('"[]') for g in grant_tokens(field)]
     return [g for g in grants if g], m.group(2)
 
 

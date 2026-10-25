@@ -89,6 +89,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from loader_grants import grant_tokens
+
 ROOT = Path(__file__).resolve().parent.parent
 
 # The loader's own vocabulary, read off its frontmatter schemas in the 2.1.278
@@ -274,13 +276,14 @@ def check_component(path: Path, known: frozenset[str], tools_key: str) -> None:
             "narrowing a reader sees in its prose"
         )
     else:
-        # Split on commas and line breaks only — a scoped grant is one token even
-        # when it holds a space (`Bash(git diff:*)`). Splitting on whitespace
-        # instead is how a grant checker comes to reject every narrowed grant it
-        # was written to encourage.
+        # The loader ends a token at a comma *or* a space and suspends both inside
+        # `(...)`, so a scoped grant survives the split and `Bash (git diff:*)` —
+        # one comma short — does not: it is two tokens, the first of them bare
+        # `Bash`. Replacing the quote characters with spaces before the split was
+        # safe only while space was not a separator; `grant_tokens` strips them
+        # per token instead. See `loader_grants` for the shipped tokenizer.
         value = re.sub(r"^[ \t]*-[ \t]*", "", declared, flags=re.MULTILINE)
-        value = re.sub(r"[\[\]\"']", " ", value)
-        tools = [t.strip() for t in re.findall(r"[^,\n]*\([^)]*\)|[^,\n]+", value)]
+        tools = [t.strip("[]\"'") for t in grant_tokens(value)]
         tools = [t for t in tools if t]
         if not tools:
             # A key with nothing under it reads exactly like no key at all, so

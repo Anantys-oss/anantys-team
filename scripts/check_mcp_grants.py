@@ -77,6 +77,8 @@ import sys
 import time
 from pathlib import Path
 
+from loader_grants import grant_tokens
+
 BASELINE = Path(__file__).with_name("mcp-grants-baseline.txt")
 
 #: Pages of `tools/list` this gate will follow before calling the server unprobed.
@@ -347,9 +349,11 @@ def grants_of(path: Path) -> list[str]:
     """The last-declared `allowed-tools:`/`tools:` value of a role file, as tokens.
 
     Last, not first: YAML resolves a repeated key to its final occurrence.
-    Split on commas and line breaks only — a scoped grant holds a space
-    (`Bash(git diff:*)`) and is one token. A file with no readable frontmatter
-    yields nothing; `check_platform.py` owns that error.
+    Split with `loader_grants.grant_tokens`: the loader ends a token at a comma
+    *or* a space, and suspends both inside `(...)`, so a scoped grant stays one
+    token without the field also swallowing the tool that follows a missing
+    comma. A file with no readable frontmatter yields nothing;
+    `check_platform.py` owns that error.
     """
     text = path.read_text(encoding="utf-8")
     if not text.startswith("---\n"):
@@ -361,7 +365,7 @@ def grants_of(path: Path) -> list[str]:
     if not found:
         return []
     raw = found[-1].strip().strip("[]")
-    return [t.strip().strip("\"'- ") for t in re.split(r"[,\n]", raw) if t.strip(" -\"'")]
+    return [t.strip("\"'- ") for t in grant_tokens(raw) if t.strip(" -\"'")]
 
 
 def baseline() -> set[str]:

@@ -394,6 +394,18 @@ class BareBashCoverage(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertNotIn("grant bare `Bash`", report)
 
+    def test_one_comma_short_is_reported_as_the_bare_grant_it_loads_as(self):
+        """`Bash (git log:*)` is `Bash` plus junk to the loader, so to the census too.
+
+        Under comma-only splitting this field held one token that matched
+        neither `"Bash"` nor `Bash(`, and the role left the census — the
+        measurement whose only job is to find unrestricted shell — silent
+        about a role that holds it.
+        """
+        code, report = self._run("Read, Bash (git log:*), Grep")
+        self.assertEqual(code, 0)
+        self.assertIn("1/1 roles grant bare `Bash`", report)
+
 
 class Baseline(unittest.TestCase):
     """A gate must be introducible green while its violations still exist."""
@@ -541,6 +553,12 @@ class Parse(unittest.TestCase):
     def test_a_block_item_holding_a_space_stays_one_grant(self):
         p = self._write("---\nallowed-tools:\n  - Bash(git diff:*)\n---\nbody\n")
         self.assertEqual(c.parse(p), (["Bash(git diff:*)"], "body\n"))
+
+    def test_a_space_outside_the_parentheses_is_a_separator(self):
+        p = self._write("---\nallowed-tools: Read, Bash (git log:*), Grep\n---\nbody\n")
+        self.assertEqual(
+            c.parse(p), (["Read", "Bash", "(git log:*)", "Grep"], "body\n")
+        )
 
     def test_the_block_read_stops_at_the_next_key(self):
         p = self._write("---\ntools:\n  - Bash\nmodel: opus\n---\nbody\n")

@@ -110,6 +110,16 @@ class CheckPlatform(unittest.TestCase):
         narrowed = "allowed-tools: Bash(git diff:*), Bash(gh pr view:*), Read"
         self.assertEqual(self.check(GOOD_SKILL.replace(GOOD_SKILL.splitlines()[3], narrowed)), [])
 
+    def test_the_space_outside_the_parentheses_is_still_a_separator(self) -> None:
+        # The other half of the rule above. The loader suspends both separators
+        # inside `(...)` — it does not stop splitting on space — so one comma
+        # short is `Bash` plus an unlookupable `(git log:*)`, and the error must
+        # name the token the loader actually drops rather than the whole field.
+        short = "allowed-tools: Read, Bash (git log:*), Grep"
+        found = self.check(GOOD_SKILL.replace(GOOD_SKILL.splitlines()[3], short))
+        self.assertEqual(len(found), 1)
+        self.assertIn("`(git log:*)` is not a well-formed tool identifier", found[0])
+
     def test_block_sequence_grants_are_still_checked(self) -> None:
         # The form a 500-character grant line invites. Read only the key's own
         # line and the value is the empty string: nothing is iterated, and the
