@@ -26,3 +26,4 @@ jobs:
       # buy that half back — `platform.yml` is the workflow that installs it, and
       # the one place that decision belongs.
       - run: python3 scripts/check_mcp_grants.py
+      - run: python3 scripts/check_plugin_agents.py

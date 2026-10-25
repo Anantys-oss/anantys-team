@@ -125,6 +125,21 @@ def prose_surface(path, body):
     return "\n\n".join(parts), warnings
 
 
+def names(block, agent):
+    """Does `block` name `agent` as the thing to dispatch, in either spelling?
+
+    A plugin agent is registered as `plugin:name` and is dispatchable only under
+    that string, so a role that spells the dispatch correctly writes the prefix.
+    Matching the bare form alone would read the correct spelling as no dispatch
+    and silently drop the grant union for it — this gate would go quiet on
+    exactly the roles that fixed their names. *Which* spelling a block must use
+    is `check_plugin_agents`' rule, not this one. This is only the two readings
+    of the same name, and both gates take it from here so they cannot disagree
+    about whether a given sentence is a dispatch.
+    """
+    return bool(re.search(rf"`(?:[\w.-]+:)*{re.escape(agent)}`", block))
+
+
 def declines(block, agent):
     """Does `block` say that this skill does not dispatch `agent`?"""
     return bool(re.search(DECLINED_TEMPLATE.format(agent=re.escape(agent)), block, re.I))
@@ -165,7 +180,7 @@ def check(skills, agents):
     for name, grants, body in skills:
         blocks = BLOCK.split(body)
         for agent, agent_grants in sorted(agents.items()):
-            named = [b for b in blocks if f"`{agent}`" in b]
+            named = [b for b in blocks if names(b, agent)]
             if not named:
                 continue
             dispatched.add(agent)

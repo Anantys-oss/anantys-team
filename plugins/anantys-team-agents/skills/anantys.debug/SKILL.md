@@ -114,7 +114,9 @@ You just wrote the fix. A regression test you write now is scored against **your
 hypothesis**: it encodes what your diff does, passes by construction, and would not have
 caught the bug. Dispatch the **`anantys.spec-tester`** agent instead and give it the defect
 spec from step 3 — the observable, its expected value, the value the bug produced, and the
-repro — as the source of truth. It may read the code for seams; it must not read your diff
+repro — as the source of truth. Installed as a plugin its agent type is
+`anantys-team-agents:anantys.spec-tester`; the bare name is only its spelling loose in
+`.claude/agents/`. It may read the code for seams; it must not read your diff
 to decide what "correct" is:
 
 > Regression test for `<observable>`. Spec: after `<repro>`, `<observable>` MUST be
@@ -153,7 +155,7 @@ got, Fix is empty, and Re-proof lists each hypothesis with the observation that 
 - **Root cause over symptom** — read the runtime state, don't pattern-match.
 - One hypothesis per iteration; wrong ones are expected, unverified ones are not.
 - **You don't write your own regression test** — the context that produced the fix cannot
-  independently test it. Hand the defect spec to `anantys.spec-tester`.
+  independently test it. Hand the defect spec to `anantys-team-agents:anantys.spec-tester`.
 - **UNRESOLVED is a result, not a failure** — three rejected hypotheses with no new signal, or a
   blocker you must not work around, ends the loop. Never buy an exit by lowering the bar for proof.
 - **A rejected hypothesis is reverted where it was rejected** — in step 4, before the next one, not
