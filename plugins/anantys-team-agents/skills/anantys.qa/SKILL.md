@@ -23,7 +23,7 @@ Invoked as `/anantys.qa <action> [args]`. If no action is given, infer it: no `.
 | `init` | Interview the operator and write `.anantys/qa.md` — the project's environment contract |
 | `plan` | Derive `qa-plan.md` from the feature source: a spec-kit dir, a `--brief <file.md>`, `--from linear:<SKU-…>`, or `--from pr:<url>` |
 | `run` | Execute the plan in a browser — `--env <name>` targets a deployed environment (staging / preview); default is the environment marked default — recording results and appending to `qa-runs.md`. Runs **autonomous** (whole plan, report at the end) or **interactive** (stop at the first DEFECT, print the fix brief) — asked once per session, or `--mode <autonomous\|interactive>` |
-| `retest` | Re-run only what is unresolved plus the regression-risk cases around each fix (`--env <name>` as for `run`) |
+| `retest` | Re-run only what is unresolved plus the regression-risk cases around each fix (`--env <name>` as for `report` — the last run's environment, not the default) |
 | `note` | Record an operator adjudication into the plan so it is never re-filed — scoped to one environment (`--env <name>`) or to `--env all` |
 | `report` | Emit `qa-report.md` — a fix brief to paste into a dev session (`--env <name>`; default: the last run's environment) |
 | `status` | Summarize coverage and remaining blockers without running anything (`--env` as for `report`) |
@@ -245,11 +245,18 @@ legacy file included — is driven by the operator's connected browser.
 Select one with `--env <name>` on any action that reads or writes results — `run`, `retest`,
 `note`, `status`, `report` (`/anantys.qa run --env staging`). With none:
 
-- `run` / `retest` use the environment marked **default**, whatever its kind — normally the `local`
-  one. A contract with no `local` environment must mark a `shared` one default; a bare `run` then
-  targets it, pre-write confirmation included.
-- `status` / `report` / `note` use **the environment of the most recent run** in `qa-runs.md` (the
-  default if there is none) — so `run --env staging` followed by a bare `report` reports staging.
+- `run` uses the environment marked **default**, whatever its kind — normally the `local` one. A
+  contract with no `local` environment must mark a `shared` one default; a bare `run` then targets
+  it, pre-write confirmation included.
+- `retest` / `status` / `report` / `note` use **the environment of the most recent run** in
+  `qa-runs.md` (the default if there is none) — so `run --env staging` followed by a bare `report`
+  reports staging, and a bare `retest` retests staging. `retest` follows the results rather than the
+  default because its subset *is* a set of results: scoped to an environment the campaign never ran
+  on, step 1 finds no FAIL and no BLOCKED, the subset is empty, and a just-fixed staging defect
+  reads as nothing left to do. And since the default is normally the `local` one, the pass the
+  operator ran to verify a staging fix would reset the local stack (`run` step 2) and re-walk stale
+  local failures instead. Say which environment you selected before computing the subset; `--env
+  <name>` to retest another one.
   **A run header that names no environment** (a `qa-runs.md` written before environments existed)
   **is a run on the default environment.**
 
