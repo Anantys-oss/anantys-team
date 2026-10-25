@@ -69,6 +69,12 @@ Then **wait for the user's decision.** Do not act on Merge/Close until they conf
 
 ## Acting on the decision (only after explicit confirmation)
 
+This section always runs in the turn *after* a user message, and this skill's
+`disallowed-tools` deny does not survive that message — it is turn-scoped, and the reset
+is blind to what the user actually said. Nothing below is mechanically blocked, whether
+the user confirmed, refused, or changed the subject. Re-read the decision you were handed
+and act only on the one the user named.
+
 - **Merge:** `git checkout <base> && git merge <branch> --no-edit`, then `gh pr close <n> --comment "Merged into <base>." --delete-branch` and `git branch -D <branch>`. Remind the user to `git push origin <base>` — **you do not push**.
 - **Close:** `gh pr close <n> --comment "<reason>" --delete-branch` and `git branch -D <branch>`.
 - **Skip:** return to base, leave the branch untouched.
