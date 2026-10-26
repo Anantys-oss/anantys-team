@@ -79,6 +79,11 @@ anantys-team/
 - **marketplace** = the catalog (the repo you add).
 - **plugin** = the installable, versioned unit a user enables in one shot.
 - **skills** = the actual capabilities Claude invokes.
+- **`$ARGUMENTS` can be used, not named.** The loader substitutes *every* occurrence in a
+  `SKILL.md` body with the invocation's argument text, so a role that mentions the placeholder
+  in prose gets that sentence rewritten around the user's whole argument string. Write `\$ARGUMENTS`
+  to refer to it literally, or point at the block that holds it. A body with no live placeholder is
+  not deprived of the arguments — the loader appends them as a trailing `ARGUMENTS: <text>` line.
 
 ## License
 

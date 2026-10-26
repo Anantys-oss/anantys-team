@@ -128,4 +128,4 @@ Rules for `current.md`: always overwrite the whole file (it is a snapshot; the j
 - **Prioritize by impact** toward the stated traffic goal — compute the gap (e.g. "+60 daily visitors needed — where do they come from?").
 - If a service requires login and you can't access data, note it clearly and proceed with what's available. Never invent metrics.
 - Take screenshots at each phase to document the audit trail.
-- If the user provided extra queries/focus areas in $ARGUMENTS, fold them into the relevant phases.
+- If the user provided extra queries/focus areas in the **User Input** block above, fold them into the relevant phases.
