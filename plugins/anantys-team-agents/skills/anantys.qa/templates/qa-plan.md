@@ -11,7 +11,7 @@ It is a **runnable campaign, not a reading list**: worked top to bottom, one ass
 Derived from [`tasks.md`](./tasks.md) (what is built) and [`spec.md`](./spec.md) (what each case
 cites). Environment: [`.anantys/qa.md`](../../.anantys/qa.md). Runs: [`qa-runs.md`](./qa-runs.md).
 
-**Under test:** <branch> @ <head commit> — <environment> (pr: <ref>). Every campaign records the
+**Under test:** <branch> @ <head commit> — <environment> (pr: <full PR url>). Every campaign records the
 branch and commit it was derived from here — a `--from pr:` head, or, for a spec-kit dir, the
 checkout the spec lives in — and `run` verifies the environment is actually serving that code
 before walking a single scenario: a plan built from an unmerged branch, run against a stack serving

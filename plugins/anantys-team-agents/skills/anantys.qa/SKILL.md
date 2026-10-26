@@ -62,8 +62,9 @@ matter how the plan was derived.
    invent requirements; if the session has no tracker access, say so and ask for a `--brief`. From
    there it is identical to `--brief`.
 4. **`--from pr:<url>[,<url>…]`** — the same adapter, for a feature that is ready as one or more
-   GitHub pull requests. Accepts full URLs, bare `#42`, or `owner/repo#42`. Assemble the same brief
-   with `gh` (see "`--from pr:`" below) and **confirm it before proceeding**. Writes to
+   GitHub pull requests. Accepts a full URL, or a number (`42` / `#42`) for a PR in the current
+   repo; a PR in **another** repo must be given as its full URL (see "`--from pr:`" below).
+   Assemble the same brief with `gh` and **confirm it before proceeding**. Writes to
    `.anantys/qa/<slug>/brief.md`; that directory is the feature directory.
 
 **The `<slug>`** is a stable kebab-case name, so a re-run reuses the same directory instead of
@@ -187,7 +188,8 @@ and write the `**Under test:**` line below if the existing plan has none, which 
 a plan predating that rule can gain one.
 
 **Every plan carries an `**Under test:**` line — one of two forms, never nothing.** Write it as
-`**Under test:** <branch> @ <head commit> — <environment>` (plus `pr: <ref>` for a PR source).
+`**Under test:** <branch> @ <head commit> — <environment>` (plus `pr: <url>` for a PR source — the
+resolved URL, never a bare number: `run` re-reads it from a checkout that may not be this repo).
 Record the head **commit**, not only the branch: once the PR merges, `run` can only recognise the
 shipped code by commit ancestry (step 1). `run` reads `qa-plan.md`, never the brief, so a
 precondition that lives only in the brief is never enforced: a PR-derived campaign would run green
@@ -210,6 +212,14 @@ Show the operator the scenario list and the blocker list before writing.
 
 ### `--from pr:` — assembling the brief from pull requests
 
+**Resolve each ref to a URL first** (`gh pr view <ref> --json url`), and use that URL as `<ref>`
+from here on — the plan's `pr:` field included, since `run` re-reads it later from a checkout that
+may not be this repo. `gh pr view` takes only a URL or a number; **anything else it reads as a
+branch name**, so an `owner/repo#42`-shaped ref fails with `no pull requests found for branch
+"owner/repo#42"` — indistinguishable from *that PR does not exist*. Believe it and you send the
+operator to the fallback below to hand-write a brief for a PR that was readable all along. A number
+means the current repo; another repo needs the URL, or `-R owner/repo`, which `<ref>` cannot carry.
+
 Per PR, read `gh pr view <ref> --json title,body,state,mergedAt,headRefName,headRefOid,mergeCommit,closingIssuesReferences,comments,reviews`
 and `gh pr diff <ref> --name-only`. Several PRs assemble into **one** brief. Four rules make the
 result a QA source rather than a diff summary:
@@ -231,7 +241,8 @@ result a QA source rather than a diff summary:
 
 Write the assembled brief to `.anantys/qa/<slug>/brief.md` and **confirm it with the operator
 before proceeding** — the requirements list especially. From there it is a `--brief`. If `gh` is
-unavailable or the PR is not accessible, say so and ask for a `--brief` instead.
+unavailable or the PR is not accessible, say so and ask for a `--brief` instead — but only after
+the ref resolved; an unparseable ref is not an inaccessible PR.
 
 ## Environments — `local` vs `shared` (staging / preview / prod)
 
