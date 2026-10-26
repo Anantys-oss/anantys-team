@@ -24,6 +24,7 @@ context:
   scaffold_script: scaffold.sh
 execution:
   max_turns: 25
+  timeout_seconds: 420
   allowed_tools: [Skill, Bash, Read, Write]
   prompt: >
     Do the thing.
@@ -69,6 +70,12 @@ GOOD_README = """\
 | Case | Witness |
 |------|---------|
 | `a-case` | `the-workspace-survived` |
+
+| Field | Floor | Why this number |
+|-------|-------|-----------------|
+| `max_turns` | `20` | a case that stops inside it |
+| `timeout_seconds` | `420` | uniform across the suite |
+| `runs` | `3` | one sample is not a behaviour |
 """
 
 GOOD_SCAFFOLD = """\
@@ -538,6 +545,115 @@ class TestVectorTable(unittest.TestCase):
     def test_a_row_without_an_em_dash_is_not_a_vector_row(self):
         row = "| `plain` | `cell` | `cell` |"
         self.assertEqual(check_evals.parse_vector_table(row), {})
+
+
+class TestBudgetFloors(unittest.TestCase):
+    """A run that does not finish errors, and an errored run scores by absence.
+
+    The loader rejects `0` for each of these three fields and accepts `1`, so
+    `max_turns: 1` is the same crash as `max_turns: 0` in a spelling the schema
+    likes.
+    """
+
+    def test_the_good_fixture_sits_on_or_above_every_floor(self):
+        with SuiteFixture() as fixture:
+            self.assertEqual(
+                [e for e in fixture.errors() if "floor" in e or e.endswith("by 0")],
+                [],
+            )
+
+    def test_a_turn_budget_below_the_floor_is_caught(self):
+        case = GOOD_CASE.replace("max_turns: 25", "max_turns: 1")
+        with SuiteFixture(case=case) as fixture:
+            self.assertTrue([e for e in fixture.errors() if "below the floor" in e])
+
+    def test_a_timeout_below_the_floor_is_caught(self):
+        case = GOOD_CASE.replace("timeout_seconds: 420", "timeout_seconds: 1")
+        with SuiteFixture(case=case) as fixture:
+            self.assertTrue([e for e in fixture.errors() if "below the floor" in e])
+
+    def test_a_single_run_is_not_a_behaviour(self):
+        case = GOOD_CASE.replace("runs: 3", "runs: 1")
+        with SuiteFixture(case=case) as fixture:
+            self.assertTrue([e for e in fixture.errors() if "below the floor" in e])
+
+    def test_a_missing_budget_field_is_the_harness_default(self):
+        case = GOOD_CASE.replace("  timeout_seconds: 420\n", "")
+        with SuiteFixture(case=case) as fixture:
+            self.assertTrue([e for e in fixture.errors() if "no timeout_seconds" in e])
+
+    def test_a_floor_the_readme_stops_declaring_is_an_error(self):
+        readme = "\n".join(
+            line for line in GOOD_README.splitlines() if "| `max_turns` |" not in line
+        )
+        with SuiteFixture(readme=readme) as fixture:
+            self.assertTrue(
+                [e for e in fixture.errors() if "no floor row for 'max_turns'" in e]
+            )
+
+    def test_the_floor_table_is_not_read_as_a_witness_row(self):
+        # Three cells, so `parse_witness_table`'s two-cell shape skips it; one
+        # code span in the first cell, so the vector table's two-span head does
+        # too. A floor row misread as a witness row hands the case a witness
+        # named `20`.
+        self.assertEqual(
+            check_evals.parse_witness_table(GOOD_README),
+            {"a-case": "the-workspace-survived"},
+        )
+        self.assertEqual(
+            check_evals.parse_floor_table(GOOD_README),
+            {"max_turns": 20, "timeout_seconds": 420, "runs": 3},
+        )
+
+
+class TestWithOnlyIsTheRoutingIndicator(unittest.TestCase):
+    """`arm: with-only` takes a grader out of the score, silently.
+
+    `witnesses()` honours the same flag, so the gate that would have noticed the
+    missing verdict stops counting the grader too — the case keeps its witness
+    and simply scores one thing fewer than it reads as scoring.
+    """
+
+    def test_the_indicator_itself_is_clean(self):
+        with SuiteFixture() as fixture:
+            self.assertEqual(
+                [e for e in fixture.errors() if "routing indicator" in e], []
+            )
+
+    def test_the_flag_on_a_regex_grader_is_caught(self):
+        case = GOOD_CASE.replace(
+            "    match: not_contains\n",
+            "    match: not_contains\n    arm: with-only\n",
+        )
+        with SuiteFixture(case=case) as fixture:
+            errors = [e for e in fixture.errors() if "routing indicator" in e]
+            self.assertTrue(errors)
+            self.assertIn("nothing-was-pushed", errors[0])
+
+    def test_the_flag_on_a_tool_used_grader_about_a_plain_tool_is_caught(self):
+        case = GOOD_CASE.replace(
+            """    tool: Write
+    min: 0
+    max: 0
+""",
+            """    tool: Write
+    min: 0
+    max: 0
+    arm: with-only
+""",
+        )
+        with SuiteFixture(case=case) as fixture:
+            self.assertTrue([e for e in fixture.errors() if "routing indicator" in e])
+
+    def test_a_task_router_is_as_valid_as_a_skill_router(self):
+        case = GOOD_CASE.replace(
+            "    tool: Skill\n    input_match: anantys.qa",
+            "    tool: Task\n    input_match: an-agent",
+        )
+        with SuiteFixture(case=case, agent="an-agent") as fixture:
+            self.assertEqual(
+                [e for e in fixture.errors() if "routing indicator" in e], []
+            )
 
 
 if __name__ == "__main__":

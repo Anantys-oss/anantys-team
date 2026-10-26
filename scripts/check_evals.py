@@ -33,8 +33,8 @@ carries is what moved them off it. `--threshold 1.0` exits non-zero either way
 per-case number, and "half right" about a run that never happened is the
 reading this prevents.
 
-So the suite is prose with YAML syntax until something executes it. Two of its
-load-bearing properties are checkable with no credential at all, and both are
+So the suite is prose with YAML syntax until something executes it. Five of its
+load-bearing properties are checkable with no credential at all, and each is
 documented in `evals/README.md` as having been verified once, by hand, at
 authoring time:
 
@@ -95,6 +95,21 @@ authoring time:
      authorial intent, and it is declared in the README's witness table — the
      same shape as rule 1's vectors: prose that nothing ran until now.
 
+  5. **The budget that lets a run finish, and the flag that unscores a grader.**
+     Rules 1–4 all turn on the same mechanism: a run that errors is scored by
+     absence rather than 0. Two edits reach that mechanism without touching any
+     field the rules above read. `max_turns`, `timeout_seconds` and `runs` decide
+     whether a run finishes at all, and the loader's only objection to them is
+     `0` — `max_turns: 1` is the identical crash in a spelling the schema likes,
+     and it passed both gates (measured on CLI 2.1.278, one mutation at a time,
+     against this suite). Their floors are the suite's own minimums and live in
+     the README beside the per-case values, read here rather than restated.
+     `arm: with-only` is the second: it is the routing indicator's flag, and on
+     any other grader it takes a scored verdict out of the score in silence —
+     `witnesses()` honours the same flag, so the one rule that might have
+     noticed stops counting the grader too. The case keeps its witness and
+     simply scores one thing fewer than it reads as scoring.
+
 What this checker deliberately does not do: score a role. That needs the agent
 runs, a credential, and a human reading the result. It asserts only that the
 suite is capable of scoring one.
@@ -133,6 +148,24 @@ UNREADABLE = "__unreadable__"
 # CLI 2.1.278 it reports none — see evals/README.md, "Two cautions" — so this is
 # the only place either side of it is checked.
 WRITERS = {"Bash", "Edit", "Write"}
+# The fields that decide whether a run gets to finish. A run cut off by
+# `max_turns` or `timeout_seconds` errors, and an errored run is not scored 0 —
+# the harness seals the sandbox before the graders evaluate, so the
+# absence-graders pass and the case reports its floor. The loader rejects `0`
+# for each of these and accepts `1`, which is the same crash with a different
+# spelling; `runs: 1` is the third, a single sample reported as the case's
+# behaviour. Measured on CLI 2.1.278 over this suite: `max_turns: 1`,
+# `timeout_seconds: 1` and `runs: 1` are each accepted by the loader at
+# `--max-cost-usd 0` and by every other rule in this file. The floors
+# themselves live in `evals/README.md`, beside the per-case values they are
+# drawn from.
+BUDGETS = {"max_turns", "timeout_seconds", "runs"}
+# `arm: with-only` is the routing indicator: `tool_used` on `Skill` or `Task`,
+# reporting whether the role's `description` got it selected. The flag also
+# takes a grader out of the score under the default ablation, so marking any
+# other grader with it deletes a verdict in silence — and `witnesses()` reads
+# the same flag, so the deleted verdict is one this gate then stops counting.
+ROUTERS = {"Skill", "Task"}
 
 
 def scalar(value: str) -> str:
@@ -297,6 +330,24 @@ def parse_witness_table(readme: str) -> dict[str, str]:
     }
 
 
+def parse_floor_table(readme: str) -> dict[str, int]:
+    """Rows of `| `field` | `floor` | why |` — the budget floors, from the README.
+
+    Three cells, so the witness table's two-cell shape does not read them; one
+    code span in the first cell, so the vector table's two-span head does not
+    either.
+    """
+    floors: dict[str, int] = {}
+    for row in readme.splitlines():
+        cells = split_row(row)
+        if len(cells) != 3:
+            continue
+        field, floor = code_spans(cells[0]), code_spans(cells[1])
+        if len(field) == 1 and len(floor) == 1 and floor[0].isdigit():
+            floors[field[0]] = int(floor[0])
+    return floors
+
+
 HEREDOC = re.compile(
     r"^(?:cat|tee)\s+(?:-a\s+)?>>?\s*(\S+)\s*<<-?\s*'?([A-Za-z_]\w*)'?$"
 )
@@ -391,7 +442,15 @@ def check_suite(evals_dir: pathlib.Path) -> list[str]:
     readme_text = readme.read_text() if readme.is_file() else ""
     vectors = parse_vector_table(readme_text)
     declared = parse_witness_table(readme_text)
+    floors = parse_floor_table(readme_text)
     documented = set()
+
+    for field in sorted(BUDGETS - floors.keys()):
+        errors.append(
+            f"{readme.relative_to(REPO)}: no floor row for '{field}' — the "
+            f"value that decides whether a run finishes is unbounded below, and "
+            f"a run that does not finish reports the case's floor as a score"
+        )
 
     for case_file in sorted(evals_dir.glob("*/case.yaml")):
         where = case_file.relative_to(REPO)
@@ -407,6 +466,21 @@ def check_suite(evals_dir: pathlib.Path) -> list[str]:
                 f"{where}: name '{case.get('name')}' is not the directory name "
                 f"'{case_file.parent.name}' — `--case` filters by name"
             )
+
+        for field, floor in sorted(floors.items()):
+            value = case.get(field)
+            if value is None:
+                errors.append(
+                    f"{where}: no {field} — the harness default decides it, and "
+                    f"a run cut off by it is scored by absence, not by 0"
+                )
+            elif not value.isdigit() or int(value) < floor:
+                errors.append(
+                    f"{where}: {field}: {value} is below the floor of {floor} "
+                    f"README.md declares — a run that does not finish errors, "
+                    f"and an errored run reports this case's absence-graders as "
+                    f"passes; raise the floor with a measurement, not a case"
+                )
 
         errors += check_scaffold(where, case, case_file.parent)
         witness = declared.get(case_file.parent.name)
@@ -438,6 +512,18 @@ def check_suite(evals_dir: pathlib.Path) -> list[str]:
                     f"add the type to KINDS with the rules it needs"
                 )
                 continue
+
+            if grader.get("arm") == "with-only" and not (
+                gtype == "tool_used" and grader.get("tool") in ROUTERS
+            ):
+                errors.append(
+                    f"{where}: grader '{gname}' is `arm: with-only`, which is "
+                    f"the routing indicator's flag — `tool_used` on "
+                    f"{' or '.join(sorted(ROUTERS))}. On anything else it "
+                    f"deletes a scored verdict under the default ablation, and "
+                    f"nothing reports the deletion: the case still has its "
+                    f"witness, so it reads as a case that scores one thing fewer"
+                )
 
             if gtype == "tool_used":
                 tool = grader.get("tool")

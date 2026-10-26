@@ -25,22 +25,38 @@ name: evals
 # That layer is the loader's own reading of these files, and it is the one
 # reading that cannot drift from what actually runs them.
 #
-# Measured against `check_evals.py` over 15 single-mutation corruptions of this
-# suite, the two gates overlap on 3 and each sees five or six the other does not:
+# Measured against `check_evals.py` over single-mutation corruptions of this
+# suite, applied one at a time, the two gates overlap on 3 and each sees several
+# the other does not:
 #
 #   loader only (5)  runs: 0 · execution.max_turns: 0 · timeout_seconds: 0 ·
 #                    schema_version removed · execution.prompt removed
 #   both (3)         an unknown grader `type:` · `graders:` misspelled ·
 #                    a grader about a tool the case does not grant
-#   check_evals (8)  name != directory · input_match naming a skill the plugin
+#   check_evals (15) name != directory · input_match naming a skill the plugin
 #                    does not ship · a pattern that no longer compiles, or that
 #                    drifted from the README row verifying it · allowed_tools
 #                    emptied · `exists: true` with no write-capable grant ·
 #                    `max: 0` without `min: 0` · a scaffold_script path that
-#                    escapes its case directory, or that names nothing
+#                    escapes its case directory, or that names nothing ·
+#                    max_turns / timeout_seconds / runs below the README's floor,
+#                    or absent · `arm: with-only` on a grader that is not the
+#                    routing indicator
 #   neither (0)
 #
-# The last two rows were "neither" until the README's claim about them was
+# The last two `check_evals` rows were added by widening the sweep, not by
+# reading the gates again: "neither (0)" was true of the mutations that had been
+# tried and was read as a property of the pair. Six of the seven new ones land
+# on one mechanism — a run that errors is scored by absence, not 0 — which the
+# loader guards with a single `!= 0`, so `max_turns: 1` and `timeout_seconds: 1`
+# were the same crash in a spelling both gates liked, and a field deleted
+# outright was nobody's. The seventh, `arm: with-only` on an outcome grader, hid
+# behind this checker's own rule: `witnesses()` reads that flag, so the grader it
+# deletes is a grader this gate then stops counting. A "neither" row is a
+# statement about the sweep that produced it, never about the pair — widen the
+# sweep before trusting the zero.
+#
+# Two of these rows were "neither" until the README's claim about them was
 # actually run. The harness does refuse both, with the wording
 # `path "…" escapes the case directory` / `path "…" does not exist`, and it does
 # so before the first turn — so it needs no credential and costs nothing:

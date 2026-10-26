@@ -215,6 +215,36 @@ nothing to do with the role. Read a `file_exists` verdict only on a run that
 completed — and prefer `exists: true` when you can phrase the assertion that
 way, since it is the one that cannot go green by accident.
 
+**A run that does not finish still reports a score.** The sentence above names
+`max_turns` and a timeout beside "no credential" as reasons a run errors, and an
+errored run is scored by absence rather than 0. So the three fields that decide
+whether a run gets to finish are part of the scoring contract, and they have a
+floor. The loader rejects `0` for each of them and accepts `1` — the same crash
+with a different spelling — and until now so did `check_evals.py`: `max_turns:
+1`, `timeout_seconds: 1` and `runs: 1` each survived both gates (measured on CLI
+2.1.278 against this suite, one mutation at a time). The floors are the suite's
+own minimums, and `check_evals.py` reads them from this table:
+
+| Field | Floor | Why this number |
+|-------|-------|-----------------|
+| `max_turns` | `20` | the suite's minimum; the two browser-precondition cases stop inside it, and the cases that walk a plan need 25–30 |
+| `timeout_seconds` | `420` | uniform across all ten cases — no case here has ever needed a different wall clock |
+| `runs` | `3` | a refusal is a behaviour, not an event; one sample cannot separate a rule the role follows from a run that happened to |
+
+Raise a floor with a measurement, not with a case that wants to sit under it: a
+case that cannot finish inside the floor is a case whose verdict nobody has
+read.
+
+**`arm: with-only` belongs to the routing indicator and nothing else.** It marks
+the `*-skill-fired` / `*-agent-was-dispatched` grader — `tool_used` on `Skill` or
+`Task` — which reports whether the role's `description` got it selected. The flag
+also takes a grader *out of the score* under the default ablation, so putting it
+on any other grader deletes a verdict silently, and the deletion is invisible
+from the score: the case still has its witness, still has a passing-looking
+number, and simply scores one thing fewer than it reads as scoring. `witnesses()`
+honours the same flag, so the gate that would have noticed stops counting the
+grader too. `check_evals.py` now rejects the flag anywhere but on the indicator.
+
 **Every case needs one witness.** At least one scored grader has to observe
 something the run *did*, and it has to be a free one. Absence-graders are
 satisfied by the sealed sandbox, and `llm` graders stop being scored the moment
