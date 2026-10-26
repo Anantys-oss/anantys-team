@@ -140,6 +140,48 @@ class Misspellings(unittest.TestCase):
         self.assertEqual(self.find({"scripts/x.py": "'/anantys.qa'"}), {})
 
 
+class Contradictions(unittest.TestCase):
+    """Two dead spellings of one name — what a fold produces and a diff hides."""
+
+    def found(self, text):
+        (found,) = dict(c.misspellings(tree({"README.md": text}), EXPOSED)).values()
+        return found
+
+    def test_one_dead_spelling_is_not_a_contradiction(self):
+        self.assertEqual(list(c.contradictions({"anantys.qa": "anantys-qa"})), [])
+
+    def test_two_dead_spellings_of_one_name_are_reported(self):
+        found = {"anantys.qa": "anantys-qa", "p:anantys.qa": "anantys-qa"}
+        self.assertEqual(
+            list(c.contradictions(found)),
+            [("anantys-qa", ["anantys.qa", "p:anantys.qa"])],
+        )
+
+    def test_dead_spellings_of_different_names_are_not_a_contradiction(self):
+        """Five roles each misspelled once is main's state, not a merge artifact."""
+        found = {"anantys.qa": "anantys-qa", "anantys.ops": "anantys-ops"}
+        self.assertEqual(list(c.contradictions(found)), [])
+
+    def test_the_table_a_fold_produced(self):
+        """The shape on koan/the-agent-type-the-loader-registers: both rows kept."""
+        doc = (
+            "the skills additionally have their dots rewritten to hyphens\n"
+            "| skill `/p:anantys.qa` |\n"
+            "| skill `/anantys.qa` |\n"
+        )
+        self.assertEqual(
+            list(c.contradictions(self.found(doc))),
+            [("anantys-qa", ["anantys.qa", "p:anantys.qa"])],
+        )
+
+    def test_the_live_spelling_beside_a_dead_one_is_not_a_contradiction(self):
+        """Only dead spellings reach `found`; teaching the real name is no clash."""
+        self.assertEqual(
+            list(c.contradictions(self.found("`/anantys-qa` (formerly `/anantys.qa`)"))),
+            [],
+        )
+
+
 class Verdict(unittest.TestCase):
     def run_main(self, files, exposed=EXPOSED):
         root = tree(files)
@@ -160,6 +202,26 @@ class Verdict(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertIn("WARN", out)
         self.assertIn("exposed-name check: OK", out)
+
+    def test_two_dead_spellings_of_one_name_fail_the_gate(self):
+        """The remedy is deleting a line in this file — nothing has to land first."""
+        code, out = self.run_main({"README.md": "`/p:anantys.qa` and `/anantys.qa`"})
+        self.assertEqual(code, 1)
+        self.assertIn("2 dead spellings of `anantys-qa`", out)
+        self.assertIn("exposed-name check: FAILED", out)
+
+    def test_the_contradicting_file_is_still_warned_with_its_full_inventory(self):
+        """The error names the clash; the warning stays the per-file inventory."""
+        doc = "`/p:anantys.qa` `/anantys.qa` `/anantys.ops`"
+        _, out = self.run_main({"README.md": doc}, exposed=EXPOSED | {"anantys-ops"})
+        self.assertIn("advertises 3 command(s)", out)
+
+    def test_several_names_each_misspelled_once_still_only_warns(self):
+        """This tree's actual state on `main`: five roles, one dead spelling each."""
+        doc = "`/anantys.qa` `/anantys.ops`"
+        code, out = self.run_main({"README.md": doc}, exposed=EXPOSED | {"anantys-ops"})
+        self.assertEqual(code, 0)
+        self.assertNotIn("ERROR", out)
 
     def test_an_unexposed_role_fails_the_gate(self):
         code, out = self.run_main({"plugins/p/skills/anantys.ghost/SKILL.md": "x"})

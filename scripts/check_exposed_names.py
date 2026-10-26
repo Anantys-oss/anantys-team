@@ -31,7 +31,7 @@ given string belongs to. `check_plugins` predicts the skill half with
 `re.sub(r"[^A-Za-z0-9_-]", "-", ...)`; that prediction happens to be right, and
 a prediction is still not the loader.
 
-Two findings, and they are deliberately not the same severity:
+Three findings, and they are deliberately not the same severity:
 
   * a role in the tree that the loader exposes nothing for -> error. The role
     ships and loads as nothing; the remedy is wholly inside whatever change
@@ -42,6 +42,22 @@ Two findings, and they are deliberately not the same severity:
     one order. Same line `check_tool_grants` draws for bare `Bash`: per-tree,
     attributable, and silent once the owning change lands — so no baseline file
     to keep in step.
+  * *two* dead spellings of one exposed name in one file -> error. One wrong
+    spelling is a tree that has not been corrected yet. Two is a tree that was
+    corrected and kept the line it corrected, so the remedy is wholly local:
+    delete the stale one. Nothing outside the file has to land first, and no
+    reader can be served by both.
+
+That third finding is the one a merge produces and a diff hides. The branch
+that first wrote the exposed spellings replaced five `/anantys.design`-style
+rows with five `/anantys-team-agents:anantys-design` ones; three later folds
+absorbed it and `merge-tree` resolved both sides as *added rows*, emitting a
+README table of fourteen rows — seven namespaced, seven bare, and not one of
+them a name the loader resolves. The sentence stating the rule ("the skills
+additionally have their dots rewritten to hyphens") survived the merge intact
+above a table that contradicts it twice over. Every side of that merge was
+`MERGEABLE`; the file it produced is the only place the damage is visible, and
+counting spellings per name is what sees it.
 
 "Near-misses" is the whole of the second check's precision. A `/`-token is
 compared to the exposed names with every non-alphanumeric character stripped, so
@@ -225,6 +241,25 @@ def misspellings(root, exposed):
                 yield path.relative_to(root), found
 
 
+def contradictions(found):
+    """Exposed names a single file spells wrong in more than one way.
+
+    Takes `misspellings`' per-file mapping and inverts it. Only *dead* spellings
+    are in there, which is what makes two of them a contradiction rather than a
+    courtesy: a file that writes `/anantys-qa` beside `/anantys.qa` is teaching
+    the live name and the dead one, and the dead one alone is already the second
+    finding. Two dead ones mean neither row can be typed.
+
+    Yields `(exposed name, sorted dead spellings)`.
+    """
+    by_name = {}
+    for bad, right in found.items():
+        by_name.setdefault(right, []).append(bad)
+    for right, bads in sorted(by_name.items()):
+        if len(bads) > 1:
+            yield right, sorted(bads)
+
+
 def main(root):
     exposed, why = expose(root)
     if exposed is None:
@@ -241,6 +276,14 @@ def main(root):
     files = 0
     for rel, found in misspellings(root, exposed):
         files += 1
+        for right, bads in contradictions(found):
+            spellings = ", ".join(f"`/{bad}`" for bad in bads)
+            print(
+                f"ERROR {rel}: {len(bads)} dead spellings of `{right}` in one file "
+                f"({spellings}) — a correction that kept the line it corrected; "
+                "delete the stale one"
+            )
+            failed = True
         fixes = ", ".join(f"`/{bad}` -> `{right}`" for bad, right in sorted(found.items()))
         print(f"WARN  {rel}: advertises {len(found)} command(s) no session exposes: {fixes}")
     if files:
