@@ -357,16 +357,18 @@ def check_cost(plugin_dir: Path, name: str, details: str | None, base: str | Non
     - On-invoke is per component, but a branch that never opens ``anantys.qa/SKILL.md``
       is still handed its row. Role-local is not branch-local.
 
-    Measured on the queue this gate ships into, by installing all 90 open heads with
-    the real loader (`scripts/loader_sweep.py`): every head prices at 716 always-on,
-    and two are over the on-invoke ceiling on the same file — `#33` at 12.8k and the
-    keystone fold `#113` at 13.5k, both `anantys.qa`, both against a baseline of 8.6k.
-    An earlier reading of a smaller queue found two heads at 1,034 always-on; they are
-    not in it any more, which is the shape of every number in this docstring. Re-run
-    the sweep rather than trusting them. Without the baseline, the first of the two
-    over-budget heads to merge reddens the other for a number it did not move — and
-    hands it a remedy (*move detail into `reference/`*) in a file it does not own.
-    That is the order-forcing this file refuses everywhere else.
+    Measured on the queue this gate ships into, by installing all 161 pushed heads
+    with the real loader (`scripts/loader_sweep.py`): **8 heads are over a loader
+    budget**. Four cross the on-invoke ceiling on the same file — `#33` at 12.8k,
+    `#113` at 13.5k, and three folds at 20.8k, all `anantys.qa`, all against a
+    baseline of 8.6k. Three cross always-on, at 1,034 / 1,034 / 1,197. An earlier
+    reading of 90 *open PR* heads reported two crossings and called the 1,034 ones
+    gone; they were never gone, they were on branches with no PR — which is the shape
+    of every number in this docstring. Re-run the sweep rather than trusting them.
+    Without the baseline, the first over-budget head to merge reddens the others for a
+    number they did not move — and hands each a remedy (*move detail into
+    `reference/`*) in a file it does not own. That is the order-forcing this file
+    refuses everywhere else.
     """
     if details is None:
         warnings.append(

@@ -199,5 +199,54 @@ class Overspent(unittest.TestCase):
         self.assertEqual(L.overspent(self.tree(716), self.tree(None)), ([], []))
 
 
+class QueueHeads(unittest.TestCase):
+    """`queue_heads` decides what the sweep is a sweep *of*."""
+
+    def test_a_head_with_no_open_pr_is_still_in_the_population(self):
+        # The defect this replaced: 42 of 162 branches had no PR, and the two
+        # folds over the on-invoke ceiling were among them.
+        self.assertEqual(L.queue_heads(["origin/koan/a", "origin/koan/b"], {"koan/a": 7}),
+                         [(7, "origin/koan/a"), (None, "origin/koan/b")])
+
+    def test_the_baseline_is_not_a_row(self):
+        # `ls-remote` returns `main`; it is the tree every delta is measured
+        # from, so pricing it against itself is a row that says nothing.
+        self.assertEqual(L.queue_heads(["origin/main", "origin/koan/a"], {}),
+                         [(None, "origin/koan/a")])
+
+    def test_a_non_default_baseline_is_the_one_dropped(self):
+        self.assertEqual(
+            L.queue_heads(["origin/main", "origin/release"], {}, baseline="origin/release"),
+            [(None, "origin/main")],
+        )
+
+    def test_a_pr_number_survives_a_ref_that_carries_slashes(self):
+        # Every branch here is `koan/<name>`; stripping only the remote prefix
+        # is what keeps the PR label attached.
+        self.assertEqual(L.queue_heads(["origin/koan/a/b"], {"koan/a/b": 9}),
+                         [(9, "origin/koan/a/b")])
+
+    def test_rows_are_ordered_by_ref_so_a_missing_number_cannot_break_the_sort(self):
+        # Sorting the tuples themselves compares `None` against an `int`.
+        got = L.queue_heads(["origin/koan/c", "origin/koan/a", "origin/koan/b"],
+                            {"koan/b": 2})
+        self.assertEqual([ref for _, ref in got],
+                         ["origin/koan/a", "origin/koan/b", "origin/koan/c"])
+
+    def test_a_pr_for_a_branch_nobody_pushed_adds_no_row(self):
+        # The PR list is a label lookup, never a source of refs: a stale entry
+        # for a deleted branch must not produce a ref the loader cannot export.
+        self.assertEqual(L.queue_heads(["origin/koan/a"], {"koan/gone": 3}),
+                         [(None, "origin/koan/a")])
+
+    def test_a_duplicate_ref_is_priced_once(self):
+        self.assertEqual(len(L.queue_heads(["origin/koan/a", "origin/koan/a"], {})), 1)
+
+    def test_no_pr_access_still_leaves_the_whole_population(self):
+        # `pr_numbers` returns `{}` when `gh` is absent. The sweep needs no
+        # GitHub credential; losing the labels must not lose the refs.
+        self.assertEqual(len(L.queue_heads(["origin/koan/a", "origin/koan/b"], {})), 2)
+
+
 if __name__ == "__main__":
     unittest.main()

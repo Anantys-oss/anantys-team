@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Install every open head with the real Claude Code loader and diff what it exposes.
+"""Install every pushed head with the real Claude Code loader and diff what it exposes.
 
 Fourteen checkers in `scripts/` read this plugin as text. `gate_matrix.py` runs
 them over every head, which is the right cross-product for *our* rules. None of
@@ -20,8 +20,9 @@ and answers three questions no text gate can:
   * **What does it cost?** `details` prices both of the loader's budgets per
     head — the always-on total and each component's on-invoke row — against the
     ceilings `check_cost` enforces. `check_cost` rules on one tree and its merge
-    base; this is where those ceilings meet their whole population, and the only
-    column in which a fold over `anantys.qa` can be priced at all.
+    base; this is where those ceilings meet their whole population — every
+    pushed head, not every open PR — and the only column in which a fold over
+    `anantys.qa` can be priced at all.
 
 Two findings from the first run are why the report is shaped this way.
 
@@ -38,7 +39,14 @@ Drift is reported against `origin/main`, not against an expected list written
 here. A list in this file would be one more claim about the product; the
 baseline tree is the product.
 
-    python3 scripts/loader_sweep.py                      # every open PR head
+The population is `git ls-remote --heads origin`, not `gh pr list` (see
+`queue_heads`). Seven sibling instruments here still enumerate open PRs —
+`fold_coverage`, `ownership_map`, `pair_gates`, `pr_landing_order`,
+`queue_adjudications`, `queue_forks`, `queue_redundancy`. For the ones that rank
+or order *pull requests* that is the right set; for any that claims to describe
+the queue, it is 120 of 162 branches. Unexamined here, one at a time.
+
+    python3 scripts/loader_sweep.py                      # every pushed head
     python3 scripts/loader_sweep.py origin/koan/a-head   # just these refs
 
 Exit 1 if any ref fails to install or exposes fewer components than the
@@ -251,14 +259,43 @@ def inventory(ref):
         return report
 
 
-def open_heads():
-    """The open PR heads, as `(number, ref)` — the queue the loader never sees."""
-    proc = run("gh", "pr", "list", "--state", "open", "--limit", "200",
-               "--json", "number,headRefName")
+def pushed_heads():
+    """Every branch on `origin` — the queue's denominator, PR or no PR."""
+    proc = run("git", "ls-remote", "--heads", "origin")
     if proc.returncode != 0:
         return []
-    rows = json.loads(proc.stdout)
-    return [(r["number"], "origin/" + r["headRefName"]) for r in rows]
+    return ["origin/" + line.split("refs/heads/", 1)[1].strip()
+            for line in proc.stdout.splitlines() if "refs/heads/" in line]
+
+
+def pr_numbers():
+    """`{head ref: PR number}` for the open PRs — a label, never the denominator."""
+    proc = run("gh", "pr", "list", "--state", "open", "--limit", "500",
+               "--json", "number,headRefName")
+    if proc.returncode != 0:
+        return {}
+    return {r["headRefName"]: r["number"] for r in json.loads(proc.stdout)}
+
+
+def queue_heads(refs, numbers, baseline="origin/main"):
+    """Every pushed head as `(PR number or None, ref)`, sorted, baseline dropped.
+
+    Measured on this queue: 162 pushed heads, 120 of them with an open PR. The
+    42 without one are not declined work — a closed PR is a ruling, an *absent*
+    one is a branch nobody has opened yet. Swept at both denominators, the whole
+    population reports 13 errors on 8 heads; **6 of those errors, on 6 heads,
+    are PR-less** and a `gh pr list` sweep saw none of them. They include every
+    head over the always-on ceiling (1,034 / 1,034 / 1,197) and the three folds
+    that price `anantys.qa` at 20.8k — which is to say, the rows this sweep
+    exists for. Reaching for the PR list is reaching for a review queue; the
+    loader installs trees.
+
+    The baseline is dropped because it is the thing every row is a delta from,
+    and `ls-remote` returns it where `gh pr list` never could.
+    """
+    return sorted(((numbers.get(ref.removeprefix("origin/")), ref)
+                   for ref in set(refs) if ref != baseline),
+                  key=lambda row: row[1])
 
 
 def main(argv=None):
@@ -278,7 +315,8 @@ def main(argv=None):
     for directory, declared in base["misnamed"]:
         print(f"  baseline name drift: {directory}/ declares `name: {declared}`")
 
-    targets = [(None, r) for r in args.refs] or open_heads()
+    targets = [(None, r) for r in args.refs] or \
+        queue_heads(pushed_heads(), pr_numbers(), args.baseline)
     if not targets:
         print("\nno refs to sweep")
         return 0
@@ -313,7 +351,11 @@ def main(argv=None):
             failures.append((label, f"{directory}/ declares `name: {declared}`; the loader "
                                     f"exposes `{directory}` and discards the field"))
 
-    print(f"\n{len(targets)} ref(s), {len(failures)} error(s)")
+    # Say how many rows have no PR: a finding on one of those has no review
+    # thread to be answered in, which is what the reader does with the number.
+    no_pr = sum(1 for number, _ in targets if number is None)
+    print(f"\n{len(targets)} ref(s) — {len(targets) - no_pr} with an open PR, "
+          f"{no_pr} pushed with none, {len(failures)} error(s)")
     for label, why in failures:
         print(f"  {label}: {why}")
     return 1 if failures else 0
