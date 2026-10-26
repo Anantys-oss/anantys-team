@@ -81,9 +81,16 @@ order: every `R<n>` in `qa-runs.md`, every adjudication in `qa-plan.md`, and eve
 row then names a different requirement than it was written against, and nothing reports the shift.
 
 **The `<slug>`** is a stable kebab-case name, so a re-run reuses the same directory instead of
-orphaning its plan and run history: for `--brief`, the brief's title heading (else the file's
-basename); for `--from linear:`, the primary SKU (e.g. `sku-231`); for `--from pr:`, the head
-branch of the first PR (or the operator-confirmed name).
+orphaning its plan and run history: for `--brief`, the brief's title heading — **minus any trailing
+template boilerplate** (`— QA feature brief`), which would otherwise land in the directory name —
+else the file's basename; for `--from linear:`, the primary SKU (e.g. `sku-231`); for `--from pr:`,
+the head branch of the first PR (or the operator-confirmed name).
+
+A `--brief` slug is the one kind that does **not** come from a branch or a SKU, so it is also the
+one that can silently miss the branch-match discovery below. When the heading yields a slug that is
+not the normalized current branch, say so when you state the slug, and offer the branch name
+instead — otherwise every later action has only the named slug or the sole-plan case to find the
+campaign by, and a second campaign in `.anantys/qa/` makes each one stop and ask.
 
 **Normalize it, always, the same way:** lowercase, then every run of non-alphanumeric characters —
 `/` included — becomes a single `-`, trimmed at both ends (`team/qa-pr-source` →
