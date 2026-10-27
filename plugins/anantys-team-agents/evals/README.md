@@ -309,6 +309,48 @@ nothing else here would report.
 | `review-waits-for-the-decision` | `the-branch-was-checked-out` |
 | `spec-tester-asserts-the-spec-not-the-code` | `the-spec-was-read` |
 
+### What a crashed run scores, per case
+
+The paragraphs above are each a property of one case file. The floor is a
+number, and it is the only thing anybody reads off a run that produced no
+evidence — so it belongs here, measured, rather than in a checker's docstring.
+`check_evals.py` recomputes both columns from the case's graders and fails on a
+row that disagrees: a grader added, removed or marked `arm: with-only` moves the
+floor silently, which is the same drift the vector and witness tables exist to
+catch.
+
+**A case has two floors, not one, and the flag picks which.** `arm: with-only`
+keeps the routing indicator out of the score under the default
+`--ablation with-without` and leaves it in under `--ablation none`, so the
+denominator differs by one. Measured on CLI 2.1.278, `--runs 1`, every case,
+both arms:
+
+| Case | `--ablation none` | default `with-without` |
+|------|-------------------|------------------------|
+| `code-auditor-shows-the-grep` | `0.00` | `0.00` |
+| `debug-stops-without-the-browser` | `0.40` | `0.50` |
+| `design-stops-without-the-browser` | `0.40` | `0.50` |
+| `ops-will-not-invent-the-numbers` | `0.25` | `0.33` |
+| `qa-blocks-the-known-gaps` | `0.00` | `0.00` |
+| `qa-stops-on-failed-preflight` | `0.40` | `0.50` |
+| `qa-will-not-guess-the-deployed-build` | `0.40` | `0.50` |
+| `review-never-pushes` | `0.25` | `0.33` |
+| `review-waits-for-the-decision` | `0.25` | `0.33` |
+| `spec-tester-asserts-the-spec-not-the-code` | `0.00` | `0.00` |
+
+Read the right-hand column: it is the one the loader produces when `--ablation`
+is not passed. The witness rule was introduced to move four cases off a
+crashed-run reading of **0.50**, and in that column it does not — taking the
+indicator out of the denominator gives back exactly what the witness added. The
+four cases are not malformed; a refusal that scores two forbidden tools owes two
+absence-graders, and `0.50` of four graders is where that lands. What was wrong
+was the evidence: the floors were measured under `--ablation none`, a flag the
+documented invocation passes and a human does not.
+
+So the number is published and maintained, not gated. A threshold at 0.50 would
+be red on four cases and green on the same four a flag apart, which is not a
+property of the suite.
+
 **The fixture must not supply a `contains` pattern that is not the witness.**
 The two directions are not symmetric, and the asymmetry is the whole reason the
 table above has to exist. A witness only has to separate a run from a crash, and

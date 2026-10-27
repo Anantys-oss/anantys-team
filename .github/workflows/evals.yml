@@ -5,9 +5,13 @@ name: evals
 # `Not logged in · Please run /login` — and a crashed run is not scored 0: the
 # harness seals the sandbox before the graders evaluate, so every `exists: false`
 # and every `not_contains` passes by absence. Measured on CLI 2.1.278 with
-# `--runs 1 --ablation none`, two of these cases read **0.50** having walked
-# nothing at all — they read 0.40 now, because each acquired the witness grader
-# `check_evals.py` requires. The floor of all eight is in its docstring.
+# `--runs 1`, four of these cases read **0.50** having walked nothing at all —
+# and still do: that number was taken for 0.40 because it was only ever measured
+# under `--ablation none`, which scores the `arm: with-only` routing indicator
+# the default `with-without` leaves out. The witness grader `check_evals.py`
+# requires moves the floor in the column nobody runs and not in the column a
+# human gets. Both columns, all ten cases, are now a table in `evals/README.md`
+# that `check_evals.py` recomputes from each case's graders.
 #
 # So what CI can assert is not a score. It is that the suite is still capable of
 # producing one: that each pattern-decided grader still matches what it must and

@@ -84,7 +84,24 @@ GOOD_README = """\
 | `max_turns` | `20` | a case that stops inside it |
 | `timeout_seconds` | `420` | uniform across the suite |
 | `runs` | `3` | one sample is not a behaviour |
+
+| Case | `--ablation none` | default `with-without` |
+|------|-------------------|------------------------|
+| `a-case` | `0.50` | `0.60` |
 """
+
+FLOOR_ROW = "| `a-case` | `0.50` | `0.60` |"
+
+
+def with_floor(none, default, readme=GOOD_README):
+    """`readme` with the case's declared crashed-run floor rewritten.
+
+    A test that adds or drops a grader moves the floor, and `check_evals`
+    objects to a row that no longer matches — which is the rule working. Such a
+    test restates the floor its mutation produces rather than exempting itself.
+    """
+    return readme.replace(FLOOR_ROW, f"| `a-case` | `{none}` | `{default}` |")
+
 
 GOOD_SCAFFOLD = """\
 #!/usr/bin/env bash
@@ -524,8 +541,12 @@ class TestFixtureSupply(unittest.TestCase):
 
     def fixture(self, scaffold, **kwargs):
         case = GOOD_CASE.replace("  - type: llm", self.OUTCOME + "  - type: llm")
+        # The outcome grader is a seventh, non-vacuous verdict: 3/7 and 3/6.
         return SuiteFixture(
-            case=case, readme=GOOD_README + self.ROW, scaffold=scaffold, **kwargs
+            case=case,
+            readme=with_floor("0.43", "0.50") + self.ROW,
+            scaffold=scaffold,
+            **kwargs,
         )
 
     def test_a_pattern_the_scaffold_writes_into_the_fixture_is_caught(self):
@@ -547,7 +568,7 @@ class TestFixtureSupply(unittest.TestCase):
         # and the empty trace a sealed sandbox leaves holds nothing the scaffold
         # wrote. Declaring this grader the witness has to exempt it.
         scaffold = GOOD_SCAFFOLD + "cat > spec.md <<'MD'\nreturns 108.00\nMD\n"
-        readme = GOOD_README.replace(
+        readme = with_floor("0.43", "0.50").replace(
             "| `a-case` | `the-workspace-survived` |",
             "| `a-case` | `asserts-the-value` |",
         )
@@ -701,6 +722,96 @@ class TestWithOnlyIsTheRoutingIndicator(unittest.TestCase):
         with SuiteFixture(case=case, agent="an-agent") as fixture:
             self.assertEqual(
                 [e for e in fixture.errors() if "routing indicator" in e], []
+            )
+
+
+class TestCrashedRunFloor(unittest.TestCase):
+    """The floor is a number, and `--ablation` decides which number it is.
+
+    The fixture holds six graders: one `arm: with-only` indicator and three that
+    pass by absence. `--ablation none` scores all six (3/6 = 0.50); the default
+    `with-without` scores five (3/5 = 0.60). Measured on CLI 2.1.278 against the
+    live suite, the same two columns differ for every case that has an
+    indicator — which is every case here.
+    """
+
+    def test_both_columns_are_computed_from_the_graders(self):
+        graders = check_evals.parse_case(GOOD_CASE)["graders"]
+        self.assertEqual(check_evals.crash_floors(graders), ("0.50", "0.60"))
+
+    def test_the_documented_floors_are_read_without_the_other_tables(self):
+        self.assertEqual(
+            check_evals.parse_case_floor_table(GOOD_README),
+            {"a-case": ("0.50", "0.60")},
+        )
+        # Two decimals keep the budget-floor rows out: `20` is `isdigit()`, so
+        # a row misread the other way would declare a floor of `max_turns`.
+        self.assertNotIn("max_turns", check_evals.parse_case_floor_table(GOOD_README))
+        self.assertEqual(
+            check_evals.parse_floor_table(GOOD_README),
+            {"max_turns": 20, "timeout_seconds": 420, "runs": 3},
+        )
+
+    def test_the_good_fixture_agrees_with_its_documented_floor(self):
+        with SuiteFixture() as fixture:
+            self.assertEqual(
+                [e for e in fixture.errors() if "crashed-run floor" in e or
+                 "documented as floor" in e],
+                [],
+            )
+
+    def test_a_case_with_no_floor_row_is_an_error(self):
+        readme = "\n".join(
+            line for line in GOOD_README.splitlines() if "`0.50`" not in line
+        )
+        with SuiteFixture(readme=readme) as fixture:
+            errors = [e for e in fixture.errors() if "no crashed-run floor row" in e]
+            self.assertTrue(errors)
+            self.assertIn("0.60", errors[0])
+
+    def test_a_dropped_absence_grader_moves_the_floor_and_is_caught(self):
+        case = GOOD_CASE.replace(
+            """  - type: tool_used
+    name: nothing-was-written
+    tool: Write
+    min: 0
+    max: 0
+
+""",
+            "",
+        )
+        with SuiteFixture(case=case) as fixture:
+            errors = [e for e in fixture.errors() if "documented as floor" in e]
+            self.assertTrue(errors)
+            self.assertIn("0.40/0.50", errors[0])
+
+    def test_marking_a_grader_with_only_moves_the_floor_and_is_caught(self):
+        # The flag's own rule catches this too, but through a different reading:
+        # it objects to the flag's placement, this one reports the number the
+        # placement changed. A case can be mutated into a clean placement with a
+        # moved floor — adding a second router — and then only this rule speaks.
+        case = GOOD_CASE.replace(
+            "    input_match: anantys.qa\n    min: 1\n    arm: with-only\n",
+            "    input_match: anantys.qa\n    min: 1\n",
+        )
+        with SuiteFixture(case=case) as fixture:
+            errors = [e for e in fixture.errors() if "documented as floor" in e]
+            self.assertTrue(errors)
+            self.assertIn("0.50/0.50", errors[0])
+
+    def test_the_live_suite_matches_what_its_readme_declares(self):
+        # The gate asserts this for the tree it runs in; this test asserts the
+        # two columns were not transcribed from the docstring they replaced.
+        evals = check_evals.REPO / "plugins" / "anantys-team-agents" / "evals"
+        declared = check_evals.parse_case_floor_table((evals / "README.md").read_text())
+        self.assertEqual(len(declared), 10)
+        self.assertEqual(declared["debug-stops-without-the-browser"], ("0.40", "0.50"))
+        for case_file in sorted(evals.glob("*/case.yaml")):
+            graders = check_evals.parse_case(case_file.read_text())["graders"]
+            self.assertEqual(
+                check_evals.crash_floors(graders),
+                declared[case_file.parent.name],
+                case_file.parent.name,
             )
 
 

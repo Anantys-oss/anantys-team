@@ -3,35 +3,47 @@
 
 The suite under `plugins/*/evals/` cannot be run in CI: each case spawns a
 `claude` child with a sealed HOME, so an automation session fails every run with
-`Not logged in`. The floor each case reports on such a run — measured on CLI
-2.1.278, `--runs 1 --ablation none`, every case in the suite:
+`Not logged in`. A crashed run is not scored 0. When a run errors the harness
+seals the sandbox *before* the graders evaluate, so every `file_exists` resolves
+to absent and every `not_contains` sees an empty trace — the absence-graders
+pass. A case's floor on a crashed run is therefore the share of its *scored*
+graders that pass by absence.
 
-    debug-stops-without-the-browser       0.40
-    design-stops-without-the-browser      0.40
-    qa-stops-on-failed-preflight          0.40
-    qa-will-not-guess-the-deployed-build  0.40
-    review-never-pushes                   0.25
-    review-waits-for-the-decision         0.25
-    ops-will-not-invent-the-numbers       0.25
-    qa-blocks-the-known-gaps              0.00
+Which graders are scored is decided by `--ablation`, so the floor is not one
+number per case. `arm: with-only` takes the routing indicator out of the score
+under the default `with-without` and leaves it in under `--ablation none`, so
+the denominator differs by one and the two columns disagree — measured on CLI
+2.1.278, `--runs 1`, every case in the suite, both arms:
 
-The two agent cases carry no absence-grader at all — every scored verdict is a
-`contains` the empty trace fails, or an `llm` — so their floor is 0.00 *by
-construction*, derived from the grader composition rather than measured:
+                                              none  with-without
+    debug-stops-without-the-browser           0.40     **0.50**
+    design-stops-without-the-browser          0.40     **0.50**
+    qa-stops-on-failed-preflight              0.40     **0.50**
+    qa-will-not-guess-the-deployed-build      0.40     **0.50**
+    review-never-pushes                       0.25       0.33
+    review-waits-for-the-decision             0.25       0.33
+    ops-will-not-invent-the-numbers           0.25       0.33
+    qa-blocks-the-known-gaps                  0.00       0.00
+    code-auditor-shows-the-grep               0.00       0.00
+    spec-tester-asserts-the-spec-not-the-code 0.00       0.00
 
-    code-auditor-shows-the-grep                 0.00  (derived)
-    spec-tester-asserts-the-spec-not-the-code   0.00  (derived)
+`with-without` is the column a human gets, because it is what the loader selects
+when `--ablation` is not passed. The witness rule below was introduced to move
+four cases off a crashed-run reading of 0.50, and in that column it does not:
+removing the indicator from the denominator gives back exactly what the witness
+took away. The number the rule was written against is the number the default
+invocation still prints. Nothing is wrong with the four cases — a refusal case
+scoring two forbidden tools needs two absence-graders — but the claim that the
+witness fixed the reading was measured under a flag nobody types.
 
-A crashed run is not scored 0. When a run errors the harness seals the sandbox
-*before* the graders evaluate, so every `file_exists` resolves to absent and
-every `not_contains` sees an empty trace — the absence-graders pass. A case's
-floor on a crashed run is therefore the share of its scored weight held by
-graders that pass by absence. Before the witness rule below existed, two of
-these cases read 0.50 having verified nothing; the free grader each one now
-carries is what moved them off it. `--threshold 1.0` exits non-zero either way
-— the floor is not what gates the suite, it is what a human reads off the
-per-case number, and "half right" about a run that never happened is the
-reading this prevents.
+`--threshold 1.0` exits non-zero either way: the floor is not what gates the
+suite, it is what a human reads off the per-case number, and "half right" about
+a run that never happened is the reading this is about. So both columns are
+computable from the grader list alone, `crash_floors` computes them, and
+`evals/README.md` carries them per case — a documented floor that disagrees with
+the suite is an error here, for the same reason the vector table is: a grader
+edit moves the floor silently, and the floor is the one number read off a run
+that produced no evidence at all.
 
 So the suite is prose with YAML syntax until something executes it. Five of its
 load-bearing properties are checkable with no credential at all, and each is
@@ -66,6 +78,14 @@ authoring time:
      happened to write. What the floor actually asks for is a **witness**: one
      scored grader that observes something the run did. A case needs at least
      one, and counting is the wrong instrument for "at least one".
+
+     The two-column measurement above is why that reasoning still stands rather
+     than being an excuse. A ratio rule set at the old 0.50 would be red on four
+     cases today and green on the same four under `--ablation none` — the same
+     suite, the same graders, a flag apart. A threshold on a number that moves
+     with the invocation cannot be the gate. What the measurement does buy is
+     the floor's *publication*: rule 6 pins both columns in the README and
+     recomputes them, so the number is maintained even though it is not gated.
 
      A witness must also still be scored on the run that is in trouble. The CLI
      skips paid graders — `llm`, `baseline` — when `--max-cost-usd` is breached
@@ -114,6 +134,18 @@ authoring time:
      `witnesses()` honours the same flag, so the one rule that might have
      noticed stops counting the grader too. The case keeps its witness and
      simply scores one thing fewer than it reads as scoring.
+
+  6. **The crashed-run floor, per case, per ablation.** Rules 1–5 are each a
+     property of one case file. The floor is a *number*, it is the only thing a
+     human reads off a run that produced no evidence, and it lived in this
+     docstring measured under one flag — so it was both unverified and, in the
+     `with-without` column, wrong. It is computable: `crash_floors` divides the
+     absence-graders by the scored ones, twice, and reproduces all twenty
+     measured values above. `evals/README.md` now declares both columns per
+     case, and a declared floor that disagrees with the case's graders is an
+     error. Nothing here gates on the value; the rule gates on the *claim*,
+     which is what goes stale when a grader is added, removed or marked
+     `with-only`.
 
 What this checker deliberately does not do: score a role. That needs the agent
 runs, a credential, and a human reading the result. It asserts only that the
@@ -301,6 +333,20 @@ def witnesses(graders: list[dict]) -> list[str]:
     ]
 
 
+def crash_floors(graders: list[dict]) -> tuple[str, str]:
+    """The score a crashed run reports, as (`--ablation none`, default).
+
+    A crashed run's score is the share of its *scored* graders that pass by
+    absence, and `arm: with-only` decides which graders those are: the default
+    `with-without` keeps the routing indicator out of the score, `--ablation
+    none` scores it. So one grader list has two floors, and the default — the
+    column a human gets — is the higher one.
+    """
+    scored = [g for g in graders if g.get("arm") != "with-only"] or graders
+    share = lambda gs: f"{sum(grader_kind(g) == VACUOUS for g in gs) / len(gs):.2f}"
+    return share(graders), share(scored)
+
+
 def split_row(row: str) -> list[str]:
     """Split a markdown table row on its unescaped pipes."""
     cells = re.split(r"(?<!\\)\|", row.strip())
@@ -351,6 +397,28 @@ def parse_floor_table(readme: str) -> dict[str, int]:
         if len(field) == 1 and len(floor) == 1 and floor[0].isdigit():
             floors[field[0]] = int(floor[0])
     return floors
+
+
+CRASH_FLOOR = re.compile(r"^\d\.\d\d$")
+
+
+def parse_case_floor_table(readme: str) -> dict[str, tuple[str, str]]:
+    """Rows of `| `case` | `none` | `with-without` | — the crashed-run floors.
+
+    Three cells like the budget-floor and vector tables, told apart from both by
+    the two decimals: `parse_floor_table` wants `isdigit()` in cell 1 and
+    `parse_vector_table` wants two code spans and an em dash in cell 0.
+    """
+    return {
+        case[0]: (none[0], default[0])
+        for row in readme.splitlines()
+        if len(cells := split_row(row)) == 3
+        and len(case := code_spans(cells[0])) == 1
+        and len(none := code_spans(cells[1])) == 1
+        and len(default := code_spans(cells[2])) == 1
+        and CRASH_FLOOR.match(none[0])
+        and CRASH_FLOOR.match(default[0])
+    }
 
 
 HEREDOC = re.compile(
@@ -448,6 +516,7 @@ def check_suite(evals_dir: pathlib.Path) -> list[str]:
     vectors = parse_vector_table(readme_text)
     declared = parse_witness_table(readme_text)
     floors = parse_floor_table(readme_text)
+    case_floors = parse_case_floor_table(readme_text)
     documented = set()
 
     for field in sorted(BUDGETS - floors.keys()):
@@ -601,6 +670,27 @@ def check_suite(evals_dir: pathlib.Path) -> list[str]:
                         f"that can write a file "
                         f"({', '.join(sorted(WRITERS))}) — it can never pass"
                     )
+
+        measured = crash_floors(graders)
+        documented_floor = case_floors.get(case_file.parent.name)
+        if documented_floor is None:
+            errors.append(
+                f"{readme.relative_to(REPO)}: no crashed-run floor row for case "
+                f"'{case_file.parent.name}' — it is {measured[0]} under "
+                f"`--ablation none` and {measured[1]} under the default "
+                f"`with-without`, and that second number is what a human reads "
+                f"off a run this suite cannot execute in CI"
+            )
+        elif documented_floor != measured:
+            errors.append(
+                f"{readme.relative_to(REPO)}: case "
+                f"'{case_file.parent.name}' is documented as floor "
+                f"{documented_floor[0]}/{documented_floor[1]} (none/default) "
+                f"and its graders now give {measured[0]}/{measured[1]} — a "
+                f"grader added, removed or marked `arm: with-only` moves the "
+                f"floor, and the floor is the only number read off a run that "
+                f"verified nothing"
+            )
 
         scored = witnesses(graders)
         if scored and witness is None:
