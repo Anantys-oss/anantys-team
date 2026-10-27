@@ -1,0 +1,58 @@
+# Publish the version the manifests already name.
+#
+# The version in `plugin.json` is the only signal a user's installed copy
+# consults, so an unbumped version means a landed change never reaches anyone.
+# A queue of PRs can agree on the *next* version without conflicting — they all
+# name the same value in the same two lines — but only if "what users already
+# have" is a published floor rather than a moving one. That floor is a release
+# tag, and nothing in this repo cut one: the version has been published as a
+# number no commit is pinned to.
+#
+# So: no computation, no bumping, no changelog authoring. The pull request
+# names the version; merging it publishes that name. Re-running on a merge that
+# did not change the version is a no-op, which makes this safe to leave on.
+name: release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Release the version both manifests name
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          plugin=$(jq -r '.version // empty' plugins/anantys-team-agents/.claude-plugin/plugin.json)
+          catalog=$(jq -r '.plugins[0].version // empty' .claude-plugin/marketplace.json)
+
+          if [ -z "$plugin" ]; then
+            echo "::error::plugin.json names no version — nothing to publish."
+            exit 1
+          fi
+          if [ "$plugin" != "$catalog" ]; then
+            echo "::error::manifests disagree: plugin.json=$plugin marketplace.json=${catalog:-<missing>}."
+            echo "::error::Refusing to tag a version the catalog does not serve."
+            exit 1
+          fi
+
+          tag="v$plugin"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "$tag is already published — nothing to do."
+            exit 0
+          fi
+
+          gh release create "$tag" \
+            --target "$GITHUB_SHA" \
+            --title "$tag" \
+            --generate-notes
+          echo "Published $tag at $GITHUB_SHA."

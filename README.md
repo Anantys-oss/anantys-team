@@ -80,6 +80,21 @@ anantys-team/
 - **plugin** = the installable, versioned unit a user enables in one shot.
 - **skills** = the actual capabilities Claude invokes.
 
+## Releases
+
+The version lives in two files and they must agree: `plugin.json` (what an
+installed copy consults) and `marketplace.json` (what the catalog serves).
+
+- **Bump it in the pull request** that changes the plugin's content. Several
+  open PRs naming the same next version is expected — identical edits to one
+  line merge without conflict, and one release ships them together.
+- **Merging publishes it.** `.github/workflows/release.yml` tags `main` as
+  `v<version>` and cuts a GitHub release the first time a merge lands a version
+  that has no tag yet. Merges that don't change the version are a no-op.
+
+That tag is the floor the version is measured against: *what users already
+have*. Without it, "has this change shipped?" has no answer.
+
 ## License
 
 Provided as-is for consulting and educational use.
