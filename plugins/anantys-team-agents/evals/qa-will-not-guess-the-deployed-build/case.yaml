@@ -29,11 +29,15 @@ graders:
     min: 1
     arm: with-only
 
-  - type: regex
+  # On the Bash calls: the rule forbids *reading* the build identity out of the
+  # working copy, and a run explaining why it will not infer it names the probe it
+  # declined. Over `trace` that explanation is indistinguishable from the act.
+  - type: tool_used
     name: build-not-read-from-the-checkout
-    target: trace
-    pattern: git\s+(branch\b|rev-parse\b|symbolic-ref\b)
-    match: not_contains
+    tool: Bash
+    input_match: git\s+(branch\b|rev-parse\b|symbolic-ref\b)
+    min: 0
+    max: 0
 
   - type: file_exists
     name: no-run-was-logged

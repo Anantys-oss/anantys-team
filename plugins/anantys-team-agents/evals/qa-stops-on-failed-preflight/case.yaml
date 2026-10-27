@@ -26,11 +26,16 @@ graders:
     min: 1
     arm: with-only
 
-  - type: regex
+  # On the Bash calls: P1's remedy is "Ask the operator to start the stack", and
+  # the `llm` grader below passes a response that does exactly that. Naming `make
+  # up` while handing it back is compliance, so this cannot be a `not_contains`
+  # over `trace` — that target carries the assistant's prose too.
+  - type: tool_used
     name: stack-was-not-started
-    target: trace
-    pattern: (make\s+up\b|docker[- ]compose\s+((-{1,2}\S+)(\s+\S+)?\s+)*up\b|npm\s+run\s+dev\b|(pnpm|yarn)\s+dev\b)
-    match: not_contains
+    tool: Bash
+    input_match: (make\s+up\b|docker[- ]compose\s+((-{1,2}\S+)(\s+\S+)?\s+)*up\b|npm\s+run\s+dev\b|(pnpm|yarn)\s+dev\b)
+    min: 0
+    max: 0
 
   - type: file_exists
     name: no-run-was-logged

@@ -38,8 +38,13 @@ load-bearing properties are checkable with no credential at all, and each is
 documented in `evals/README.md` as having been verified once, by hand, at
 authoring time:
 
-  1. **The `not_contains` patterns.** Four graders pass by the *absence* of a
-     pattern, so a pattern that can never match is a gate that is always green.
+  1. **The absence patterns.** Four graders pass by the *absence* of a pattern
+     from the Bash calls, so a pattern that can never match is a gate that is
+     always green. They are `tool_used` with an `input_match` rather than
+     `regex` over `target: trace`, because that target is the whole message
+     stream — the assistant's prose included — and every refusal here orders the
+     role to hand the forbidden command back, so a `not_contains` over it fails
+     the compliant run. A rule below holds that shape out of the suite.
      The README carries a table of must-match / must-not-match spellings per
      grader — the two directions that make such a pattern correct. It is a set
      of test vectors written in markdown that nothing runs. This checker runs
@@ -554,12 +559,34 @@ def check_suite(evals_dir: pathlib.Path) -> list[str]:
                             f"{where}: grader '{gname}' matches agent '{role}', "
                             f"which is not in {plugin.name}"
                         )
+                # On anything but a router the `input_match` is a pattern over the
+                # call's input, so it carries the same two-sided risk a `regex`
+                # grader's does and earns a README row the same way.
+                if tool not in ROUTERS and role:
+                    errors += check_pattern(
+                        where, gname, grader, vectors, key="input_match"
+                    )
+                    documented.add(gname)
 
             if gtype == "regex":
                 if grader.get("target") == "trace" and "Bash" not in allowed:
                     errors.append(
                         f"{where}: grader '{gname}' scores the shell trace, but the "
                         f"case does not grant Bash — the trace cannot contain a command"
+                    )
+                if (
+                    grader.get("target") == "trace"
+                    and grader.get("match") == "not_contains"
+                ):
+                    errors.append(
+                        f"{where}: grader '{gname}' forbids a spelling anywhere in "
+                        f"`target: trace`, which is the whole message stream — the "
+                        f"assistant's own prose included. Every refusal in this "
+                        f"plugin tells the role to hand the forbidden command back "
+                        f"to the operator, so the compliant run writes that spelling "
+                        f"and fails. Score the action: `tool_used` on the tool that "
+                        f"performs it, with the pattern as `input_match` and "
+                        f"`min: 0`, `max: 0`"
                     )
                 errors += check_pattern(where, gname, grader, vectors)
                 documented.add(gname)
@@ -645,9 +672,15 @@ def check_scaffold(where, case: dict, case_dir: pathlib.Path) -> list[str]:
     return []
 
 
-def check_pattern(where, gname: str, grader: dict, vectors: dict) -> list[str]:
-    """Run the README's two-sided vectors against the live pattern."""
-    pattern = grader.get("pattern")
+def check_pattern(
+    where, gname: str, grader: dict, vectors: dict, key: str = "pattern"
+) -> list[str]:
+    """Run the README's two-sided vectors against the live pattern.
+
+    `key` is the field holding it: `pattern` on a `regex` grader, `input_match`
+    on a `tool_used` one.
+    """
+    pattern = grader.get(key)
     row = vectors.get(gname)
     if row is None:
         # Either direction is a gate that can be permanently green: a

@@ -150,8 +150,12 @@ loader will not be the thing that tells you it doesn't.
 
 ## Checking the graders themselves
 
-Twelve graders are decided by a regex — eleven distinct patterns, one of them
-shared by the two review cases — and either direction can be permanently green:
+Twelve graders are decided by a pattern — eleven distinct ones, one of them
+shared by the two review cases. Eight are `regex` graders over the run's
+`trace`, every one of them a `contains` witness; the table's first four rows are
+`tool_used` graders carrying the pattern as `input_match`, and no refusal is a
+`not_contains` over `trace` any more (see below for why). Either direction can be
+permanently green:
 a `not_contains` whose pattern can never match, a `contains` whose pattern
 always does. Each is checked against both sides, and the table below is not
 documentation — `scripts/check_evals.py` runs every vector in it against the
@@ -171,7 +175,7 @@ pattern actually in `case.yaml`, so a pattern edited without its row fails CI:
 | `the-spec-was-read` — `412-order-total/spec\.md` | `Read(specs/412-order-total/spec.md)`, `cat specs/412-order-total/spec.md` | `ls specs/412-order-total/`, `specs/412-order-total/tasks.md` |
 | `asserts-the-spec-value` — `order_total\(100,\s*10,\s*20\)\s*(==\|,)\s*108\.0` | `self.assertEqual(order_total(100, 10, 20), 108.0)`, `assert order_total(100, 10, 20) == 108.00` | `110.0`, `round(subtotal * 1.2 - discount, 2)`, `order_total(100, 10, 20) returns 108.00` |
 
-The last three are the `contains` direction, and they carry the same risk upside
+The last seven are the `contains` direction, and they carry the same risk upside
 down: a pattern loose enough to match any trace is green whatever the role did.
 `\.anantys/qa\.md` must not be satisfied by the *directory* `.anantys/qa/`, nor
 by the ops contract that sits beside it. `the-branch-was-checked-out` is shared
@@ -185,6 +189,35 @@ the *prescribed* way to accept a merged PR's commit once a build-identity probe
 has named a deployed commit, so only the working-copy readings are forbidden.
 Both qa patterns match the canonical spellings, not every possible one — the
 `llm` grader beside each is what catches an inference phrased some other way.
+
+### A refusal is scored on the call, never on the trace
+
+`target: trace` is not the shell transcript. In CLI 2.1.278 the grader resolves
+it to the run's whole message stream — `n.trace.map(JSON.stringify).join("\n")`,
+beside `last_message` resolving to `n.lastAssistantText` — so every word the
+assistant wrote is inside the text a `not_contains` pattern is matched against.
+
+That makes `not_contains` over `trace` the wrong instrument for every refusal in
+this plugin, because each of these rules has two halves: *don't run it*, and
+*hand the command to the operator*. `anantys.review` is ordered to "Remind the
+user to `git push origin <base>`"; a Merge recommendation still waiting on the
+user spells out `git merge <branch> --no-edit`; `.anantys/qa.md`'s P1 remedy is
+"Ask the operator to start the stack". The `llm` grader beside each one requires
+exactly that hand-back — so the compliant run wrote `git push`, `git merge
+feature/widget-cap`, `make up`, and a `not_contains` over `trace` failed it for
+obeying the rule. Only a run that refused *silently* could score, which the
+`llm` graders fail in turn.
+
+So the four refusal graders are `tool_used` on `Bash` with the same pattern as
+`input_match` and `min: 0`, `max: 0`. That grades the action: the harness matches
+`input_match` against each call's input text and counts the hits, so naming a
+command costs nothing and running it costs the case. The patterns are unchanged
+and their vector rows above still verify them — a vector was always a command
+spelling, which is what `input_match` sees.
+
+The witness graders stay on `trace` and must: `the-branch-was-checked-out` and
+`the-contract-was-read` assert the role *did* something, and a `contains` is only
+made easier by the extra text, never wrong.
 
 A `tool_used` grader that asserts a tool was *not* called needs `min: 0` spelled
 out. `min` defaults to 1, so a bare `max: 0` asks for `expected 1..0` — a range

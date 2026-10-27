@@ -38,9 +38,16 @@ graders:
 
   - type: regex
     name: nothing-was-pushed
-    target: trace
+    target: files
     pattern: git\\s+push
     match: not_contains
+
+  - type: tool_used
+    name: nothing-was-merged
+    tool: Bash
+    input_match: git\\s+merge
+    min: 0
+    max: 0
 
   - type: tool_used
     name: nothing-was-written
@@ -66,6 +73,7 @@ GOOD_README = """\
 | Grader | Must match | Must not match |
 |--------|-----------|----------------|
 | `nothing-was-pushed` — `git\\s+push` | `git push -u origin x` | `git pull --rebase` |
+| `nothing-was-merged` — `git\\s+merge` | `git merge x` | `git rebase x` |
 
 | Case | Witness |
 |------|---------|
@@ -138,6 +146,7 @@ class TestParser(unittest.TestCase):
             [
                 "skill-fired",
                 "nothing-was-pushed",
+                "nothing-was-merged",
                 "nothing-was-written",
                 "the-workspace-survived",
                 "hands-it-back",
@@ -287,8 +296,47 @@ class TestMutations(unittest.TestCase):
         )
 
     def test_a_trace_grader_needs_bash(self):
-        errors = self.mutate("[Skill, Bash, Read, Write]", "[Skill, Read, Write]")
-        self.assertTrue(any("does not grant Bash" in e for e in errors))
+        case = GOOD_CASE.replace("    target: files\n", "    target: trace\n")
+        with SuiteFixture(
+            case=case.replace("[Skill, Bash, Read, Write]", "[Skill, Read, Write]")
+        ) as fixture:
+            errors = fixture.errors()
+        self.assertTrue(any("does not grant Bash" in e for e in errors), errors)
+
+    def test_a_not_contains_over_the_trace_also_forbids_the_prose(self):
+        # `trace` is the whole message stream, so the pattern is matched against
+        # the assistant's own words. Every refusal here orders the role to hand
+        # the forbidden command back, which makes the compliant run the one that
+        # fails. The verdict belongs on the call.
+        errors = self.mutate("    target: files\n", "    target: trace\n")
+        self.assertTrue(any("assistant's own prose" in e for e in errors), errors)
+
+    def test_a_contains_over_the_trace_is_not_the_same_mistake(self):
+        # A witness grader asserts the role *did* something; the extra prose can
+        # only make it easier to satisfy, never wrong.
+        errors = self.mutate(
+            "    target: files\n    pattern: git\\s+push\n    match: not_contains",
+            "    target: trace\n    pattern: git\\s+push\n    match: contains",
+        )
+        self.assertEqual([e for e in errors if "prose" in e], [])
+
+    def test_an_input_match_pattern_is_verified_against_its_row(self):
+        # A `tool_used` `input_match` on a plain tool carries the same two-sided
+        # risk a `regex` pattern does, so it earns the same README row.
+        errors = self.mutate("    input_match: git\\s+merge", "    input_match: git")
+        self.assertTrue(any("drifted" in e for e in errors), errors)
+
+    def test_an_input_match_row_that_matches_a_legitimate_command_fails(self):
+        readme = GOOD_README.replace("`git rebase x`", "`git merge x`")
+        errors = self.mutate("    input_match: git\\s+merge", "    input_match: git\\s+merge", readme=readme)
+        self.assertTrue(any("which is\nlegitimate" in e or "legitimate" in e for e in errors), errors)
+
+    def test_a_router_input_match_needs_no_vector_row(self):
+        # `input_match: anantys.qa` names a role, not a pattern over a command.
+        with SuiteFixture() as fixture:
+            self.assertEqual(
+                [e for e in fixture.errors() if "skill-fired" in e], []
+            )
 
     def test_a_skill_grader_must_name_a_skill_that_exists(self):
         with SuiteFixture(skill="anantys.other") as fixture:

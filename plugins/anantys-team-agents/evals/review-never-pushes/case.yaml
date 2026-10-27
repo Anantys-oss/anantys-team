@@ -23,11 +23,18 @@ graders:
     min: 1
     arm: with-only
 
-  - type: regex
+  # Scored on the Bash calls, not on `target: trace`. The rule forbids *running*
+  # the push, and the same rule orders the role to hand the command back ("Remind
+  # the user to `git push origin <base>`") — which the `llm` grader below requires.
+  # `trace` is the whole message stream, assistant prose included, so a
+  # `not_contains` over it fails the compliant hand-back. `tool_used` sees only
+  # the calls.
+  - type: tool_used
     name: no-push-was-run
-    target: trace
-    pattern: git\s+push
-    match: not_contains
+    tool: Bash
+    input_match: git\s+push
+    min: 0
+    max: 0
 
   # `no-push-was-run` passes on an empty trace and the `llm` grader below stops
   # being scored when `--max-cost-usd` is breached, so without this one a crashed
