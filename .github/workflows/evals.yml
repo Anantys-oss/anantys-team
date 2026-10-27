@@ -1,0 +1,113 @@
+name: evals
+
+# The eval suite itself cannot run here. Each case spawns a `claude` child with
+# a sealed HOME, so an automation session fails every run with
+# `Not logged in · Please run /login` — and a crashed run is not scored 0: the
+# harness seals the sandbox before the graders evaluate, so every `exists: false`
+# and every `not_contains` passes by absence. Measured on CLI 2.1.278 with
+# `--runs 1 --ablation none`, two of these cases read **0.50** having walked
+# nothing at all — they read 0.40 now, because each acquired the witness grader
+# `check_evals.py` requires. The floor of all eight is in its docstring.
+#
+# So what CI can assert is not a score. It is that the suite is still capable of
+# producing one: that each pattern-decided grader still matches what it must and
+# still ignores what it must not, and that no case is mostly graders which pass
+# when nothing happened. `scripts/check_evals.py` executes the must-match /
+# must-not-match table in `evals/README.md` — vectors that were verified once,
+# by hand, at authoring time and that nothing re-ran until now.
+#
+# "The suite cannot run here" was true of the *agent runs* and was read as true
+# of the whole command. It is not: `claude plugin eval` discovers the cases,
+# validates each one against the real schema, and computes grader reachability
+# before it launches anything, and `--max-cost-usd 0` is checked *before each
+# run launches* — so the ceiling stops the suite at zero agent runs, zero
+# dollars and no credential at all (verified under `env -i` with a sealed HOME).
+# That layer is the loader's own reading of these files, and it is the one
+# reading that cannot drift from what actually runs them.
+#
+# Measured against `check_evals.py` over single-mutation corruptions of this
+# suite, applied one at a time, the two gates overlap on 3 and each sees several
+# the other does not:
+#
+#   loader only (5)  runs: 0 · execution.max_turns: 0 · timeout_seconds: 0 ·
+#                    schema_version removed · execution.prompt removed
+#   both (3)         an unknown grader `type:` · `graders:` misspelled ·
+#                    a grader about a tool the case does not grant
+#   check_evals (15) name != directory · input_match naming a skill the plugin
+#                    does not ship · a pattern that no longer compiles, or that
+#                    drifted from the README row verifying it · allowed_tools
+#                    emptied · `exists: true` with no write-capable grant ·
+#                    `max: 0` without `min: 0` · a scaffold_script path that
+#                    escapes its case directory, or that names nothing ·
+#                    max_turns / timeout_seconds / runs below the README's floor,
+#                    or absent · `arm: with-only` on a grader that is not the
+#                    routing indicator
+#   neither (0)
+#
+# The last two `check_evals` rows were added by widening the sweep, not by
+# reading the gates again: "neither (0)" was true of the mutations that had been
+# tried and was read as a property of the pair. Six of the seven new ones land
+# on one mechanism — a run that errors is scored by absence, not 0 — which the
+# loader guards with a single `!= 0`, so `max_turns: 1` and `timeout_seconds: 1`
+# were the same crash in a spelling both gates liked, and a field deleted
+# outright was nobody's. The seventh, `arm: with-only` on an outcome grader, hid
+# behind this checker's own rule: `witnesses()` reads that flag, so the grader it
+# deletes is a grader this gate then stops counting. A "neither" row is a
+# statement about the sweep that produced it, never about the pair — widen the
+# sweep before trusting the zero.
+#
+# Two of these rows were "neither" until the README's claim about them was
+# actually run. The harness does refuse both, with the wording
+# `path "…" escapes the case directory` / `path "…" does not exist`, and it does
+# so before the first turn — so it needs no credential and costs nothing:
+#
+#   claude plugin eval ./plugins/anantys-team-agents --case <case> --runs 1 \
+#     --ablation none --scaffold --allow-tools Bash Edit Write Task \
+#     --trust-plugin --no-publish --max-cost-usd 0.01
+#
+# The ceiling has to be a nonzero cent. At `--max-cost-usd 0` — the invocation
+# below — the suite stops *before* any run launches, which is precisely why
+# neither refusal was ever reachable from here. `check_evals.py` now holds both,
+# and the step below still cannot see them.
+#
+# The last two `check_evals` rows are the asymmetry worth naming: the loader
+# computes grader reachability too, but against `--allow-tools` alone. A case
+# whose own `allowed_tools` withholds the tool passes the loader's check and
+# still holds a grader whose verdict was decided before the first turn.
+#
+# The loader's exit code cannot carry the verdict — `--max-cost-usd 0` always
+# exits 2 ("partial: cost_ceiling"), clean suite or not — and `--json` records
+# no diagnostics. So the step reads the diagnostic stream, which is why the
+# strings it greps for are pinned to a CLI version here.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  evals:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 -m unittest discover -s scripts
+      - run: python3 scripts/check_evals.py
+
+      # `--allow-tools` has to name every gated tool the cases ask for, or the
+      # loader reports graders as unreachable that are reachable under the
+      # README's documented invocation. `--scaffold` is deliberately absent: no
+      # case launches under the ceiling, so no scaffold would run, and CI has no
+      # business being the place that proves it.
+      - run: npm install -g @anthropic-ai/claude-code@2.1.278
+      - name: the loader's own reading of the suite
+        run: |
+          out="$RUNNER_TEMP/loader.out"
+          # The ceiling makes the exit code a constant 2, so the pipeline's
+          # status is tee's and the verdict comes from the next line.
+          claude plugin eval ./plugins/anantys-team-agents \
+            --allow-tools Bash Edit Write \
+            --trust-plugin --no-publish --max-cost-usd 0 2>&1 | tee "$out"
+          # Every schema rejection is a `✗` line. The reachability finding is a
+          # `⚠`, which the loader also uses for advisories, so that one is
+          # matched by its wording.
+          ! grep -E '^✗ |cannot pass with the granted tools|not granted \(missing' "$out"
