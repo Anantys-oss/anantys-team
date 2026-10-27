@@ -20,8 +20,16 @@ The gates are overlaid onto each head, so what is measured is the head's *conten
 against this branch's checkers — not whatever checkers the head happens to carry.
 
 `--union` moves that overlay off this branch. The sentence above holds the blind
-spot one level up: *this branch's* checkers are 19 of the queue's 22 tools, because
+spot one level up: *this branch's* checkers are 11 of the queue's 14 tools, because
 each tool arrived on its own branch too. See `union`.
+
+A cell is a finding about a head only if it differs from the destination's. Run over
+173 heads this printed "173 head(s) with a failing gate" — 100%, which reads as a
+queue where every branch is broken and is the one sentence a reader quotes. The same
+run says 134 of those heads fail no gate `origin/main` does not already fail, and 38
+introduce one. Three of main's own failures (`md_fences`, `template_paths`,
+`doc_actions`) are inherited by nearly every head, so a tally that does not subtract
+the destination measures `main` 173 times and the queue not at all. See `table`.
 """
 
 from __future__ import annotations
@@ -34,6 +42,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 #: Overlaid onto each head. `.github` comes too: a gate may read the workflow that runs it.
 OVERLAY = ("scripts", ".github")
+#: The destination, swept like any other head because it carries none of these gates.
+#: A gate failing *here* fails on every head that has not fixed it, so that cell is this
+#: row's finding and not theirs. Named, not inferred from "fails everywhere": a column
+#: can fail on all of today's heads and still be one head's regression tomorrow.
+BASE = "origin/main"
 
 
 def git(*args: str, cwd: Path | None = None) -> str:
@@ -206,7 +219,22 @@ def run(tree: Path, head: str, names: list[str], overlay: Path = ROOT) -> dict[s
     return check(tree, names, overlay)
 
 
-def table(rows: dict[str, dict[str, int]], names: list[str]) -> str:
+def table(rows: dict[str, dict[str, int]], names: list[str], base: str = BASE) -> str:
+    """The cells, the findings behind them, and a tally that subtracts the destination.
+
+    Two things here were learned from the same 173-head run. First, a finding repeated
+    per row is not 173 findings: `md_fences`, `template_paths` and `doc_actions` fail
+    on `main` and are carried by nearly every head, and the two union-assembled gates
+    fail on all 173, so 832 of the report's 1095 lines were the same five sentences.
+    A reader scrolls past a section like that, which is the whole purpose of the
+    section. Identical messages collapse to one line naming how many rows held it and
+    one row to reproduce it on.
+
+    Second, the tally said "173 head(s) with a failing gate". True, and it is `main`'s
+    number: 134 of those heads fail nothing the destination passes. A head's tally has
+    to be about what the head *introduced*, or the sweep reports the queue as wholly
+    red on the strength of three defects that predate every branch in it.
+    """
     short = [n.removeprefix("check_") for n in names]
     width = max(len(h) for h in rows) if rows else 0
     out = [" " * width + "  " + " ".join(f"{s[:9]:>9}" for s in short)]
@@ -218,18 +246,36 @@ def table(rows: dict[str, dict[str, int]], names: list[str]) -> str:
         out.append(f"{head:<{width}}  {marks}")
     # `getattr`, because `table` is called with plain ints by anything that builds rows
     # itself, and a cell with no message must read as a cell with nothing to add.
-    whys = [
-        f"{head} {n.removeprefix('check_')}: {getattr(cells[n], 'why', '')}"
-        for head, cells in rows.items()
-        for n in names
-        if cells.get(n) and getattr(cells[n], "why", "")
-    ]
+    whys: dict[tuple[str, str], list[str]] = {}
+    for head, cells in rows.items():
+        for n in names:
+            why = getattr(cells[n], "why", "") if cells.get(n) else ""
+            if why:
+                whys.setdefault((n, why), []).append(head)
     if whys:
         out.append("")
-        out.extend(whys)
+        for (n, why), held in whys.items():
+            gate = n.removeprefix("check_")
+            # The row stays named even when the message is shared: a finding nobody can
+            # reproduce is the one a reader has to take on faith, and the overlay is
+            # exactly what makes re-deriving it by hand expensive.
+            where = held[0] if len(held) == 1 else f"{len(held)} head(s), e.g. {held[0]}"
+            out.append(f"{where} {gate}: {why}")
+    # A gate failing on the destination too is not this head's to fix, and counting it
+    # made the tally `main`'s. `base` absent from `rows` leaves every failure the head's,
+    # which is the only honest reading when the destination was not measured.
+    inherited = rows.get(base) or {}
     failing = sum(1 for cells in rows.values() if any(cells.values()))
+    introduced = sum(
+        1
+        for head, cells in rows.items()
+        if head != base
+        and any(code and not inherited.get(n) for n, code in cells.items())
+    )
     unmeasured = sum(1 for cells in rows.values() if not cells)
     tally = f"\n{len(rows)} head(s) x {len(names)} gate(s) — {failing} head(s) with a failing gate"
+    if inherited:
+        tally += f", {introduced} with one {base} passes"
     # A cell has three outcomes and this line reported two, so an unmeasured head landed
     # in the same bucket as a passing one. `len(rows) x len(names)` then reads as a count
     # of cells that were run. Name the third outcome wherever it occurred.

@@ -109,6 +109,98 @@ class AFailingCellCarriesItsFinding(unittest.TestCase):
         self.assertEqual(gm.finding("", ""), "")
 
 
+class AFindingSharedByManyHeadsIsOneFinding(unittest.TestCase):
+    """832 of a 173-head report's 1095 lines were five sentences repeated per row.
+
+    A section a reader scrolls past is a section that reports nothing, and the cost is
+    paid exactly where the sweep's value is — `main`'s `md_fences`, `template_paths`
+    and `doc_actions` findings are carried by ~150 heads each, and two union-assembled
+    gates failed on all 173. One line per distinct sentence; the row stays named so the
+    finding is still reproducible.
+    """
+
+    NAMES = ["check_a"]
+
+    def test_the_same_message_on_many_heads_is_printed_once(self) -> None:
+        rows = {
+            f"origin/koan/{n}": {"check_a": gm.Cell(1, "error: shared")} for n in "xyz"
+        }
+        out = gm.table(rows, self.NAMES)
+        self.assertEqual(out.count("error: shared"), 1)
+
+    def test_a_shared_message_says_how_many_rows_held_it(self) -> None:
+        rows = {
+            f"origin/koan/{n}": {"check_a": gm.Cell(1, "error: shared")} for n in "xyz"
+        }
+        self.assertIn("3 head(s), e.g. origin/koan/x a: error: shared", gm.table(rows, self.NAMES))
+
+    def test_a_message_only_one_row_holds_still_names_that_row(self) -> None:
+        rows = {
+            "origin/koan/x": {"check_a": gm.Cell(1, "error: mine")},
+            "origin/koan/y": {"check_a": gm.Cell(0)},
+        }
+        self.assertIn("origin/koan/x a: error: mine", gm.table(rows, self.NAMES))
+
+    def test_two_different_messages_from_one_gate_both_survive(self) -> None:
+        # Collapsing by gate instead of by sentence drops the rarer finding, which is
+        # the one worth reading: `template_paths` said "3 templates" on 158 heads and
+        # "5 templates" on 4.
+        rows = {
+            "origin/koan/x": {"check_a": gm.Cell(1, "error: three")},
+            "origin/koan/y": {"check_a": gm.Cell(1, "error: five")},
+        }
+        out = gm.table(rows, self.NAMES)
+        self.assertIn("error: three", out)
+        self.assertIn("error: five", out)
+
+
+class TheTallySubtractsTheDestination(unittest.TestCase):
+    """"173 head(s) with a failing gate" was `main`'s number, reported 173 times.
+
+    `md_fences`, `template_paths` and `doc_actions` fail on `origin/main` and are
+    inherited by nearly every head, so the headline read 100% while 134 of 172 heads
+    introduced nothing. A tally that does not subtract the destination cannot tell a
+    queue that is broken from a queue whose destination is.
+    """
+
+    NAMES = ["check_a", "check_b"]
+
+    def test_a_failure_the_destination_also_has_is_not_the_head_s(self) -> None:
+        rows = {
+            gm.BASE: {"check_a": 1, "check_b": 0},
+            "origin/koan/x": {"check_a": 1, "check_b": 0},
+        }
+        out = gm.table(rows, self.NAMES)
+        self.assertIn("2 head(s) with a failing gate", out)
+        self.assertIn(f"0 with one {gm.BASE} passes", out)
+
+    def test_a_failure_the_destination_does_not_have_is_counted(self) -> None:
+        rows = {
+            gm.BASE: {"check_a": 1, "check_b": 0},
+            "origin/koan/x": {"check_a": 1, "check_b": 1},
+        }
+        self.assertIn(f"1 with one {gm.BASE} passes", gm.table(rows, self.NAMES))
+
+    def test_the_destination_does_not_introduce_its_own_failures(self) -> None:
+        # Counting the base row against itself reports the destination as a head that
+        # regressed, on every run, forever.
+        rows = {gm.BASE: {"check_a": 1, "check_b": 0}}
+        self.assertIn(f"0 with one {gm.BASE} passes", gm.table(rows, self.NAMES))
+
+    def test_an_unswept_destination_leaves_every_failure_the_head_s(self) -> None:
+        # `gate_matrix.py origin/koan/x` sweeps one head and no base. Silently treating
+        # an absent destination as a passing one would subtract a row nobody measured.
+        rows = {"origin/koan/x": {"check_a": 1, "check_b": 0}}
+        out = gm.table(rows, self.NAMES)
+        self.assertIn("1 head(s) with a failing gate", out)
+        self.assertNotIn("passes", out)
+
+    def test_the_destination_is_swept_by_default(self) -> None:
+        # `heads()` returns every `refs/remotes/origin/**` ref, and the subtraction is
+        # worth nothing if the row it subtracts is never measured.
+        self.assertIn(gm.BASE, gm.heads())
+
+
 class TheSweepRulesOnlyOnItsOwnMeasuring(unittest.TestCase):
     """`main`'s exit code, which is about the sweep and never about the gates."""
 
