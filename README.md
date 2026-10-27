@@ -20,6 +20,17 @@ like a teammate would:
 **Agents** are dispatched as isolated subagents (via the `Task`/Agent tool) — a deliberately
 *fresh context* so their review/testing isn't biased by the reasoning that produced the code.
 
+> **Don't "fix" these names.** Installed, a skill's *registered* name comes from its directory
+> with every non-`[A-Za-z0-9_-]` character rewritten, so the dot becomes a hyphen:
+> `anantys-team-agents:anantys-design`. The frontmatter `name:` is not discarded — the loader
+> keeps it as the skill's user-facing name **and as a bare alias**, and dispatch matches a typed
+> command against all three. So `/anantys.design`, `/anantys-team-agents:anantys.design` and
+> `/anantys-team-agents:anantys-design` all reach the same skill (`claude` 2.1.278). Agents keep
+> the dot in their registered name, so `anantys.code-auditor` is dispatched as written.
+>
+> A session's `system`/`init` event lists registered names only, never aliases — it omits
+> `/login` for the same reason. Absence from that list is not evidence a command cannot be typed.
+
 Every role is **project-agnostic**: no hardcoded domains, paths, or design tokens. They ask
 for what they need (a dev URL, a property, target queries) or infer it from the project.
 More roles can be added over time without changing how you install the team.
