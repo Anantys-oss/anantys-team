@@ -3,6 +3,7 @@ name: anantys.design
 when_to_use: Use when the user wants a web page's visual design fixed or refined against a running dev URL, with proof per fix. Triggers — "fix the spacing", "the contrast is unreadable", "the hero looks wrong", "polish this page", "check it on mobile". Examples — "the pricing hero spacing is off on http://localhost:3000/pricing", "buttons are unreadable on the dark theme, fix them and show me".
 description: Iterative frontend design fixer — drive a real browser against a dev URL, keep a TODO of design fixes, and resolve each one with a refresh + screenshot as proof. Use when refining the visual design of web pages in a tight edit→reload→verify loop.
 allowed-tools: mcp__claude-in-chrome__tabs_context_mcp, mcp__claude-in-chrome__tabs_create_mcp, mcp__claude-in-chrome__navigate, mcp__claude-in-chrome__computer, mcp__claude-in-chrome__read_page, mcp__claude-in-chrome__javascript_tool, mcp__claude-in-chrome__resize_window, Read, Write, Edit, Bash, TaskCreate, TaskUpdate, TaskList
+disallowed-tools: Bash(git commit:*), Bash(git push:*), Bash(gh pr create:*)
 ---
 
 ## Mission

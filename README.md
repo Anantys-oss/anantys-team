@@ -113,6 +113,38 @@ Cross-cutting rules — the ones that bind every role rather than one skill — 
 another section here: README has a single append point, and every PR that used it
 collided with every other PR that used it.
 
+## Tool grants: which field actually withholds a capability
+
+The two frontmatter dialects in this tree are **not** the same mechanism, and only one of
+them restricts anything:
+
+| Field | Used by | What it does |
+|-------|---------|--------------|
+| `tools:` | `agents/*.md` | A **ceiling**. The subagent gets exactly these tools; anything absent is unreachable. |
+| `allowed-tools:` | `skills/*/SKILL.md` | An **allow-rule** — "tools available to the model while this file is active". It auto-approves the tools it lists. It is *not* a ceiling: a tool left out is still reachable, it just raises a permission prompt. |
+| `disallowed-tools:` | `skills/*/SKILL.md` | The only field on a skill that **removes** a tool. Cleared when the user sends their next message. |
+
+Two consequences worth keeping in mind when editing a role:
+
+1. **Omitting a tool from a skill's `allowed-tools` does not withhold it.** It costs the
+   operator a prompt, not the capability. So a skill rule like "never push" is advisory
+   unless `disallowed-tools` carries it — which is why `anantys.debug`, `anantys.design`
+   and `anantys.review` now deny `git push` (and, for the two editing loops, `git commit`
+   and `gh pr create`) in frontmatter rather than only in prose. The field clearing on the
+   user's next message is the right shape here: the rules say *"unless the user explicitly
+   asks"*, and the asking is what lifts the denial.
+2. **Listing a tool auto-approves it.** The browser grants on `anantys.design`,
+   `anantys.debug` and `anantys.ops` include `computer` and `javascript_tool` — full
+   input control and arbitrary JS in the operator's signed-in session, with no prompt.
+   That is deliberate (these roles are useless at one prompt per refresh), but it is a
+   grant, not a declaration of intent: add a browser tool only if the loop needs it.
+
+The plugin itself ships **no MCP servers** (`claude plugin details` confirms: `MCP servers (0)`).
+The `mcp__claude-in-chrome__*` grants therefore cannot *provide* the browser — they only
+pre-approve it when the operator has the extension connected. Every browser role checks
+availability at runtime via `tabs_context_mcp` and stops if it is missing; that check, not
+the grant list, is the hard gate.
+
 ## License
 
 Provided as-is for consulting and educational use.
