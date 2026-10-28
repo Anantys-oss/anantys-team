@@ -9,7 +9,29 @@
       "version": "0.6.1",
       "description": "Turn Claude into a specialized mini-team of roles: 5 skills (/anantys.design, /anantys.ops, /anantys.debug, /anantys.review, /anantys.qa) and 2 review agents (anantys.code-auditor, anantys.spec-tester). Vendor-neutral, project-agnostic.",
       "category": "development",
-      "source": "./plugins/anantys-team-agents"
+      "source": "./plugins/anantys-team-agents",
+      "tags": [
+        "qa",
+        "browser",
+        "frontend",
+        "design",
+        "debugging",
+        "code-review",
+        "seo",
+        "spec-kit"
+      ],
+      "relevance": {
+        "topic": "a QA campaign",
+        "signals": {
+          "filesRead": [
+            "**/.anantys/qa.md",
+            "**/.anantys/qa/**/brief.md",
+            "**/qa-plan.md",
+            "**/qa-runs.md",
+            "**/specs/*/tasks.md"
+          ]
+        }
+      }
     }
   ]
 }
