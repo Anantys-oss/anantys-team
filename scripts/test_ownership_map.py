@@ -159,6 +159,25 @@ class Pct(unittest.TestCase):
         self.assertEqual(om.pct(2, 3), "67%")
 
 
+class LabelAndOrder(unittest.TestCase):
+    def test_a_pr_is_its_number_and_a_bare_head_is_its_last_segment(self):
+        self.assertEqual(om.label({"number": 98, "head": "koan/a-head"}), "#98")
+        self.assertEqual(om.label({"number": None, "head": "koan/a-head"}), "a-head")
+
+    def test_the_pr_less_heads_sort_after_the_numbered_ones(self):
+        # A mix of `int` and `None` is what `sorted()` refuses, and the row it
+        # refuses on is the one this change adds — so rank the absence instead.
+        rows = [
+            {"number": None, "head": "koan/b"},
+            {"number": 12, "head": "koan/c"},
+            {"number": None, "head": "koan/a"},
+            {"number": 3, "head": "koan/d"},
+        ]
+        self.assertEqual(
+            [om.label(h) for h in sorted(rows, key=om.order)], ["#3", "#12", "a", "b"]
+        )
+
+
 class AgainstARealRepository(unittest.TestCase):
     """The half the pure tests cannot reach: does this work on real `git diff`?"""
 
@@ -197,6 +216,10 @@ class AgainstARealRepository(unittest.TestCase):
         # refs at themselves so the same code path runs unmodified.
         for h in ("head-a", "head-b"):
             git(cls.repo, "update-ref", f"refs/remotes/origin/{h}", h)
+        # `queue_heads` asks `git ls-remote --heads origin`, which needs a remote
+        # named `origin` to answer at all. Pointing it at the fixture itself is
+        # what lets the population half run unmodified too.
+        git(cls.repo, "remote", "add", "origin", cls.repo)
         cls.by_head = om.claims(cls.repo, "main", cls.heads)
 
     @classmethod
@@ -232,8 +255,36 @@ class AgainstARealRepository(unittest.TestCase):
     def test_a_range_no_head_claims_says_the_floor_is_zero(self):
         buf = io.StringIO()
         om.report_lines(self.repo, "main", self.heads, self.by_head, "role.md", 6, 8, buf)
-        self.assertIn("No open head claims these lines", buf.getvalue())
+        self.assertIn("No pushed head claims these lines", buf.getvalue())
         self.assertIn("without touching the lines that state it", buf.getvalue())
+
+    def test_the_population_is_every_branch_on_origin(self):
+        # The point of the change: a head with no PR is still a head. `gh` cannot
+        # answer in a fixture with no GitHub remote, so every number is absent —
+        # which is the PR-less path, measured rather than asserted.
+        heads = om.queue_heads(self.repo, "main")
+        self.assertEqual([h["head"] for h in heads], ["head-a", "head-b"])
+        self.assertEqual([h["number"] for h in heads], [None, None])
+
+    def test_the_base_is_not_one_of_its_own_claimants(self):
+        self.assertNotIn("main", [h["head"] for h in om.queue_heads(self.repo, "main")])
+
+    def test_a_pr_less_head_carries_its_commit_subject_as_a_title(self):
+        titles = {h["head"]: h["title"] for h in om.queue_heads(self.repo, "main")}
+        self.assertEqual(titles["head-a"], "a")
+        self.assertEqual(titles["head-b"], "b")
+
+    def test_a_pr_less_head_is_named_in_both_reports(self):
+        # Without a number to print, the branch has to carry the identification;
+        # `#None` in either report is a row a reader cannot act on.
+        heads = om.queue_heads(self.repo, "main")
+        by_head = om.claims(self.repo, "main", heads)
+        sect, lines = io.StringIO(), io.StringIO()
+        om.report_sections(self.repo, "main", heads, by_head, "role.md", sect)
+        om.report_lines(self.repo, "main", heads, by_head, "role.md", 1, 4, lines)
+        self.assertRegex(sect.getvalue(), r"\| 1-5 \| \(frontmatter / preamble\) \| 1 \| head-a \|")
+        self.assertIn("head-a", lines.getvalue())
+        self.assertNotIn("#None", sect.getvalue() + lines.getvalue())
 
     def test_a_claimed_range_names_the_pr_and_its_lines(self):
         buf = io.StringIO()

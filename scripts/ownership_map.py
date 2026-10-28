@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Report which open heads already claim a region of `main`, before you read it.
+"""Report which pushed heads already claim a region of `main`, before you read it.
 
 `pr_landing_order.py` and `fold_coverage.py` both answer a reviewer's question:
 in what order does the queue land, and does a fold carry it. This answers the
@@ -13,18 +13,33 @@ logged "~25 tool calls, four branches saved"; another "~20, three saved". Those
 are the *successful* sweeps — each one a hand-rolled `git show` loop over every
 head, rewritten from scratch because nothing in the repo does it.
 
-The measurement that motivates the section view, taken over 58 open heads:
+**The population is every pushed head, not the open PRs** (see `queue_heads`).
+`loader_sweep.py` made that correction for its own sweep and left the sibling
+instruments named and unexamined; this is one of them. An absent PR is not a
+ruling — a closed one is — so a branch nobody has opened yet owns its lines just
+as hard, and a reader told "nobody claims this" because of it pays the exact cost
+this file exists to remove. Measured on this queue: **177 pushed heads, 122 with
+an open PR.** The 55 without one are 31% of the population.
 
-    anantys.qa      453 of 513 lines claimed   (88%)
-    anantys.design   24 of 115                 (21%)
-    anantys.ops      24 of 131                 (18%)
-    spec-tester       7 of  53                 (13%)
+The measurement that motivates the section view, at both denominators — the
+first number is the 122 open PRs, the second is all 178 pushed heads:
 
-The queue's attention is not spread over the product, it is concentrated in one
-file. A session that picks its target by "what looks defective" picks `qa` —
-the longest file, the one with the most rules — and spends its budget
-rediscovering rulings. Picking by *what the queue has not read* is a different
-and cheaper question, and it is the one this answers.
+    anantys.qa      466 of 513 lines claimed   (91% -> 91%),  49 -> 63 heads
+    anantys.ops      41 -> 59 of 131           (31% -> 45%),  23 -> 41 heads
+    anantys.design   40 -> 45 of 115           (35% -> 39%),  29 -> 45 heads
+    spec-tester      17 -> 19 of  53           (32% -> 36%),  10 -> 21 heads
+
+`anantys.qa` is saturated either way — the queue's attention is concentrated in
+the longest file, which is why a session picking its target by "what looks
+defective" picks `qa` and spends its budget rediscovering rulings. Picking by
+*what the queue has not read* is a different and cheaper question, and it is the
+one this answers.
+
+But the PR-only view answered it wrong below the top row. It ranked `anantys.ops`
+ninth of thirteen at 31%; the whole population puts it fourth at 45%, with 41
+heads holding an opinion rather than 23. Seven of thirteen rows reorder. The
+read list is the output this file exists for, and 31% of the population was
+missing from it.
 
 **The number is a floor on ownership, not a verdict on it.** Three reasons, and
 all three push the same way — the report under-claims, never over-claims:
@@ -127,19 +142,72 @@ def sections(text: str) -> list[tuple[str, int, int]]:
     return out
 
 
-def open_heads(repo: str | None) -> list[dict]:
-    """The open PRs, as {number, head, title}. Empty if `gh` is unavailable."""
+def pr_numbers(repo: str | None) -> dict[str, int]:
+    """`{head ref: PR number}` for the open PRs — a label, never the population.
+
+    Empty when `gh` cannot answer, which costs a column and not a row: every head
+    still gets measured, it is just named by its branch instead of by a number.
+    """
     raw = run(
-        ["gh", "pr", "list", "--state", "open", "--limit", "200",
-         "--json", "number,headRefName,title"],
+        ["gh", "pr", "list", "--state", "open", "--limit", "500",
+         "--json", "number,headRefName"],
         cwd=repo,
     )
-    if not raw:
-        return []
-    return [
-        {"number": p["number"], "head": p["headRefName"], "title": p["title"]}
-        for p in json.loads(raw)
+    return {p["headRefName"]: p["number"] for p in json.loads(raw)} if raw else {}
+
+
+def subjects(repo: str | None) -> dict[str, str]:
+    """`{head ref: last commit subject}` for the remote-tracking refs, in one call.
+
+    A head with no PR has no PR title, and its own subject is the nearest thing to
+    one. Batched because the alternative is a `git log` per head, and the whole
+    point of this file is to be cheaper than the hand-rolled loop it replaces.
+    """
+    raw = run(
+        ["git", "for-each-ref", "--format=%(refname:lstrip=3)%09%(contents:subject)",
+         "refs/remotes/origin/"],
+        cwd=repo,
+    )
+    rows = (line.split("\t", 1) for line in raw.splitlines() if "\t" in line)
+    return {ref: subject for ref, subject in rows}
+
+
+def queue_heads(repo: str | None, base: str = "origin/main") -> list[dict]:
+    """Every branch on `origin` as {number, head, title} — PR or no PR, base dropped.
+
+    `number` is `None` for a head with no open PR; `label` renders it. The base is
+    dropped because it is the ref every claim is measured *against*, and
+    `ls-remote` returns it where `gh pr list` never could.
+    """
+    raw = run(["git", "ls-remote", "--heads", "origin"], cwd=repo)
+    numbers, titles = pr_numbers(repo), subjects(repo)
+    heads = [
+        line.split("refs/heads/", 1)[1].strip()
+        for line in raw.splitlines()
+        if "refs/heads/" in line
     ]
+    return sorted(
+        (
+            {"number": numbers.get(h), "head": h, "title": titles.get(h, "")}
+            for h in set(heads)
+            if h != base.removeprefix("origin/")
+        ),
+        key=lambda h: h["head"],
+    )
+
+
+def label(head: dict) -> str:
+    """How a head is named in a report: its PR, else its branch's last segment."""
+    return f"#{head['number']}" if head["number"] is not None else head["head"].split("/")[-1]
+
+
+def order(head: dict) -> tuple:
+    """Sort key putting the PR'd heads first, numerically, then the rest by name.
+
+    `sorted()` over a mix of `int` and `None` raises, so the absent PR needs a
+    rank of its own rather than a value that stands in for one.
+    """
+    return (head["number"] is None, head["number"] or 0, head["head"])
 
 
 def claims(repo: str | None, base: str, heads: list[dict]) -> dict[str, dict[str, set[int]]]:
@@ -172,7 +240,7 @@ def report_summary(repo, base, heads, by_head, stream) -> None:
         hit = set().union(*(by_head[h][path] for h in owners)) if owners else set()
         rows.append((pct(len(hit), total), len(hit), total, len(owners), path))
     rows.sort(key=lambda r: (-r[1] / r[2] if r[2] else 0, r[4]))
-    print(f"Saturation of `{base}` by {len(heads)} open heads — least-read last\n", file=stream)
+    print(f"Saturation of `{base}` by {len(heads)} pushed heads — least-read last\n", file=stream)
     print("| claimed | lines | heads | file |", file=stream)
     print("|---|---|---|---|", file=stream)
     for p, hit, total, nheads, path in rows:
@@ -184,33 +252,32 @@ def report_sections(repo, base, heads, by_head, path, stream) -> None:
     if not text:
         print(f"{path}: not in {base}", file=stream)
         return
-    titles = {h["head"]: (h["number"], h["title"]) for h in heads}
-    print(f"`{path}` — which open heads claim each section\n", file=stream)
-    print("| lines | section | heads | PRs |", file=stream)
+    print(f"`{path}` — which pushed heads claim each section\n", file=stream)
+    print("| lines | section | heads | heads claiming |", file=stream)
     print("|---|---|---|---|", file=stream)
     for title, start, end in sections(text):
         span = set(range(start, end + 1))
         owners = sorted(
-            (titles[h][0] for h, files in by_head.items() if files.get(path, set()) & span)
+            (h for h in heads if by_head.get(h["head"], {}).get(path, set()) & span),
+            key=order,
         )
-        prs = " ".join(f"#{n}" for n in owners) or "—"
-        print(f"| {start}-{end} | {title} | {len(owners)} | {prs} |", file=stream)
+        claiming = " ".join(label(h) for h in owners) or "—"
+        print(f"| {start}-{end} | {title} | {len(owners)} | {claiming} |", file=stream)
 
 
 def report_lines(repo, base, heads, by_head, path, start, end, stream) -> None:
     span = set(range(start, end + 1))
-    titles = {h["head"]: (h["number"], h["title"]) for h in heads}
     print(f"`{path}` lines {start}-{end} — read these before judging them\n", file=stream)
     found = False
-    for head, files in sorted(by_head.items()):
-        hit = files.get(path, set()) & span
+    for head in sorted(heads, key=order):
+        hit = by_head.get(head["head"], {}).get(path, set()) & span
         if not hit:
             continue
         found = True
-        number, title = titles[head]
-        print(f"#{number} {head}\n    {title}\n    claims: {compact(hit)}", file=stream)
+        print(f"{label(head)} {head['head']}\n    {head['title']}\n"
+              f"    claims: {compact(hit)}", file=stream)
     if not found:
-        print("No open head claims these lines. The floor is zero; the ceiling is not —", file=stream)
+        print("No pushed head claims these lines. The floor is zero; the ceiling is not —", file=stream)
         print("a head can own the rule without touching the lines that state it.", file=stream)
 
 
@@ -240,9 +307,9 @@ def main(argv: list[str] | None = None) -> int:
     if not args.summary and not args.path:
         ap.error("give a path, or --summary")
 
-    heads = open_heads(args.repo)
+    heads = queue_heads(args.repo, args.base)
     if not heads:
-        print("No open PRs found (is `gh` authenticated?). Nothing to report.", file=sys.stderr)
+        print(f"No branches on `origin` besides {args.base}. Nothing to report.", file=sys.stderr)
         return 0
     by_head = claims(args.repo, args.base, heads)
 
