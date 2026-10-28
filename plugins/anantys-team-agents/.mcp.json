@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "claude-in-chrome": {
+      "command": "claude",
+      "args": [
+        "--claude-in-chrome-mcp"
+      ]
+    }
+  }
+}
