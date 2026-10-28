@@ -9,6 +9,11 @@ or let `--from linear:SKU-…` / `--from pr:<url>` assemble one for you to confi
 > requirement a stable id here; `plan` will assign `R1`, `R2`, … to any that lack one and write
 > them back, and runs / notes / reports reference those ids for the life of the feature.
 
+> **After the first `plan`, the copy at `.anantys/qa/<slug>/brief.md` owns the ids** — this file
+> stays yours to edit, and a later `plan` merges your changes into that copy instead of replacing
+> it, so an id never moves to another requirement. Edit a requirement's wording freely; if you
+> renumber or re-letter ids here, the run history still points at the old ones.
+
 ---
 
 ```markdown
