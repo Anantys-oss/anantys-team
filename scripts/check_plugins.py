@@ -357,14 +357,17 @@ def check_cost(plugin_dir: Path, name: str, details: str | None, base: str | Non
     - On-invoke is per component, but a branch that never opens ``anantys.qa/SKILL.md``
       is still handed its row. Role-local is not branch-local.
 
-    Measured on the queue this gate ships into, by installing all 161 pushed heads
-    with the real loader (`scripts/loader_sweep.py`): **8 heads are over a loader
-    budget**. Four cross the on-invoke ceiling on the same file — `#33` at 12.8k,
-    `#113` at 13.5k, and three folds at 20.8k, all `anantys.qa`, all against a
-    baseline of 8.6k. Three cross always-on, at 1,034 / 1,034 / 1,197. An earlier
-    reading of 90 *open PR* heads reported two crossings and called the 1,034 ones
-    gone; they were never gone, they were on branches with no PR — which is the shape
-    of every number in this docstring. Re-run the sweep rather than trusting them.
+    Measured on the queue this gate ships into (2026-10-28), by installing all 180
+    pushed heads with the real loader (`scripts/loader_sweep.py`): **10 heads are
+    over a loader budget**. Five cross the on-invoke ceiling on the same file —
+    `#33` at 12.8k, `#113` at 13.5k, and three folds at 20.8k, all `anantys.qa`,
+    all against a baseline of 8.6k. Five cross always-on, at 1,034 / 1,034 / 1,197
+    / 1,197 / 1,515. Every one of those five sits on a branch with no pull request,
+    and so does each 20.8k fold: the same tree swept over its 123 *open PR* heads
+    reports 7 errors and none of these. That is the shape of every number in this
+    docstring — the reading goes stale at the rate the queue grows, and the 1,515
+    appeared two days after the previous reading. Re-run the sweep rather than
+    trusting them.
     Without the baseline, the first over-budget head to merge reddens the others for a
     number they did not move — and hands each a remedy (*move detail into
     `reference/`*) in a file it does not own. That is the order-forcing this file

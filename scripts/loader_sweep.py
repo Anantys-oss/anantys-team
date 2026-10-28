@@ -44,7 +44,16 @@ The population is `git ls-remote --heads origin`, not `gh pr list` (see
 `fold_coverage`, `ownership_map`, `pair_gates`, `pr_landing_order`,
 `queue_adjudications`, `queue_forks`, `queue_redundancy`. For the ones that rank
 or order *pull requests* that is the right set; for any that claims to describe
-the queue, it is 120 of 162 branches. Unexamined here, one at a time.
+the queue, it is 123 of 180 branches. Unexamined here, one at a time.
+
+This file has had the fix once already. It was written on `koan/the-denominator-
+hides-the-folds`, which has **no pull request** and is not an ancestor of any
+live head — the branch that named the problem is the kind of branch the problem
+hides. Seven commits later the chain tip was back on `gh pr list`, and running
+both on the same tree two days after is the whole argument: 123 refs and 7
+errors against 180 refs and 15. A fix that only one of nineteen copies of a file
+carries is not landed, however correct it is; port it forward or the next head
+reverts it by not knowing.
 
     python3 scripts/loader_sweep.py                      # every pushed head
     python3 scripts/loader_sweep.py origin/koan/a-head   # just these refs
@@ -280,14 +289,16 @@ def pr_numbers():
 def queue_heads(refs, numbers, baseline="origin/main"):
     """Every pushed head as `(PR number or None, ref)`, sorted, baseline dropped.
 
-    Measured on this queue: 162 pushed heads, 120 of them with an open PR. The
-    42 without one are not declined work — a closed PR is a ruling, an *absent*
-    one is a branch nobody has opened yet. Swept at both denominators, the whole
-    population reports 13 errors on 8 heads; **6 of those errors, on 6 heads,
-    are PR-less** and a `gh pr list` sweep saw none of them. They include every
-    head over the always-on ceiling (1,034 / 1,034 / 1,197) and the three folds
-    that price `anantys.qa` at 20.8k — which is to say, the rows this sweep
-    exists for. Reaching for the PR list is reaching for a review queue; the
+    Measured on this queue (2026-10-28): 180 pushed heads, 123 of them with an
+    open PR. The 57 without one are not declined work — a closed PR is a ruling,
+    an *absent* one is a branch nobody has opened yet. Swept at both
+    denominators on the same tree, the PR list reports 7 errors and the whole
+    population 15, on 11 heads; **8 of those errors, on 8 heads, are PR-less**
+    and the `gh pr list` sweep saw none of them. They are every one of the five
+    crossings of the always-on ceiling (1,034 / 1,034 / 1,197 / 1,197 / 1,515)
+    and the three folds that price `anantys.qa` at 20.8k — which is to say, the
+    rows this sweep exists for, and three of them are the branches proposed as
+    the landing. Reaching for the PR list is reaching for a review queue; the
     loader installs trees.
 
     The baseline is dropped because it is the thing every row is a delta from,
