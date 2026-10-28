@@ -21,7 +21,8 @@ The user names the branch to review (a branch name, a PR number/URL, or "the cur
 ## Discovery (only if the branch wasn't specified)
 
 - Local branches: `git branch --list`.
-- Open PRs: `gh pr list --state open --json number,title,headRefName,author,isDraft` (if `gh` is unavailable, fall back to `git branch -r`).
+- Open PRs: `gh pr list --state open --limit 200 --json number,title,headRefName,author,isDraft` (if `gh` is unavailable, fall back to `git branch -r`). **`--limit` is not optional:** `gh` defaults to 30 and truncates *silently* — nothing on stderr, no marker in the JSON. An agent-pushed queue is precisely where the thirty-first branch lives.
+- **If the row count equals the limit you passed, assume you were cut off** — raise it, re-run, and only then present the list. Say how many you found.
 - Present the candidates and ask which one to review.
 
 ## Review workflow
@@ -115,6 +116,7 @@ later `git branch -d` can't, and it is the one step in this whole skill that can
 
 - **Check out the branch locally** — always `git checkout <branch>` into the working tree; never review off remote-ref diffs. The human reads the diff in their editor.
 - **One branch at a time** — never batch diffs or decisions.
+- **Bound every list you run.** Any `gh ... list` without `--limit` returns the first 30 and tells you nothing. A candidate list you can't vouch is complete is worse than no list: the human reads it as the queue.
 - **Summarize the diff** — a readable table + assessment beats a wall of raw diff.
 - **Base wins on conflicts** — the branch adapts to the base.
 - **Show PR info before the verdict** — context first.
