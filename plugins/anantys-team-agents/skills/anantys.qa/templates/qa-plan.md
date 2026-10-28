@@ -65,7 +65,10 @@ environment that has results — who writes and refreshes each: SKILL.md, "Progr
 
 The per-environment suffix (`` `<env>`: PASS | FAIL | BLOCKED | not run ``) is the authoritative
 result, required on every assertion that has run on any environment; a run rewrites only its own
-environment's entry. The checkbox is checked only when **every** declared environment is PASS.
+environment's entry. The checkbox is checked only when **every** declared environment is PASS —
+so declaring a new one in `.anantys/qa.md` unchecks it again (`init` does this, and leaves the
+suffixes alone). A regeneration by `plan` carries every suffix over verbatim; losing one loses the
+result itself, since nothing else is read for current status.
 
 ### B — <journey name>
 
