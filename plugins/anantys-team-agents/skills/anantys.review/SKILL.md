@@ -32,8 +32,16 @@ The user names the branch to review (a branch name, a PR number/URL, or "the cur
 **You MUST actually check out the PR branch into the working tree.** Do not review by diffing remote refs (`git diff origin/<base>...origin/<branch>`) — the human reads the diff in their editor, which requires the files to be checked out locally on the branch. Enter the branch first, every time:
 ```bash
 git checkout <branch>          # MANDATORY — be on the branch locally
+git rev-parse <branch> origin/<branch>   # not the PR head until these two match
 git merge <base> --no-edit
 ```
+**A local branch of that name is not the PR.** `git checkout` prefers an existing local ref and never consults `origin/<branch>`; pre-flight refreshed the *base*, not the branch. Agent branches are amended and force-pushed between reviews, so the ref an earlier `Skip` left behind is a tree the PR no longer has. Compare the two SHAs before assessing and classify — never `reset --hard`, which discards an unpushed landing that exists nowhere else:
+
+- **Equal** — review it.
+- **Local contains `origin/<branch>`** — an earlier review's unpushed merge. Keep it, say so, review against it.
+- **Local is behind** — the agent pushed since: `git merge --ff-only origin/<branch>`.
+- **Diverged** — STOP. Show both SHAs and ask which one is the subject. A verdict on the wrong tree reads exactly like a verdict on the right one.
+
 Confirm you are on the branch (`git branch --show-current`) before assessing. If conflicts arise, resolve them (the **base wins** on conflicts — the branch adapts to the base, not the reverse), then commit the resolution. If conflicts are non-trivial, surface them to the user rather than guessing.
 
 **This merge is local-only.** You do not push, so the branch now diverges from `origin/<branch>` and the PR on GitHub still shows the old, conflicting head. Say so explicitly and hand the user the one command that closes the gap, theirs to run:
@@ -116,6 +124,7 @@ later `git branch -d` can't, and it is the one step in this whole skill that can
 ## Rules
 
 - **Check out the branch locally** — always `git checkout <branch>` into the working tree; never review off remote-ref diffs. The human reads the diff in their editor.
+- **The PR head is the subject** — compare `<branch>` to `origin/<branch>` before assessing. A stale local ref produces a confident verdict on code the PR does not contain.
 - **One branch at a time** — never batch diffs or decisions.
 - **Bound every list you run.** Any `gh ... list` without `--limit` returns the first 30 and tells you nothing. A candidate list you can't vouch is complete is worse than no list: the human reads it as the queue.
 - **Summarize the diff** — a readable table + assessment beats a wall of raw diff.
