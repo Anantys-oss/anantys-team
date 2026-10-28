@@ -3,7 +3,6 @@ name: anantys.review
 when_to_use: Use when the user wants one agent-pushed PR branch reviewed and a Merge / Close / Skip / Audit recommendation before they decide. Triggers — "review this PR", "is it safe to merge", "what does this branch actually change", "triage this agent branch". Examples — "review the branch agent/123-add-export", "PR #42, worth merging?".
 description: Cleanly review a single agent-pushed PR branch and help decide its fate. Brings the branch up to date with its base, shows only the branch's own changes as a digestible summary (never a wall of diff), assesses value and risk, and recommends Merge / Close / Skip / Audit — then waits for the human to decide. Use to review an autonomous-agent PR before merging.
 allowed-tools: Bash, Read, Glob, Grep, Task, TaskCreate, TaskUpdate, TaskList
-disallowed-tools: Bash(git push:*)
 ---
 
 ## Mission

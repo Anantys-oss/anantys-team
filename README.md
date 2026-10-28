@@ -122,18 +122,28 @@ them restricts anything:
 |-------|---------|--------------|
 | `tools:` | `agents/*.md` | A **ceiling**. The subagent gets exactly these tools; anything absent is unreachable. |
 | `allowed-tools:` | `skills/*/SKILL.md` | An **allow-rule** — "tools available to the model while this file is active". It auto-approves the tools it lists. It is *not* a ceiling: a tool left out is still reachable, it just raises a permission prompt. |
-| `disallowed-tools:` | `skills/*/SKILL.md` | The only field on a skill that **removes** a tool. Cleared when the user sends their next message. |
+| `disallowed-tools:` | `skills/*/SKILL.md` | The only field on a skill that **removes** a tool — but it removes it **by name**. Cleared when the user sends their next message. |
 
-Two consequences worth keeping in mind when editing a role:
+Three consequences worth keeping in mind when editing a role:
 
 1. **Omitting a tool from a skill's `allowed-tools` does not withhold it.** It costs the
-   operator a prompt, not the capability. So a skill rule like "never push" is advisory
-   unless `disallowed-tools` carries it — which is why `anantys.debug`, `anantys.design`
-   and `anantys.review` now deny `git push` (and, for the two editing loops, `git commit`
-   and `gh pr create`) in frontmatter rather than only in prose. The field clearing on the
-   user's next message is the right shape here: the rules say *"unless the user explicitly
-   asks"*, and the asking is what lifts the denial.
-2. **Listing a tool auto-approves it.** The browser grants on `anantys.design`,
+   operator a prompt, not the capability. So a skill rule like "never push" is advisory,
+   and — see (2) — frontmatter cannot make it binding. The prose rule *is* the enforcement.
+2. **A scoped denial is a total denial, so no role here carries one.** `disallowed-tools`
+   is parsed by the same name-only path as `tools:`: the rule in parentheses is read and
+   then dropped, leaving the bare tool name. On a *grant* that is merely a no-op. On a
+   *denial* it inverts the author's intent — `disallowed-tools: Bash(git push:*)` denies
+   **all** of `Bash`, which for `anantys.review` (every step is `git`/`gh`),
+   `anantys.debug` and `anantys.design` means the role resolves with no shell at all.
+   Nothing warns you: the file installs clean and `claude plugin validate --strict`
+   stays quiet. The only place rule content is honoured is the operator's own settings,
+   and those rules are session-wide rather than per-role:
+
+   ```json
+   { "permissions": { "deny": ["Bash(git push:*)", "Bash(gh pr create:*)"] } }
+   ```
+
+3. **Listing a tool auto-approves it.** The browser grants on `anantys.design`,
    `anantys.debug` and `anantys.ops` include `computer` and `javascript_tool` — full
    input control and arbitrary JS in the operator's signed-in session, with no prompt.
    That is deliberate (these roles are useless at one prompt per refresh), but it is a
