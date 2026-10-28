@@ -122,7 +122,9 @@ Then ask the operator only what you could not infer, in one batch:
   serving** (a `/version` or `/healthz` endpoint, a deployed-SHA banner, a `docker inspect` — the
   build-identity check `run` uses to enforce a plan's `**Under test:**` line; it is per environment,
   since staging lags `main` between deploys), test credentials, and any known drift that must not
-  be filed as a defect.
+  be filed as a defect — each drift entry stating the behaviour actually observed, precisely enough
+  that a later run can tell a still-live entry from one that has lapsed because the drift was fixed.
+  An entry too vague to re-observe suppresses every future failure on that assertion, not one.
 - **`local` only:** the reset procedure for a fresh test subject, and a payment sandbox instrument
   (test card / token) if any journey touches money — without one, every checkout case is BLOCKED.
 - **`shared` only:** how the operator's signed-in browser session is made available to you, whether
