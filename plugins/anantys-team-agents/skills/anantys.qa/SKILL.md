@@ -92,11 +92,11 @@ before acting on it**:
 1. **Anchor, then look.** `.anantys/` and every campaign path resolve from the repo root
    (`git rev-parse --show-toplevel`), never the current working directory. If that fails — not a git
    repo — say so and ask the operator for the root; do not search from the cwd.
-2. **Ask git, not just the filesystem.** `git ls-files '*/qa-plan.md' 'qa-plan.md'` from the root.
-   If git tracks a plan that discovery did not surface, the campaign **exists and was not found**:
-   name the path you found and the one you expected, and stop. Only a repo tracking no plan is a
-   first campaign. When the named `<slug>` has no directory, that is this case too — a typo, not a
-   new campaign; never create the directory to resolve it.
+2. **Ask git about this campaign's own path, not about the repo.** `git ls-files '.anantys/qa/<slug>/qa-plan.md'`, or
+   `<spec-dir>/qa-plan.md`, from the root. A plan tracked *there* that discovery missed means the campaign **exists and
+   was not found**: name both paths and stop. Only a plan missing from **this campaign's own path** makes it a first
+   campaign — a repo-wide `'*/qa-plan.md'` asks *has this project ever run a campaign*, so as a verdict it refuses every
+   campaign after the first, quoting a stranger's path. A `<slug>` the operator **named** with no directory is a typo, never a new campaign; one you **derived** from this invocation's source is expected to have none — that is `plan`'s job.
 
 This holds for every action, not just the inferred one: `run`, `retest`, `note`, `report` and
 `status` all report not-found rather than proceeding against an empty or freshly written plan.

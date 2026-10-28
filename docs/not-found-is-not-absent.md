@@ -16,13 +16,17 @@ The two states are not the same, and no role in this repo distinguished them.
 | mistyped `<slug>` | named dir absent | first run | **same** |
 | fresh worktree / shallow clone | artifact not checked out | first run | **same** |
 | another feature normalizes to the same slug | dir present, plan tracked | **found** | **regenerates a stranger's plan over its adjudication history** |
+| a new feature, in a project that has run others | own dir absent, *other* plans tracked | **exists and was not found** | **refuses to start, naming a stranger's path** |
 
 Only the first row is a first run. The next four are lookup failures wearing its clothes, and the
 role cannot tell them apart because it asked the filesystem a question the filesystem cannot answer.
 
-The last row is the dual, and it is the one this document nearly missed: a lookup that **succeeds**
-and returns the wrong thing. Everything below about proving an absence is silent about it, because
-the proof it prescribes — ask git — comes back green.
+The **collision** row is the dual, and it is the one this document nearly missed: a lookup that
+**succeeds** and returns the wrong thing. Everything below about proving an absence is silent about
+it, because the proof it prescribes — ask git — comes back green.
+
+The **new feature** row is this document's own doing, and it is the ordinary case rather than an
+edge: see [The scope of the question](#the-scope-of-the-question).
 
 ## Why it was invisible
 
@@ -86,24 +90,68 @@ Two steps, in this order, before any role treats not-found as absent:
    never the current working directory. A relative path in a contract is a path whose meaning depends
    on who invoked the role. If the repo root cannot be determined, ask the operator — do not search
    from the cwd.
-2. **Ask git, not just the filesystem.** Git knows what the project has had; the working tree only
-   knows what is there now. If git tracks an artifact that discovery did not surface, the artifact
-   exists and was not found: name the path found and the path expected, and **stop**.
+2. **Ask git about this artifact's own path, not about the repo.** Git knows what the project has
+   had; the working tree only knows what is there now. If git tracks an artifact *at the path this
+   invocation would write* and discovery did not surface it, the artifact exists and was not found:
+   name the path found and the path expected, and **stop**. The scope is load-bearing — see below.
 
 Step 2 is what makes the distinction decidable, and it is why the artifacts have to be committed.
 `.anantys/qa.md` already was. `qa-plan.md`, `qa-runs.md` and `qa-report.md` are now stated to be —
 an untracked highest-value artifact is one `git clean` from gone, and an untracked one gives step 2
 nothing to answer with.
 
+## The scope of the question
+
+The rule above is a *stop* with no upper bound on what triggers it, and the first version of it
+asked a question far wider than the thing it rules on. `anantys.qa` ran
+`git ls-files '*/qa-plan.md' 'qa-plan.md'` and concluded "only a repo tracking no plan is a first
+campaign"; `anantys.ops` ran `git ls-files '*/current.md' 'current.md'` and concluded "only with no
+tracked prior artifact is this a first audit". Both quantify over the **repository**. Both rule on a
+**campaign**.
+
+Those are the same number exactly once — the first time the project is used. After that:
+
+> Project has `.anantys/qa/feat-checkout/qa-plan.md`, committed. Operator ships a second feature
+> and runs `plan --brief briefs/invites.md`. Discovery looks for `.anantys/qa/invites/`: nothing.
+> Step 2 asks git: `.anantys/qa/feat-checkout/qa-plan.md`. A plan is tracked and discovery did not
+> surface it, so the campaign "exists and was not found" — name both paths, **stop**.
+
+`plan` can never create a second campaign. The one action a project needs most in its second week
+refuses, and refuses *confidently*, quoting an unrelated feature's path as the history it is
+protecting. The failure is not quiet either: it is a hard stop with a plausible explanation
+attached, which is the kind a reader believes.
+
+It is the same defect as the collision row, inverted. There, a directory name was read as an
+identity. Here, *any* tracked artifact is read as **this** artifact — the guard commits the mistake
+the identity rule two sections up exists to refuse ("a directory name is a lookup key, never an
+identity"), with the broadest possible key. Both roles state both rules, adjacent, contradicting.
+
+The fix costs nothing: scope the query to the path this invocation would write. A repo-wide listing
+is still worth running, and worth showing the operator — *this project has three other campaigns*
+is useful context — but as evidence beside the scoped answer, never as the ruling. A project with
+ten campaigns had nine first campaigns, each correctly.
+
+And the pair that looked like one case is two. A `<slug>` **the operator named** whose directory is
+absent is a typo, as stated. A slug the role **derived** from a source handed to it this invocation
+is expected to have no directory — that is what `plan` is for. Collapsing them is what let "a named
+`<slug>` whose directory is missing is a typo, not a new campaign" read as *no missing directory is
+ever a new campaign*.
+
+**The general form.** A guard that proves an absence is a quantifier, and the bug is in its domain,
+not its verdict. Ask what set the query ranges over and what set the decision is about; when they
+differ, the guard is right on its first use and wrong on every one after. Destructive-default
+guards are especially prone to it, because widening the query always *looks* safer.
+
 ## Applying it
 
 - **`anantys.qa`** — stated under `## Actions`, beside the inference it corrects
   (`no qa-plan.md → plan`), and binding on every action including the feature-directory discovery. A
-  named `<slug>` whose directory is missing is a typo, not a new campaign; never create the directory
-  to resolve it.
+  `<slug>` **the operator named** whose directory is missing is a typo, not a new campaign; never
+  create the directory to resolve it. A slug the role **derived** from this invocation's source is
+  expected to have none.
 - **`anantys.ops`** — "first audit" is earned, not defaulted. Phase 6 overwrites `current.md` whole
   and rebuilds the Audit History from the previous copy, so a wrong first-audit call drops every
-  past row and every pending action's age.
+  past row and every pending action's age. Earned *per workspace*: a repo can hold two.
 
 ## Where this does not apply
 

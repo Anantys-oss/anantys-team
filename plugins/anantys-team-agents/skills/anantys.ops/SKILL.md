@@ -76,9 +76,9 @@ Load prior context so every metric can be reported with a trend delta:
 **"First audit" is a conclusion you must earn.** Finding nothing is not the same state as nothing existing — a workspace path resolved against a subdirectory instead of the repo root, or a default `./seo/` in a fresh clone or worktree, looks exactly like a site nobody has ever audited. And that mistake is not cheap: Phase 6 overwrites `current.md` whole and rebuilds the Audit History from the previous one, so a wrongly-assumed first audit silently drops every past row and every pending action's age. Before concluding it:
 
 1. **Anchor the workspace.** A relative workspace (including the `./seo/` default) resolves from the repo root (`git rev-parse --show-toplevel`), never the current working directory. If that fails — not a git repo — ask the operator for an explicit path rather than guessing.
-2. **Ask git.** `git log --oneline -1 -- <workspace>` and `git ls-files '*/current.md' 'current.md'`. If git has ever tracked an audit artifact you did not find, say where it is and what you expected, and **stop** — do not start a fresh history beside the old one.
+2. **Ask git about this workspace, not about the repo.** `git log --oneline -1 -- <workspace>` and `git ls-files '<workspace>/current.md'` — both scoped to the anchored workspace from step 1. If git has ever tracked an audit artifact *for this workspace* that you did not find, say where it is and what you expected, and **stop** — do not start a fresh history beside the old one. A repo-wide `git ls-files '*/current.md'` answers *has anything in this repo ever been audited*, which is a different question: in a repo holding two site workspaces it refuses the second one's genuine first audit and names the first one's file as the history you are about to overwrite. Keep the broad list as evidence to show the operator; the scoped answer is the ruling.
 
-Only with no tracked prior artifact is this a first audit: note it and skip comparisons. Whenever you later report a metric, **include the delta vs the previous audit** when available.
+Only with no tracked prior artifact **at this workspace's own path** is this a first audit: note it and skip comparisons. Whenever you later report a metric, **include the delta vs the previous audit** when available.
 
 ## Phase 0a: Read today's date
 
