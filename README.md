@@ -104,34 +104,14 @@ them restricts anything:
 |-------|---------|--------------|
 | `tools:` | `agents/*.md` | A **ceiling**. The subagent gets exactly these tools; anything absent is unreachable. |
 | `allowed-tools:` | `skills/*/SKILL.md` | An **allow-rule** — "tools available to the model while this file is active". It auto-approves the tools it lists. It is *not* a ceiling: a tool left out is still reachable, it just raises a permission prompt. |
-| `disallowed-tools:` | `skills/*/SKILL.md` | The only field on a skill that **removes** a tool. Lasts one user turn — see below. |
-
-Three consequences worth keeping in mind when editing a role:
-| `disallowed-tools:` | `skills/*/SKILL.md` | The only field on a skill that **removes** a tool. Cleared when the user sends their next message. |
 | `disallowed-tools:` | `skills/*/SKILL.md` | The only field on a skill that **removes** a tool — but it removes it **by name**. Cleared when the user sends their next message. |
 
-Three consequences worth keeping in mind when editing a role:
+Four consequences worth keeping in mind when editing a role:
 
 1. **Omitting a tool from a skill's `allowed-tools` does not withhold it.** It costs the
-   operator a prompt, not the capability. So a skill rule like "never push" is advisory
-   unless `disallowed-tools` carries it — which is why `anantys.debug`, `anantys.design`
-   and `anantys.review` now deny `git push` (and, for the two editing loops, `git commit`
-   and `gh pr create`) in frontmatter rather than only in prose.
-2. **`disallowed-tools` is turn-scoped, not consent-scoped.** A skill's denies are written
-   into the session's `command` deny scope, and every user input *replaces* that scope with
-   whatever denies the new input carries — none, for ordinary prose. The reset never reads
-   the message: in `claude` 2.1.278 it is one unconditional call on the user-input path,
-   guarded only by flags named `isAlreadyProcessing` and `skipSkillPermissionReset`. So
-   "unless the user explicitly asks" is **not** what the field implements. Asking lifts the
-   denial, but so does refusing, and so does "what about the tests?". Treat the field as a
-   guard over the current assistant turn and nothing more.
-3. **Listing a tool auto-approves it.** The browser grants on `anantys.design`,
-   and `gh pr create`) in frontmatter rather than only in prose. The field clearing on the
-   user's next message is the right shape here: the rules say *"unless the user explicitly
-   asks"*, and the asking is what lifts the denial.
-2. **Listing a tool auto-approves it.** The browser grants on `anantys.design`,
    operator a prompt, not the capability. So a skill rule like "never push" is advisory,
-   and — see (2) — frontmatter cannot make it binding. The prose rule *is* the enforcement.
+   and — see (2) and (3) — frontmatter cannot make it binding. The prose rule *is* the
+   enforcement.
 2. **A scoped denial is a total denial, so no role here carries one.** `disallowed-tools`
    is parsed by the same name-only path as `tools:`: the rule in parentheses is read and
    then dropped, leaving the bare tool name. On a *grant* that is merely a no-op. On a
@@ -146,28 +126,35 @@ Three consequences worth keeping in mind when editing a role:
    { "permissions": { "deny": ["Bash(git push:*)", "Bash(gh pr create:*)"] } }
    ```
 
-3. **Listing a tool auto-approves it.** The browser grants on `anantys.design`,
+3. **`disallowed-tools` is turn-scoped, not consent-scoped.** A skill's denies are written
+   into the session's `command` deny scope, and every user input *replaces* that scope with
+   whatever denies the new input carries — none, for ordinary prose. The reset never reads
+   the message: in `claude` 2.1.278 it is one unconditional call on the user-input path,
+   guarded only by flags named `isAlreadyProcessing` and `skipSkillPermissionReset`. So
+   "unless the user explicitly asks" is **not** what the field implements. Asking lifts the
+   denial, but so does refusing, and so does "what about the tests?". Treat the field as a
+   guard over the current assistant turn and nothing more.
+4. **Listing a tool auto-approves it.** The browser grants on `anantys.design`,
    `anantys.debug` and `anantys.ops` include `computer` and `javascript_tool` — full
    input control and arbitrary JS in the operator's signed-in session, with no prompt.
    That is deliberate (these roles are useless at one prompt per refresh), but it is a
    grant, not a declaration of intent: add a browser tool only if the loop needs it.
 
-That scoping lands differently on the three roles. `anantys.debug` and `anantys.design`
-run many assistant turns inside one user turn, so their denies cover the whole edit loop —
-the shape the field is good at. `anantys.review` is the opposite: its destructive section
-is *"Acting on the decision (only after explicit confirmation)"*, which by construction
-begins after a user message, so the deny scope is already empty when it runs. Its
-`git push` deny covers Steps A–E, which push nothing, and is gone for the one phase that
-merges, closes PRs and deletes branches. Adding `git merge`, `gh pr close` and
-`git branch -D` to its `disallowed-tools` would not fix that — they would expire on the
-same message. For a rule that has to hold across the human's answer, the prose rule is
-the guard; keep it explicit and do not let the frontmatter read as a backstop it is not.
+(2) and (3) compose badly, and `anantys.review` is where it shows. Even a name-only deny —
+the only kind the field honours — would not guard it: its destructive section is *"Acting on
+the decision (only after explicit confirmation)"*, which by construction begins after a user
+message, so the deny scope is already empty by the time it merges, closes PRs and deletes
+branches. `anantys.debug` and `anantys.design` are the opposite case, running many assistant
+turns inside one user turn, which is the shape the field is good at — but a `Bash`-wide
+denial is not a price an editing loop can pay either. For any rule that has to hold across
+the human's answer, the prose rule is the guard; keep it explicit and do not let the
+frontmatter read as a backstop it is not.
 
 The plugin itself ships **no MCP servers** (`claude plugin details` confirms: `MCP servers (0)`).
-The `mcp__claude-in-chrome__*` grants therefore cannot *provide* the browser — they only
-pre-approve it when the operator has the extension connected. Every browser role checks
-availability at runtime via `tabs_context_mcp` and stops if it is missing; that check, not
-the grant list, is the hard gate.
+The browser grants therefore cannot *provide* the browser — they only pre-approve it when the
+operator has the extension connected. Every browser role checks availability at runtime via
+`tabs_context_mcp` and stops if it is missing; that check, not the grant list, is the hard gate.
+
 ### The install boundary
 
 `marketplace add` clones this whole repo. `plugin install` then copies **only the

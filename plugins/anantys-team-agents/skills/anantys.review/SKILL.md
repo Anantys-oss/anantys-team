@@ -2,7 +2,6 @@
 name: anantys.review
 description: Cleanly review a single agent-pushed PR branch and help decide its fate. Brings the branch up to date with its base, shows only the branch's own changes as a digestible summary (never a wall of diff), assesses value and risk, and recommends Merge / Close / Skip / Audit — then waits for the human to decide. Use to review an autonomous-agent PR before merging. Mutates your working tree — it checks out the branch and commits a merge of the base into it — and, only after you confirm, closes the PR and deletes the branch; it never pushes. For findings without a merge/close decision, dispatch the anantys.code-auditor agent instead.
 when_to_use: Use when the user wants one agent-pushed PR branch reviewed and a Merge / Close / Skip / Audit recommendation before they decide. Triggers — "review this PR", "is it safe to merge", "what does this branch actually change", "triage this agent branch". Examples — "review the branch agent/123-add-export", "PR #42, worth merging?".
-description: Cleanly review a single agent-pushed PR branch and help decide its fate. Brings the branch up to date with its base, shows only the branch's own changes as a digestible summary (never a wall of diff), assesses value and risk, and recommends Merge / Close / Skip / Audit — then waits for the human to decide. Use to review an autonomous-agent PR before merging.
 allowed-tools: Bash, Read, Glob, Grep, Task, TaskCreate, TaskUpdate, TaskList
 ---
 
@@ -72,11 +71,13 @@ Then **wait for the user's decision.** Do not act on Merge/Close until they conf
 
 ## Acting on the decision (only after explicit confirmation)
 
-This section always runs in the turn *after* a user message, and this skill's
-`disallowed-tools` deny does not survive that message — it is turn-scoped, and the reset
-is blind to what the user actually said. Nothing below is mechanically blocked, whether
-the user confirmed, refused, or changed the subject. Re-read the decision you were handed
-and act only on the one the user named.
+This section always runs in the turn *after* a user message, and nothing below is
+mechanically blocked. This skill declares no `disallowed-tools`: the field is parsed by
+name only, so `Bash(git push:*)` would deny all of `Bash` — and every step here is
+`git`/`gh`. Even a correctly-spelled deny would not help, because the field is turn-scoped
+and the reset is blind to what the user actually said. So this rule is the only guard,
+whether the user confirmed, refused, or changed the subject: re-read the decision you were
+handed and act only on the one the user named.
 
 - **Merge:** `git checkout <base> && git merge <branch> --no-edit`, then `gh pr close <n> --comment "Merged into <base>." --delete-branch` and `git branch -D <branch>`. Remind the user to `git push origin <base>` — **you do not push**.
 - **Close:** `gh pr close <n> --comment "<reason>" --delete-branch` and `git branch -D <branch>`.
