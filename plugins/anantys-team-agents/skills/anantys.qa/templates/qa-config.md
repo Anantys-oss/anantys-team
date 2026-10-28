@@ -125,11 +125,24 @@ Production: no
 | <backend / API> | https://api.staging.<domain> |
 
 ### Preflight — stop the campaign if any fail
-| # | Check | How |
-|---|---|---|
-| S1 | App reachable | `curl -sk -o /dev/null -w '%{http_code}' <app-url>` → 200/307, not 000 |
-| S2 | Signed in | the operator's browser is signed in; the agent reuses that session and never signs in |
-| S3 | The feature has real DATA | the behaviour under test exists on a real record — a shared env has no fixtures, so a campaign against one with no such data can only report BLOCKED |
+A preflight check is **environment-wide and binary**: it holds for every campaign run here, or the
+stack is not fit to test at all. A condition that varies per feature is not a preflight check — it
+belongs under No fixtures below.
+
+| # | Check | How | If it fails |
+|---|---|---|---|
+| S1 | App reachable | `curl -sk -o /dev/null -w '%{http_code}' <app-url>` → 200/307, not 000 | Stop. Report the status code to the operator. Never deploy, restart or repair the env yourself |
+| S2 | Signed in | the operator's browser is signed in; the agent reuses that session and never signs in | Stop. Ask the operator to sign in, then resume. Never sign in yourself |
+
+### No fixtures — a missing test subject is BLOCKED, never a preflight stop
+A shared env has no fixtures: the behaviour under test must already exist on a real record, or be
+created additively. A scenario whose subject record does not exist is `BLOCKED` with that reason —
+recorded per assertion, walked past, and routed into the plan's §4 — **not** a preflight failure.
+Whether a *given* record exists is a fact about the feature, not about this environment, so it is
+not written here; a preflight stop would also take down every assertion that does have its data.
+
+How a test subject is created additively here: <a new record / a real PR → a real run — and where
+it shows up>
 
 ### Build identity — how this environment reports the code it is serving
 ```bash
