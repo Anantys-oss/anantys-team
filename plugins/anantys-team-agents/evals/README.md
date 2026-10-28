@@ -119,7 +119,9 @@ claude plugin eval ./plugins/anantys-team-agents \
 child with a sealed HOME, so a non-interactive/automation session fails every run
 with `Not logged in · Please run /login`. Run the suite from a logged-in terminal
 (or export an API key); the suite's structure, scaffolds and deterministic graders
-all load and score without one.
+all load and score without one — but not for free, and the price is not money.
+See *A failed run leaves a directory nobody can delete* below before you run the
+credential-less invocation a second time.
 
 ### Asking the loader to read the suite, for free
 
@@ -147,6 +149,46 @@ validates case discovery and the schema, **not** grader reachability: on CLI
 under `env -i` with a sealed `HOME`, against `--allow-tools Bash` alone). So
 `--allow-tools` still has to name every gated tool the cases ask for, and the
 loader will not be the thing that tells you it doesn't.
+
+### A failed run leaves a directory nobody can delete
+
+Every run that *fails* keeps its sandbox, with no `--keep-temp` asked for, and
+keeps it in `/private/tmp` — not `$TMPDIR`, which the harness ignores. The
+directory is `dr-x------` and its `sealed/` child is mode `000`, so `rm -rf`
+removes nothing:
+
+```
+rm: /private/tmp/e-kDED8k/sealed: Permission denied
+rm: /private/tmp/e-kDED8k/out: Permission denied
+rm: /private/tmp/e-kDED8k/config: Permission denied
+rm: /private/tmp/e-kDED8k: Directory not empty
+```
+
+That composes badly with the paragraph two sections up: a session with no
+credential fails *every* run, so the documented credential-less invocation is
+also the one that leaks. One directory per failed run — the auth stop is not
+instant, and a single burst on this machine left 21 of them inside one minute.
+Measured on CLI 2.1.278: 24 present, 2.1 MB, oldest a week old, none of them
+removable by the command anybody would reach for.
+
+Nothing to fix in the suite — this is the harness's behaviour, and the two
+invocations differ cleanly:
+
+| invocation | runs launched | directories kept |
+|---|---|---|
+| `--max-cost-usd 0` (what `.github/workflows/evals.yml` runs) | 0 | **0** |
+| the full command above, no credential | all of them, each failing | one each |
+
+So the zero-ceiling probe is leak-free, which is the other reason CI runs that
+one. To clear what a real attempt left behind:
+
+```bash
+chmod -R u+rwX /private/tmp/e-* && rm -rf /private/tmp/e-*
+```
+
+`chmod` first, recursively, and `u+rwX` rather than `700` — the harness's own
+hint names only the directory and its `sealed/` child, which is enough to walk
+in and read a trace and not enough to unlink what is under them.
 
 ## Checking the graders themselves
 
