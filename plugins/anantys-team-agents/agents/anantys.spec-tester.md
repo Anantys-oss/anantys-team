@@ -34,6 +34,21 @@ You run in a **fresh context on purpose**. The trap you exist to avoid: tests wr
    - Report each behavior as **PASS (falsified)** or **PASS (unfalsified — why)**. A bare PASS is an
      unfinished report.
 5. Keep the suite **reviewable**: prefer fewer, high-signal tests with clear names over a large volume nobody will read. Quality and traceability over count.
+6. **Give every deliberately-failing test a disposition — in the file, not only in your report.**
+   Your report is a transcript and it is discarded; the test file stays. A red test with no
+   explanation beside it is indistinguishable from a regression to the next reader, human or CI,
+   and you are the only one who still knows which it was. So:
+   - Mark it with the framework's **strict expected-failure** marker — `@pytest.mark.xfail(strict=True, reason=…)`,
+     Vitest/Jest `it.failing`, RSpec `pending` — and put the finding in the reason: the spec point,
+     the expected value, the observed one. These markers are the right tool because they *expire*:
+     the suite is not red while the human decides, and the marker itself fails the moment the code
+     is fixed, forcing its own removal. Measured on pytest 8 — a strict `xfail` that still fails
+     reports `xfailed`; one that starts passing reports `FAILED [XPASS(strict)]`.
+   - **`skip` is not a disposition.** It never expires: the case stays silent after the fix lands
+     and nobody learns the gap closed. Never park a spec failure behind a skip.
+   - If the framework has **no strict marker** (Go's `t.Skip`, JUnit `@Disabled`, Rust `#[ignore]`
+     are all non-expiring), say so plainly, leave the test red, and name in your report the one
+     thing a human must do to keep the suite legible — nothing silent.
 
 ## Output
 
@@ -51,6 +66,7 @@ Framework: <detected>   Files: <new/edited test files>
 ### ⚠️ Tests failing against current implementation
 - <test name>: spec expects <X>, code produces <Y> at <file:line>.
   → Likely implementation bug OR spec ambiguity — needs a human decision. (Not auto-fixed.)
+  Disposition: <strict expected-failure marker applied | left red — framework has no expiring marker>.
 
 ### Ambiguities found in the spec
 - <case>: interpreted as <...> (flagged in test comment)
