@@ -168,6 +168,37 @@ class FindNear(unittest.TestCase):
         patches = {"fold": fold, "head": patch([LONG, "z" * 60])}
         self.assertEqual(q.find_near(patches, near=0.6), [])
 
+    def test_own_measure_drops_a_pair_that_only_shares_its_base(self):
+        """Two siblings off one deep base: identical base..head, disjoint work."""
+        patches = {"a": patch([LONG, LONG2]), "b": patch([LONG, LONG2])}
+        own = lambda a, b: (patch(["a" * 60]), patch(["b" * 60]))
+        self.assertEqual(q.find_near(patches, near=0.6), [(1.0, 1.0, "a", "b")])
+        self.assertEqual(q.find_near(patches, near=0.6, own=own), [])
+
+    def test_own_measure_drops_a_head_paired_with_its_descendant(self):
+        """An empty own-patch means the head IS the merge-base: ancestry."""
+        patches = {"a": patch([LONG, LONG2]), "b": patch([LONG, LONG3])}
+        own = lambda a, b: (patch([]), patch([LONG3]))
+        self.assertEqual(q.find_near(patches, near=0.3, own=own), [])
+
+    def test_own_measure_keeps_a_genuine_rewording_and_rescores_it(self):
+        patches = {"a": patch([LONG, LONG2]), "b": patch([LONG, LONG3])}
+        own = lambda a, b: (patch([LONG2]), patch([LONG2, LONG3]))
+        self.assertEqual(q.find_near(patches, near=0.3, own=own),
+                         [(1.0, 0.5, "a", "b")])
+
+    def test_the_cheap_filter_still_gates_which_pairs_are_re_measured(self):
+        """Below the base-relative threshold a pair is never own-measured."""
+        calls = []
+
+        def own(a, b):
+            calls.append((a, b))
+            return patch([LONG]), patch([LONG])
+
+        patches = {"a": patch([LONG, LONG2]), "b": patch([LONG, LONG3])}
+        self.assertEqual(q.find_near(patches, near=0.9, own=own), [])
+        self.assertEqual(calls, [])
+
 
 class Report(unittest.TestCase):
     def setUp(self):
@@ -319,6 +350,17 @@ class GitLayer(unittest.TestCase):
                    for ref in q.heads("origin/koan")}
         containers = {outer for _, outer in q.find_containment(patches)}
         self.assertNotIn("origin/koan/other", containers)
+
+    def test_own_patches_measures_each_head_from_the_shared_commit(self):
+        a, b = q.own_patches("origin/koan/big", "origin/koan/other")
+        # merge-base is main: each head's own work, and it is disjoint.
+        self.assertEqual(a[0], {LONG, LONG2})
+        self.assertEqual(b[0], {LONG3})
+
+    def test_own_patches_is_empty_for_the_ancestor_of_the_pair(self):
+        a, b = q.own_patches("origin/koan/small", "origin/koan/big")
+        self.assertEqual(a[0], set())
+        self.assertEqual(b[0], {LONG2})
 
     def test_main_runs_against_a_real_repo_and_prints_the_row(self):
         script = str(Path(__file__).parent / "queue_redundancy.py")

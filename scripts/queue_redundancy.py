@@ -28,7 +28,13 @@ not the same kind of claim and the report keeps them apart:
   * A *near-duplicate* pair is two heads whose added lines overlap above a
     threshold without either containing the other. Usually that is one rule
     reworded on two branches. It needs a human to say which wording wins, so
-    it is printed as a pair and never as a ruling.
+    it is printed as a pair and never as a ruling. **It is scored from the
+    pair's own merge-base, not from the base**: in a stacked queue two
+    siblings off one deep branch add all of that branch's lines, and scoring
+    them against ``main`` says they are the same change when they share
+    nothing. On the 180-head sweep this was last run against, that was 216 of
+    282 reported pairs — the section was more than three-quarters noise, and
+    most of the noise was a head paired with its own descendant.
 
 **Matching is verbatim, so every number here is a floor.** A line one head
 rewrote reads as absent on the other, which can only ever *under*-report
@@ -143,20 +149,57 @@ def find_containment(patches):
     return sorted(found, key=lambda pair: (len(patches[pair[0]][0]), pair[0]))
 
 
-def find_near(patches, near=NEAR):
+def own_patches(a, b, floor=FLOOR):
+    """The two heads' patches measured from the commit they share.
+
+    ``patches`` elsewhere holds ``base..head``, which for a stacked queue is
+    the head *plus every branch under it*. That is right for containment — a
+    fold really does hold its members' lines — and wrong for near-duplication,
+    where two siblings off one 20-commit base read as the same change because
+    they both carry the base.
+    """
+    merge_base = git("merge-base", a, b).strip()
+    return (substantive(git("diff", merge_base, a), floor),
+            substantive(git("diff", merge_base, b), floor))
+
+
+def find_near(patches, near=NEAR, own=None):
     """Near-duplicate pairs: high mutual overlap, neither containing the other.
 
     The jaccard threshold is what keeps folds out. A pair that shares most of
     the *union* of their lines is two heads doing one job; a pair that shares
     most of the smaller head only is a head inside a gather.
+
+    ``own`` re-measures a surviving pair from its own merge-base (pass
+    ``own_patches``). Without it the scores are ``base..head`` and a deep
+    queue answers almost entirely with inherited lines: on the 180-head sweep
+    this was written against, 216 of 282 reported pairs shared **nothing**
+    once the common base was removed, and most of those were a head paired
+    with its own descendant. The scored numbers are the re-measured ones,
+    because a row a reader cannot act on is worse than no row.
+
+    The cheap score stays as the candidate filter, so this is still a floor:
+    a pair below ``near`` on ``base..head`` is never re-measured and can be
+    missed. Widening the filter costs a merge-base and two diffs per pair over
+    every pair in the queue; narrowing the output costs it over the survivors.
     """
     found = []
     for a, b in itertools.combinations(sorted(patches), 2):
         if contains(patches[a], patches[b]) or contains(patches[b], patches[a]):
             continue
         cov, jac = overlap(patches[a], patches[b])
-        if jac >= near:
-            found.append((round(cov, 2), round(jac, 2), a, b))
+        if jac < near:
+            continue
+        if own is not None:
+            pair_a, pair_b = own(a, b)
+            if not pair_a[0] or not pair_b[0]:
+                # One head's own patch is empty: it *is* the merge-base, so
+                # this is an ancestor and its descendant, not two rewordings.
+                continue
+            cov, jac = overlap(pair_a, pair_b)
+            if jac < near:
+                continue
+        found.append((round(cov, 2), round(jac, 2), a, b))
     return sorted(found, reverse=True)
 
 
@@ -205,7 +248,7 @@ def label(head, prefix, prs):
     return f"#{number} {short}" if number else f"(no PR) {short}"
 
 
-def report(patches, prefix, prs, near=NEAR, ancestry=None):
+def report(patches, prefix, prs, near=NEAR, ancestry=None, own=None):
     """The whole report as a list of lines."""
     ancestry = ancestry if ancestry is not None else is_ancestor
     out = [f"{len(patches)} heads under {prefix}/, compared against each other.", ""]
@@ -265,11 +308,12 @@ def report(patches, prefix, prs, near=NEAR, ancestry=None):
         out.append("None.")
     out.append("")
 
-    pairs = find_near(patches, near)
+    pairs = find_near(patches, near, own)
     out.append(f"## Near-duplicate pairs ({len(pairs)})")
     out.append("")
     if pairs:
-        out.append(f"Added-line jaccard >= {near}, neither containing the other. "
+        out.append(f"Added-line jaccard >= {near} measured from the pair's own "
+                   "merge-base, neither containing the other. "
                    "A human picks the wording.")
         out.append("")
         for cov, jac, a, b in pairs:
@@ -296,7 +340,8 @@ def main(argv=None):
         return
     patches = {ref: substantive(git("diff", f"{args.base}..{ref}"), args.floor)
                for ref in refs}
-    print("\n".join(report(patches, args.prefix, pr_numbers(), args.near)))
+    print("\n".join(report(patches, args.prefix, pr_numbers(), args.near,
+                            own=lambda a, b: own_patches(a, b, args.floor))))
 
 
 if __name__ == "__main__":
