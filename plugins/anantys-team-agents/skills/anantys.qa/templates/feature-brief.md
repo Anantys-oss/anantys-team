@@ -35,7 +35,10 @@ implementation**: "an owner can renew a pending invitation", not "POST /invitati
 - **R2** …
 - **R3** …
 
-Mark the ones that touch **money / legal / data** — they become the blocker list.
+Mark the ones that touch **money / legal / data / journey** — they become the plan's blocker list
+(`qa-plan.md` §3, four classes). The fourth is the one nobody writes down: a requirement the
+product can *report as done* without having done it — a success screen, a confirmation badge, a
+"saved" toast. Name it here, or the plan's `Journey` row ships empty.
 
 ## What shipped
 
@@ -51,5 +54,9 @@ Anything a requirement implies that is NOT in yet — a backend endpoint a UI ca
 follow-up. These are `BLOCKED`-by-construction cases, **not FAILs**: say so here so a run does not
 file the missing half as a defect.
 
-- <e.g. the cost-tasks endpoint is not deployed → its tab renders an empty state, which is EXPECTED>
+**Lead each gap with the requirement id it blocks.** `plan` must mark *the assertions it covers*
+`BLOCKED`; with no id it cannot tell which ones, and a gap pinned to the wrong assertion FAILs the
+very case this section exists to excuse.
+
+- **R2** <e.g. the cost-tasks endpoint is not deployed → its tab renders an empty state, which is EXPECTED>
 ```
