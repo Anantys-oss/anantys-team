@@ -219,6 +219,13 @@ If the source carries an **under-test precondition** — a `--from pr:` head bra
 once the PR merges, `run` can only recognise the shipped code by commit ancestry (step 1). `run` reads `qa-plan.md`, never the brief, so a precondition that lives only in the
 brief is never enforced: a PR-derived campaign would run green against a stack serving `main`.
 
+**A multi-PR source carries one `Under test:` line per PR**, each with its own branch, head commit
+and `pr:` ref. `--from pr:` takes a list and assembles it into one brief, and the `<slug>` is the
+first PR's head branch — a convention for *naming* the campaign, never a statement about what the
+environment has to serve. One line recording the first head makes step 1 wave through a stack that
+serves PR 1 and not PR 2, which is the same green-having-verified-nothing run the precondition
+exists to stop, minus the only clue that it happened. The precondition is the **whole set**.
+
 Show the operator the scenario list and the blocker list before writing.
 
 ### `--from pr:` — assembling the brief from pull requests
@@ -234,8 +241,9 @@ result a QA source rather than a diff summary:
   intent. Requirements distilled from a diff produce assertions that restate the diff, which can
   only confirm the model did what it did.
 - **A PR is a branch, not a deployment.** Establish which environment actually runs the head
-  branch and write it into the brief as a precondition. If the dev stack runs `main`, the campaign
-  will confidently QA the wrong code. Ask before running; never assume it was deployed.
+  branch and write it into the brief as a precondition — **one per PR**, since a set of PRs is
+  deployed one at a time. If the dev stack runs `main`, the campaign will confidently QA the wrong
+  code. Ask before running; never assume it was deployed.
 - **Unresolved review threads and unchecked task-list items go to "Not shipped / known gaps"** —
   along with any stacked PR this one depends on that is still open. They are `BLOCKED` by
   construction, not FAILs — each tagged with the requirement id it blocks, as the brief template
@@ -376,6 +384,10 @@ operator's go before any write.
      <deployed commit>`) in the run section, and leave the plan's line as it is. Otherwise — a
      different commit, a merged PR not yet deployed, or a probe that names only a branch such as
      `main` — **stop** and tell the operator what is deployed.
+     **Several `Under test:` lines are a conjunction**: run the test for every one of them, and
+     proceed only when the environment serves them **all**. A partially served set **stops** —
+     name which commits are present and which are missing, so the operator can deploy the rest
+     rather than read a green run that only ever exercised half the feature.
    - If it does not, **ask the operator which build that environment is serving and stop until they
      answer** — never infer it from the local checkout: `git branch --show-current` describes your
      working copy, not a remote dev stack or a deployed env.
