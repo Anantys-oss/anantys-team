@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Break `main` on purpose, then ask which of the queue's gates noticed.
 
-Eleven `check_*.py` gates sit on eleven branches; none is merged, so `main` is
-ungated. `gate_matrix.py` already answers "does head H pass gate G" — head health.
+Fourteen `check_*.py` gates sit on the queue's branches; none is merged, so `main`
+is ungated. `gate_matrix.py` already answers "does head H pass gate G" — head health.
 That leaves the dual question unasked, and it is the one a reviewer deciding what
 to merge actually has: *what is each gate worth?* A gate earns its place by
 rejecting a tree a human would call broken. A gate that cannot be made to fail by
@@ -24,6 +24,20 @@ this product), and mutations no gate catches at all (the queue's blind spots).
 The mutations are deliberately dull — a version bumped in one of its two homes, a
 read-only agent handed `Write`, a template a role references deleted. Exotic
 breakage proves nothing; these are the regressions this repo has actually shipped.
+
+Every mutation is a literal quoted out of the product, which makes the anchors the
+instrument's own expiry date. `MUTATIONS` and the toll together pinned this file to
+one value of one scalar — `"version": "0.6.0"` — and the queue holds two separate
+events that falsify it. A release bumps both manifests, which `check_version_bump`
+warns is overdue and nothing else in the repo will do for it. And one head deletes
+`version` from `marketplace.json` altogether, on the measured ground that the
+loader never reads it: a bump applied there alone leaves `plugin update` answering
+`already at the latest version`, while `plugin.json`'s value drives install,
+`details`, `update` and the cache directory name. Either event used to end the run
+on the first mutation, from inside the toll — so the sweep that prices fourteen
+gates reported nothing, and the reason was a string in this file rather than anything
+about a gate. Version anchors are now read from the tree, and a stale anchor of any
+kind costs its own row and no other.
 """
 
 from __future__ import annotations
@@ -45,6 +59,20 @@ QA_PLAN = "plugins/anantys-team-agents/skills/anantys.qa/templates/qa-plan.md"
 AUDITOR = "plugins/anantys-team-agents/agents/anantys.code-auditor.md"
 REVIEW = "plugins/anantys-team-agents/skills/anantys.review/SKILL.md"
 
+#: An op's `old` when it means "whatever version this manifest carries".
+#:
+#: A version written out as a literal is a claim that `main` still says `0.6.0`, and
+#: it is the one claim in this file the repo is under standing instruction to
+#: falsify: `check_version_bump` warns that the floor never moves until someone
+#: tags a release, and the release that answers it bumps both manifests. A head in
+#: this queue goes further and deletes `version` from `marketplace.json` outright,
+#: on the measured ground that the loader never reads it — `plugin install`,
+#: `details`, `update` and the cache path all take `plugin.json`'s. Either event
+#: leaves `apply` with an anchor that matches nothing, which is why the value is
+#: read from the tree at sweep time instead. `expand` is the only consumer, so the
+#: sentinel is inert in both positions if an op reaches `apply` unresolved.
+VERSION = "\0version"
+
 #: Applied on top of every mutation, because a mutation has to look like a PR.
 #:
 #: Without it the matrix is unreadable: `check_version_bump` demands a bump whenever
@@ -54,8 +82,8 @@ REVIEW = "plugins/anantys-team-agents/skills/anantys.review/SKILL.md"
 #: once, so a red cell means the gate objected to the mutation and not to the
 #: housekeeping around it.
 BUMP = [
-    (PLUGIN, '"version": "0.6.0"', '"version": "0.6.1"'),
-    (MARKET, '"version": "0.6.0"', '"version": "0.6.1"'),
+    (PLUGIN, VERSION, VERSION),
+    (MARKET, VERSION, VERSION),
 ]
 #: Mutations that write the version themselves; the toll above would collide.
 NO_BUMP = ("version-drift",)
@@ -64,7 +92,7 @@ NO_BUMP = ("version-drift",)
 #: One mutation may need several ops; a one-op mutation is the common case.
 MUTATIONS: dict[str, list[tuple[str, str | None, str | None]]] = {
     # The version lives in two files. Bumping one is this repo's most-shipped regression.
-    "version-drift": [(PLUGIN, '"version": "0.6.0"', '"version": "0.6.1"')],
+    "version-drift": [(PLUGIN, VERSION, VERSION)],
     # Nothing resolves the marketplace entry back to the plugin it names.
     "name-mismatch": [(PLUGIN, '"name": "anantys-team-agents"', '"name": "anantys-agents"')],
     "broken-source": [(MARKET, '"source": "./plugins/anantys-team-agents"', '"source": "./plugins/gone"')],
@@ -139,17 +167,73 @@ def overlay() -> dict[str, bytes]:
     return files
 
 
+class AnchorGone(Exception):
+    """A mutation's anchor is no longer in the product text it targets.
+
+    Raised instead of exiting, because the blast radius is the difference between
+    a usable report and none. Every anchor in `MUTATIONS` is a literal quoted out
+    of a role file or a manifest, and the queue rewrites exactly those lines — so
+    an anchor going stale is the expected end of a mutation's life, not an
+    accident. Killing the process on the first one costs the other thirteen rows,
+    and the reader is then told nothing about any gate by a tool whose whole job
+    is pricing them.
+    """
+
+
+def successor(version: str) -> str:
+    """The next patch, so the toll is a bump and not a no-op.
+
+    The value only has to differ from what the tree carries — no gate reads which
+    component moved — so a version that does not end in a number still gets a
+    distinct string rather than an exception.
+    """
+    head, _, patch = version.rpartition(".")
+    return f"{head}.{int(patch) + 1}" if patch.isdigit() else f"{version}+1"
+
+
+def versions() -> dict[str, str]:
+    """The version each manifest carries at `BASE`, keyed by path.
+
+    A manifest with no `version` is absent from the mapping rather than an error:
+    it has nothing to bump, and a sweep that dies on that is reporting a string in
+    this file instead of anything about a gate.
+    """
+    found = {}
+    for rel, pick in ((PLUGIN, lambda d: d["version"]),
+                      # The catalog holds one entry per plugin and this repo ships one.
+                      (MARKET, lambda d: d["plugins"][0]["version"])):
+        try:
+            found[rel] = pick(json.loads(git("show", f"{BASE}:{rel}")))
+        except (ValueError, KeyError, IndexError, TypeError):
+            continue
+    return found
+
+
+def expand(ops: list, found: dict[str, str]) -> list:
+    """Resolve `VERSION` sentinels against the versions `BASE` actually carries."""
+    out = []
+    for rel, old, new in ops:
+        if old is not VERSION:
+            out.append((rel, old, new))
+        elif rel in found:
+            out.append((rel, f'"version": "{found[rel]}"',
+                        f'"version": "{successor(found[rel])}"'))
+    return out
+
+
 def apply(tree: Path, ops: list[tuple[str, str | None, str | None]]) -> None:
     for rel, old, new in ops:
         target = tree / rel
         if new is None:
+            if not target.is_file():
+                raise AnchorGone(f"{rel}: already absent")
             target.unlink()
         elif old is None:
             target.write_text(target.read_text() + new)
         else:
             body = target.read_text()
             if old not in body:
-                raise SystemExit(f"error: mutation anchor absent in {rel}: {old!r}")
+                raise AnchorGone(f"{rel}: {old!r}")
             target.write_text(body.replace(old, new, 1))
 
 
@@ -203,19 +287,32 @@ def run_gates(tree: Path) -> dict[str, tuple[int, str]]:
 Cells = dict[str, tuple[int, str]]
 
 
-def sweep(names: list[str]) -> tuple[Cells, dict[str, Cells]]:
+def sweep(names: list[str]) -> tuple[Cells, dict[str, Cells], dict[str, str]]:
+    """Each mutation's cells, plus the ones whose anchor the product no longer has.
+
+    A stale anchor is one unpriceable row, so it is reported as such and the sweep
+    continues. The pristine tree is the exception: it applies no ops, so an
+    `AnchorGone` there could only come from the toll, and without the toll every
+    later row is measured against a baseline the rest of the matrix does not share.
+    """
     files = overlay()
+    found = versions()
     runs: dict[str, Cells] = {}
+    unavailable: dict[str, str] = {}
     for label, ops in [("(pristine)", [])] + [(n, MUTATIONS[n]) for n in names]:
         toll = [] if label in NO_BUMP or not ops else BUMP
         tree = Path(tempfile.mkdtemp(prefix="koan-gate-power-")) / "t"
         try:
-            build(tree, files, ops + toll)
+            build(tree, files, expand(ops + toll, found))
             runs[label] = run_gates(tree)
+        except AnchorGone as gone:
+            if label == "(pristine)":
+                raise SystemExit(f"error: the version toll no longer applies — {gone}")
+            unavailable[label] = str(gone)
         finally:
             git("worktree", "remove", "--force", str(tree))
             shutil.rmtree(tree.parent, ignore_errors=True)
-    return runs.pop("(pristine)"), runs
+    return runs.pop("(pristine)"), runs, unavailable
 
 
 def verdicts(baseline: Cells, runs: dict[str, Cells]) -> dict:
@@ -257,11 +354,17 @@ def verdicts(baseline: Cells, runs: dict[str, Cells]) -> dict:
     }
 
 
-def report(baseline: Cells, runs: dict[str, Cells]) -> None:
+def report(baseline: Cells, runs: dict[str, Cells], unavailable: dict[str, str]) -> None:
     v = verdicts(baseline, runs)
     gates, usable, caught = v["gates"], v["usable"], v["caught"]
 
     print(f"\n{len(gates)} gates overlaid on {BASE}, {len(runs)} mutations\n")
+
+    if unavailable:
+        print(f"Unpriceable — the anchor is gone from the product ({len(unavailable)}):")
+        for m, why in sorted(unavailable.items()):
+            print(f"  - {m}: {why}")
+        print("  Re-anchor each on text the tree still has; until then no gate was asked.\n")
     print(f"{'gate':<26} {'main':>5}  catches")
     for g in gates:
         if baseline[g][0]:
@@ -304,12 +407,15 @@ def main(argv: list[str]) -> int:
         print(f"error: unknown mutation(s): {', '.join(unknown)}", file=sys.stderr)
         print(f"known: {', '.join(sorted(MUTATIONS))}", file=sys.stderr)
         return 2
-    baseline, runs = sweep(names)
+    baseline, runs, unavailable = sweep(names)
     if as_json:
-        print(json.dumps({"baseline": baseline, "runs": runs}, indent=2))
+        print(json.dumps(
+            {"baseline": baseline, "runs": runs, "unavailable": unavailable}, indent=2))
     else:
-        report(baseline, runs)
-    return 0
+        report(baseline, runs, unavailable)
+    # A stale anchor is a defect in this file, not a verdict on the queue, and it
+    # is the one outcome a caller can act on — so it is the only nonzero exit.
+    return 1 if unavailable else 0
 
 
 if __name__ == "__main__":

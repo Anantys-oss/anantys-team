@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Fixture tests for gate_power — run: python3 -m unittest discover scripts"""
 
+import re
 import sys
 import tempfile
 import unittest
@@ -83,11 +84,20 @@ class Apply(unittest.TestCase):
         g.apply(self.tree, [("f.md", "one", "ONE")])
         self.assertEqual((self.tree / "f.md").read_text(), "ONE two one\n")
 
-    def test_a_missing_anchor_is_fatal_not_a_silent_no_op(self):
+    def test_a_missing_anchor_is_fatal_to_its_own_mutation_only(self):
         """A mutation that applied nothing would be recorded as caught by no
-        gate — a blind spot invented by a typo in its own anchor."""
-        with self.assertRaises(SystemExit):
+        gate — a blind spot invented by a typo in its own anchor. It is raised
+        rather than exited so the other rows still get measured."""
+        with self.assertRaises(g.AnchorGone):
             g.apply(self.tree, [("f.md", "absent", "x")])
+        self.assertNotIsInstance(g.AnchorGone(), SystemExit)
+
+    def test_deleting_a_file_the_tree_no_longer_has_is_a_gone_anchor(self):
+        """`dangling-template` deletes a template. Once a head removes it for
+        real, an unlink would be a traceback where every other stale anchor
+        gets a row."""
+        with self.assertRaises(g.AnchorGone):
+            g.apply(self.tree, [("never-existed.md", None, None)])
 
     def test_a_none_old_appends(self):
         g.apply(self.tree, [("f.md", None, "three\n")])
@@ -105,6 +115,54 @@ class MutationTable(unittest.TestCase):
         for name, ops in g.MUTATIONS.items():
             if any(old and "version" in old for _, old, _ in ops):
                 self.assertIn(name, g.NO_BUMP, name)
+
+    def test_no_version_literal_is_written_into_an_anchor(self):
+        """The release this repo keeps being told to cut moves the version, and
+        a literal anchor is pinned to the value it had when someone typed it."""
+        literal = re.compile(r'"version"\s*:\s*"[^"]')
+        for name, ops in list(g.MUTATIONS.items()) + [("BUMP", g.BUMP)]:
+            for _, old, new in ops:
+                for side in (old, new):
+                    if isinstance(side, str):
+                        self.assertIsNone(literal.search(side), f"{name}: {side!r}")
+
+
+class Successor(unittest.TestCase):
+    def test_the_patch_component_moves(self):
+        self.assertEqual(g.successor("0.6.0"), "0.6.1")
+        self.assertEqual(g.successor("1.9.9"), "1.9.10")
+
+    def test_a_non_numeric_tail_still_yields_a_different_string(self):
+        """The toll only has to differ from the tree; which component moved is
+        read by no gate. A pre-release tag must not crash the sweep."""
+        for version in ("0.7.0-rc1", "nightly", ""):
+            self.assertNotEqual(g.successor(version), version)
+
+
+class Expand(unittest.TestCase):
+    FOUND = {g.PLUGIN: "1.2.3"}
+
+    def test_a_sentinel_resolves_to_the_version_the_tree_carries(self):
+        self.assertEqual(
+            g.expand([(g.PLUGIN, g.VERSION, g.VERSION)], self.FOUND),
+            [(g.PLUGIN, '"version": "1.2.3"', '"version": "1.2.4"')],
+        )
+
+    def test_a_manifest_with_no_version_is_dropped_not_raised(self):
+        """A head in this queue removes `version` from `marketplace.json`, on
+        the measured ground that the loader never reads it. Anchoring on it
+        would take the whole sweep down with one merge."""
+        self.assertEqual(g.expand([(g.MARKET, g.VERSION, g.VERSION)], self.FOUND), [])
+
+    def test_a_non_version_op_passes_through_untouched(self):
+        op = (g.MARKET, "a", "b")
+        self.assertEqual(g.expand([op], self.FOUND), [op])
+
+    def test_an_unresolved_sentinel_never_reaches_apply_as_a_delete(self):
+        """`new=None` means "delete the file" to `apply`, so the sentinel sits
+        in both positions: an op that escapes `expand` matches nothing instead
+        of unlinking a manifest."""
+        self.assertTrue(all(new is g.VERSION for _, old, new in g.BUMP if old is g.VERSION))
 
 
 if __name__ == "__main__":
