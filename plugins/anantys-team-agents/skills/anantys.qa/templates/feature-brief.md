@@ -14,10 +14,16 @@ or let `--from linear:SKU-…` / `--from pr:<url>` assemble one for you to confi
 > it, so an id never moves to another requirement. Edit a requirement's wording freely; if you
 > renumber or re-letter ids here, the run history still points at the old ones.
 
+> **The title heading is the campaign's directory name**, normalized — so it carries the feature
+> name and nothing else. No boilerplate suffix: a heading like `Checkout funnel — QA feature brief`
+> normalizes to `checkout-funnel-qa-feature-brief`, which no branch can ever equal, and the
+> branch-match discovery every action after `plan` relies on then misses the campaign. **Name it
+> after the branch** (`206-checkout-funnel`) and that fallback works.
+
 ---
 
 ```markdown
-# <Feature> — QA feature brief
+# <feature>
 
 _Source: <hand-written | linear:SKU-… | pr:owner/repo#42>. Assembled <YYYY-MM-DD>._
 
