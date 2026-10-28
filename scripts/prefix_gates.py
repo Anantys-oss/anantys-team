@@ -37,6 +37,23 @@ the row, and a 3-or-more is this tool's reason to exist.
     python3 scripts/prefix_gates.py --limit 25      # the first 25 merges, for a timing probe
     python3 scripts/prefix_gates.py --no-reduce     # skip the reduction, report first-red only
 
+**What the first full run found, and the number is not the one it was built for.** Over
+89 open heads and 9 usable gates: no gate needed three or more heads, one was red on the
+incoming head alone, and the walk reached **20 merges**. The other 69 heads stopped on a
+conflict and no verdict above covers any of them — which makes the headline a statement
+about the first fifth of the queue, and the *reach* the result worth reading. So the
+report prints the reach before the excuses, and the conflict histogram as its second
+output rather than a footnote:
+
+  * `anantys.qa/SKILL.md` is in 41 of the 69 stops and is the *only* file in 26 of them.
+    Three fifths of the queue's hand-adjudication cost is one file, and most of that is
+    one reviewer reading one file.
+  * The two manifests appear in 4 stops and in none of them alone. Nine sessions priced
+    the version convention as the queue's landing cost; landed in sequence it is never
+    the decision a stop is waiting on.
+  * 7 stops are `check_plugins.py` + `check_tool_grants.py` + `test_check_plugins.py`
+    together — a tenth of the cost is the gates forking, not the product.
+
 **The order is chronological and that is a choice, not a result.** `pr_landing_order.py`
 computes an order optimised against conflicts; oldest-tip-first is the order the queue
 was *written* in and the one a maintainer draining it by age performs. A cumulative
@@ -59,6 +76,7 @@ import argparse
 import subprocess
 import sys
 import tempfile
+from collections import Counter
 from pathlib import Path
 
 import gate_matrix as gm
@@ -125,22 +143,68 @@ def reduce_subset(landed: list[str], trigger: str, is_red) -> list[str]:
     return current
 
 
+def clear_overlay(tree: Path) -> None:
+    """Delete the gate overlay from `tree` before the walk's next merge.
+
+    `gate_matrix.check` copies `scripts/` and `.github/` in and leaves them there, which
+    is right for a one-shot caller and wrong for a walk: the next head that *tracks*
+    those paths meets them as untracked files and `git merge` refuses with "untracked
+    working tree files would be overwritten". `pair_gates.assemble` already removes them
+    for this reason and the walk merges between its calls, so it owes the same removal.
+
+    Measured, because the symptom is indistinguishable from the subject: the first full
+    run reported 72 stops, and **13 of them named no conflicting file at all** — every
+    one this tool's own artifact charged to the queue. With the removal in place the walk
+    lands 20 instead of 17 and no stop is nameless, which is also what a bare merge loop
+    with no gates in it reported. A harness failure that reads as a finding is the only
+    kind worth a named function.
+    """
+    for name in gm.OVERLAY:
+        subprocess.run(("rm", "-rf", str(tree / name)), check=False)
+
+
+def unmerged(tree: Path) -> tuple[str, ...]:
+    """The files left conflicting by the merge that just failed, sorted.
+
+    `("<no file named>",)` is kept rather than smoothed away: a merge can fail without a
+    conflicted path, and when it does the stop is about the harness, not the queue.
+    """
+    out = subprocess.run(
+        ("git", "diff", "--name-only", "--diff-filter=U"),
+        cwd=tree,
+        capture_output=True,
+        text=True,
+        check=False,
+    ).stdout.split()
+    return tuple(sorted(out)) or ("<no file named>",)
+
+
 def walk(
     tree: Path, order: list[str], usable: list[str], overlay: Path, reduce: bool
-) -> tuple[list[dict], list[str], list[str]]:
+) -> tuple[list[dict], list[str], Counter]:
     """Merge `order` into `tree` one ref at a time, reporting each gate's first red.
 
     Cumulative, not re-assembled per k: the subject is one landing, so a conflict is a
-    ref the maintainer would stop and rebase, and the walk records it and carries on
-    with the tree it already has. Re-assembling from `BASE` at every k would be the same
-    answer for N-1 more merges.
+    ref the maintainer would stop and adjudicate, and the walk records *which files* it
+    stopped on and carries on with the tree it already has.
+
+    **A conflicting ref is not retried, because retrying was measured to be worth
+    nothing.** The obvious objection to a single pass is that a head conflicting at k
+    may merge at some k' > k once the sibling it collided with has landed. Over the 89
+    open heads here, five retry passes over the skipped set gained **zero** heads on the
+    first pass and the loop stopped there. These are not order-sensitive collisions that
+    a later tree resolves; they are two authors writing different sentences on the same
+    line, and no merge order makes them agree. That is why the conflict histogram below
+    is the report's second output and not its footnote: the walk's reach is set by how
+    much hand adjudication the queue needs, and the histogram says where.
     """
     pg.assemble(tree, ())
     red: set[str] = set()
     findings: list[dict] = []
     landed: list[str] = []
-    skipped: list[str] = []
+    stops: Counter = Counter()
     for ref in order:
+        clear_overlay(tree)
         done = subprocess.run(
             ("git", "merge", "--no-edit", "--quiet", ref),
             cwd=tree,
@@ -148,8 +212,8 @@ def walk(
             check=False,
         )
         if done.returncode:
+            stops[unmerged(tree)] += 1
             subprocess.run(("git", "merge", "--abort"), cwd=tree, capture_output=True)
-            skipped.append(ref)
             continue
         landed.append(ref)
         now = pg.verdict(gm.check(tree, usable, overlay=overlay)) & set(usable)
@@ -170,14 +234,37 @@ def walk(
             )
             pg.assemble(tree, tuple(landed))  # restore the walk's tree
         red = now
-    return findings, landed, skipped
+    return findings, landed, stops
+
+
+def by_file(stops: Counter) -> list[tuple[str, int, int]]:
+    """Each conflicting file as (path, stops it appears in, stops it is alone in).
+
+    Both numbers, because they answer different questions and the pair is the finding.
+    The appearance count is the file's share of the queue's hand-adjudication cost. The
+    alone count is how much of that share is *only* that file — a row naming one file is
+    one decision for one reviewer, and a row naming ten is a wave.
+    """
+    appears: Counter = Counter()
+    solo: Counter = Counter()
+    for files, n in stops.items():
+        for f in files:
+            appears[f] += n
+        if len(files) == 1:
+            solo[files[0]] += n
+    return [(f, n, solo[f]) for f, n in appears.most_common()]
 
 
 def report(
-    findings: list[dict], landed: list[str], skipped: list[str], excluded: dict[str, str]
+    findings: list[dict],
+    landed: list[str],
+    stops: Counter,
+    excluded: dict[str, str],
+    order: int = 0,
 ) -> str:
     """Rows ordered by subset size, descending — the unreachable cells first."""
     out = []
+    skipped = sum(stops.values())
     composite = [f for f in findings if not f["alone"] and len(f["subset"]) >= 3]
     pairs = [f for f in findings if not f["alone"] and len(f["subset"]) == 2]
     solo = [f for f in findings if f["alone"]]
@@ -196,7 +283,19 @@ def report(
     if solo:
         names = ", ".join(sorted({f["gate"].removeprefix("check_") for f in solo}))
         out.append(f"\nred on the incoming head alone, so `gate_matrix.py`'s rows: {names}")
-    out.append(f"\n{len(landed)} head(s) landed, {len(skipped)} would not merge in this order")
+    # The reach, stated before the excuses: every verdict above is about `main` plus
+    # these k merges and says nothing whatever about the heads that never entered a
+    # prefix. A sweep that prints "no three-head failure" without this line is claiming
+    # the queue composes cleanly when it mostly refused to assemble.
+    out.append(
+        f"\nreach: {len(landed)} merge(s) deep"
+        + (f" of {order} head(s) offered" if order else "")
+        + f" — {skipped} stopped on a conflict, so no verdict covers them"
+    )
+    if rows := by_file(stops):
+        out.append("where the queue stops, by file — appearances (alone):")
+        for path, n, alone in rows:
+            out.append(f"  {n:4d} ({alone:3d})  {path}")
     if excluded:
         why = ", ".join(f"{g.removeprefix('check_')} ({r})" for g, r in sorted(excluded.items()))
         out.append(f"gates excluded, so they could produce no finding here: {why}")
@@ -238,13 +337,11 @@ def main(argv: list[str]) -> int:
                 if c
             }
             usable = [g for g in names if g not in excluded]
-            findings, landed, skipped = walk(
-                tree, order, usable, overlay, not args.no_reduce
-            )
+            findings, landed, stops = walk(tree, order, usable, overlay, not args.no_reduce)
         finally:
             gm.git("worktree", "remove", "--force", str(tree))
 
-    print(report(findings, landed, skipped, excluded))
+    print(report(findings, landed, stops, excluded, len(order)))
     return 0
 
 

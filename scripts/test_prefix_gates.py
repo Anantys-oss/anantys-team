@@ -8,6 +8,7 @@ confident table, which is why they are tested here and not read off a live run.
 """
 
 import unittest
+from collections import Counter
 
 import prefix_gates as p
 
@@ -43,12 +44,37 @@ class TheReductionPinsTheTrigger(unittest.TestCase):
         self.assertEqual(p.reduce_subset(["a"], "a", lambda refs: True), ["a"])
 
 
+class TheHistogramSeparatesAppearingFromBeingAlone(unittest.TestCase):
+    def test_a_file_alone_in_a_stop_is_counted_in_both_columns(self) -> None:
+        rows = p.by_file(Counter({("qa.md",): 26, ("qa.md", "plan.md"): 7}))
+        self.assertEqual(rows[0], ("qa.md", 33, 26))
+        self.assertEqual(rows[1], ("plan.md", 7, 0))
+
+    def test_a_file_never_alone_reports_zero_in_the_alone_column(self) -> None:
+        # The manifests, measured: in 4 stops here and alone in none of them. A single
+        # column would have reported them as a landing cost of 4 and hidden that every
+        # one of those stops needed a different decision made first.
+        rows = p.by_file(Counter({("marketplace.json", "plugin.json", "qa.md"): 4}))
+        self.assertEqual([(f, n, a) for f, n, a in rows if f.endswith(".json")],
+                         [("marketplace.json", 4, 0), ("plugin.json", 4, 0)])
+
+    def test_no_stops_produce_no_rows(self) -> None:
+        self.assertEqual(p.by_file(Counter()), [])
+
+    def test_a_nameless_stop_stays_in_the_table(self) -> None:
+        # 13 of the first run's 72 stops named no file, and every one was the overlay
+        # this tool left in the tree. Smoothing the row away would have hidden the
+        # harness bug behind a plausible queue number.
+        self.assertEqual(p.by_file(Counter({("<no file named>",): 13})),
+                         [("<no file named>", 13, 13)])
+
+
 class TheReportRanksByWhatNothingElseCanSee(unittest.TestCase):
     def test_a_three_head_subset_leads_and_says_the_size_is_a_ceiling(self) -> None:
         out = p.report(
             [{"gate": "check_plugins", "k": 7, "ref": "c", "alone": False,
               "subset": ["a", "b", "c"]}],
-            ["a", "b", "c"], [], {},
+            ["a", "b", "c"], Counter(), {},
         )
         self.assertIn("three or more heads", out.splitlines()[0])
         self.assertIn("(3 heads, a ceiling)", out)
@@ -58,7 +84,7 @@ class TheReportRanksByWhatNothingElseCanSee(unittest.TestCase):
         out = p.report(
             [{"gate": "check_plugins", "k": 4, "ref": "b", "alone": False,
               "subset": ["a", "b"]}],
-            ["a", "b"], [], {},
+            ["a", "b"], Counter(), {},
         )
         self.assertIn("no gate needed three or more heads together", out)
         self.assertIn("`pair_gates.py` owns these rows", out)
@@ -67,26 +93,34 @@ class TheReportRanksByWhatNothingElseCanSee(unittest.TestCase):
     def test_a_head_red_alone_is_credited_to_gate_matrix(self) -> None:
         out = p.report(
             [{"gate": "check_tool_grants", "k": 2, "ref": "b", "alone": True, "subset": ["b"]}],
-            ["a", "b"], [], {},
+            ["a", "b"], Counter(), {},
         )
         self.assertIn("`gate_matrix.py`'s rows: tool_grants", out)
         self.assertNotIn("pair_gates.py` owns", out)
+
+    def test_the_reach_is_stated_against_what_was_offered(self) -> None:
+        # The measured run: 20 of 89. Printing "no three-head failure" without this is
+        # claiming the queue composes when 69 of its heads never entered a prefix.
+        out = p.report([], ["a"] * 20, Counter({("qa.md",): 69}), {}, 89)
+        self.assertIn("reach: 20 merge(s) deep of 89 head(s) offered", out)
+        self.assertIn("69 stopped on a conflict, so no verdict covers them", out)
+        self.assertIn("69 ( 69)  qa.md", out)
 
     def test_a_green_sweep_names_the_gates_that_could_not_speak(self) -> None:
         # The failure `pair_gates.py` was fixed for, in a new place: five of fourteen
         # gates here are red on `main` or cannot import, and a report that omits them
         # reads as fourteen gates clearing the queue.
         out = p.report(
-            [], ["a"], ["b"],
+            [], ["a"], Counter({("x.md",): 1}),
             {"check_doc_actions": "red on main", "check_plugin_agents": "cannot run"},
         )
-        self.assertIn("1 head(s) landed, 1 would not merge", out)
         self.assertIn("doc_actions (red on main)", out)
         self.assertIn("plugin_agents (cannot run)", out)
 
     def test_an_unexcluded_sweep_claims_no_blind_gates(self) -> None:
-        out = p.report([], ["a"], [], {})
+        out = p.report([], ["a"], Counter(), {})
         self.assertNotIn("excluded", out)
+        self.assertNotIn("where the queue stops", out)
 
 
 if __name__ == "__main__":
