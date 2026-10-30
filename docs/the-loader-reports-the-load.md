@@ -2,7 +2,8 @@
 
 Two sweeps over every ref this repo has — `main` plus 68 branch heads — using only
 the loader, no credential. `apiKeySource` on the session's own `init` event reads
-`none` with `ANTHROPIC_*` unset, which is why both commands below belong in CI.
+`none` with `ANTHROPIC_*` unset, which is why both commands below belong in CI — the
+first one unflagged, for the reason in §4.
 
 ```bash
 claude plugin validate <manifest-or-component-dir> --strict
@@ -72,11 +73,50 @@ the few that assemble others.
 
 Worth recording because it removes a class of merge risk:
 
-- **69 of 69 refs pass `claude plugin validate --strict`** on the marketplace
-  manifest, every local `source:`'s plugin manifest, and every component directory —
-  modulo the two warnings `main` already carries (`author`, fixed here; marketplace
-  `description`, fixed on `koan/the-loader-names-what-it-exposes`).
 - **All 69 expose the identical set of names**: 5 skills, 2 agents, no role in any
   tree that loads as nothing.
 - **Not one of the 68 branches adds a role.** The whole queue is prose refinement of
   the same seven.
+
+## 4. `--strict` has no "modulo" — it is the flag that makes a warning fatal
+
+An earlier draft of §3 reported "69 of 69 refs pass `claude plugin validate --strict`
+… modulo the two warnings `main` already carries". There is no modulo to take. The
+flag's whole effect is to promote those warnings, and the loader says so in the line
+it exits on — `claude plugin validate . --strict` on `main`, message tails elided:
+
+```
+⚠ Found 2 warnings:
+  ❯ description: No marketplace description provided. …
+  ❯ plugins[0] plugin.json → author: No author information provided. …
+✘ Validation failed (--strict treats warnings as errors)
+```
+
+`claude plugin validate .` exits **0** on `main`. The same command with `--strict`
+exits **1**. Measured over every ref on `origin` — `main` plus 184 branch heads,
+against 2.1.278, both the marketplace manifest and the plugin directory:
+
+| `--strict` result | refs |
+|---|---|
+| green on both manifests | **2** |
+| green on the plugin dir, red on the marketplace | 1 |
+| red on both | 182 |
+
+The two green refs are `koan/the-field-no-gate-dared-demand` (depth 109, PR #126)
+and `koan/the-widest-grant-reads-as-the-narrowest` (depth 110, **no pull request**) —
+the only trees in the queue that set `author` in `plugin.json` *and* `description` in
+the marketplace. Setting either alone is not enough, and 174 refs set neither.
+`main` is red. So is the branch this document is on: it adds `author`, which clears
+the plugin directory, and leaves the marketplace missing its `description`.
+
+So the header's "both commands below belong in CI" holds only for the unflagged form.
+`.github/workflows/platform.yml` already made that call, and its reason is recorded
+there: *"Not --strict: the marketplace has carried a missing-author warning since
+before this gate existed, and reddening every PR over it would teach people to ignore
+the gate."* That reason expires the moment either green ref lands — at which point the
+flag becomes an enforceable ratchet instead of a permanent red, and the gate's comment
+is the place to say so.
+
+The general shape, since this repo keeps rediscovering it: a sentence that subtracts a
+tool's findings from the tool's own verdict is not a measurement, it is a wish. Read the
+exit code.
