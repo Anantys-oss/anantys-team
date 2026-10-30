@@ -227,6 +227,13 @@ class CheckPlatform(unittest.TestCase):
             ("agent", "anantys.debug"),
             ("background", "false"),
             ("metadata", "{tier: internal}"),
+            # The five the schema-array reading dropped. Each is a read the
+            # 2.1.278 skill parser makes by name, next to the reads above.
+            ("arguments", '["path", "env"]'),
+            ("version", "0.6.0"),
+            ("created_by", "dream-proposal"),
+            ("improved_by", "dream-proposal"),
+            ("fallback", "false"),
         ):
             with self.subTest(key=key):
                 cp.errors.clear()
@@ -235,16 +242,41 @@ class CheckPlatform(unittest.TestCase):
                     self.check(GOOD_SKILL.replace("---\n\nbody", f"{line}\n---\n\nbody")), []
                 )
 
+    def test_argument_hint_has_no_camel_case_form(self) -> None:
+        # `disallowedTools` is a real alias — the parser reads it when
+        # `disallowed-tools` is absent. `argumentHint` is not: the only read is of
+        # `argument-hint`. Certifying it told an author a hint was live when the
+        # /-menu would never show it, which is the drop this gate reports.
+        self.assertIn("argument-hint", cp.SKILL_KEYS)
+        self.assertNotIn("argumentHint", cp.SKILL_KEYS)
+
+    def test_the_typed_and_hinted_argument_keys_are_both_live(self) -> None:
+        # They pair the way `disable-model-invocation` pairs with
+        # `user-invocable`: keeping one and dropping the other is how the
+        # vocabulary went narrow last time.
+        self.assertIn("arguments", cp.SKILL_KEYS)
+        self.assertIn("argument-hint", cp.SKILL_KEYS)
+
     def test_a_misspelled_key_is_still_charged(self) -> None:
         # The widening must not reach the case the check exists for: a key one
         # character off a real one loads as nothing, and the loader says nothing.
-        for key in ("disallowed_tools", "when-to-use", "allowedTools"):
+        for key in ("disallowed_tools", "when-to-use", "allowedTools", "argumentHint"):
             with self.subTest(key=key):
                 cp.errors.clear()
                 found = self.check(GOOD_SKILL.replace("---\n\nbody", f"{key}: Read\n---\n\nbody"))
                 self.assertTrue(
                     any(f"unrecognized frontmatter key `{key}`" in e for e in found), found
                 )
+
+    def test_the_manifest_vocabulary_stays_out(self) -> None:
+        # The array that names the skill keys in the binary also names the
+        # plugin-manifest keys, and nothing in it marks the boundary. Widening
+        # from that array rather than from the parser's reads is how `argumentHint`
+        # got in, and it would admit these next — certifying a key on a SKILL.md
+        # that only `plugin.json` is ever read for.
+        for key in ("mcpServers", "author", "homepage", "license", "keywords", "evals"):
+            with self.subTest(key=key):
+                self.assertNotIn(key, cp.SKILL_KEYS)
 
     def test_the_two_schemas_stay_two(self) -> None:
         # Different objects in the binary, and the overlap is partial: an agent

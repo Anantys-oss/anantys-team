@@ -109,6 +109,22 @@ ROOT = Path(__file__).resolve().parent.parent
 #
 # `@internal` keys are included. The question this check asks is whether the
 # loader reads the key, and it does; who the key is *for* is a different gate's.
+#
+# The set below is the key-name argument of every read the 2.1.278 skill
+# frontmatter parser makes — one function, so the vocabulary is enumerable
+# rather than inferred. Enumerating the *schema array* instead is what produced
+# the earlier reading: that array is a union of skill keys and plugin-manifest
+# keys (`mcpServers`, `themes`, `workflows`, `author`, …), so it cannot settle
+# which half a name belongs to, and reading it by eye dropped the five keys the
+# parser reads next to the ones it kept — `arguments`, `version`, `created_by`,
+# `improved_by`, `fallback`.
+#
+# `arguments` is the sharpest of the five, and the most recently load-bearing:
+# the loader's own schema describes it as the "typed variant of argument-hint",
+# `argument-hint` is here, and five roles have just gained one. The same reading
+# that dropped it added `argumentHint`, which no read in the parser names —
+# `argument-hint` has no camelCase form, unlike `disallowedTools`. Charging a key
+# the loader ignores is this check's job; certifying one is not, so it goes.
 SKILL_KEYS = frozenset(
     {
         "name",
@@ -118,17 +134,21 @@ SKILL_KEYS = frozenset(
         "disallowed-tools",
         "disallowedTools",  # canonical alias of `disallowed-tools`
         "argument-hint",
-        "argumentHint",
+        "arguments",  # typed variant of `argument-hint`, per the loader's schema
         "disable-model-invocation",
         "user-invocable",
         "effort",
         "shell",
+        "version",
         "when_to_use",
         "paths",
         "hooks",
         "context",
         "agent",
         "background",
+        "created_by",  # read as a pair: either one set to `dream-proposal` marks the skill
+        "improved_by",
+        "fallback",
         "metadata",
     }
 )
