@@ -77,6 +77,18 @@ class ParseDetails(unittest.TestCase):
     def test_a_table_the_loader_never_printed_is_empty_not_missing(self):
         self.assertEqual(L.parse_details("command not found")["on_invoke"], {})
 
+    def test_collects_the_per_component_always_on_column_too(self):
+        # The column neither budget covers: a dropped description moves this one
+        # and leaves `on_invoke` untouched, so reading only the second is what
+        # made the sweep silent on it.
+        got = L.parse_details(DETAILS)["always_on_each"]
+        self.assertEqual(got, {"anantys.qa": 190, "anantys.debug": 80})
+
+    def test_reads_the_floor_in_the_per_component_column(self):
+        text = "Per-component\n  anantys.qa                 < 20      ~8.6k\n"
+        self.assertEqual(L.parse_details(text)["always_on_each"], {"anantys.qa": 20})
+        self.assertEqual(L.parse_details(text)["on_invoke"], {"anantys.qa": 8600})
+
 
 BASE = {"inventory": {"Skills": ["a", "b"], "Agents": ["x"]}}
 
@@ -197,6 +209,50 @@ class Overspent(unittest.TestCase):
     def test_an_unreadable_count_rules_on_nothing(self):
         # `None` is "the table could not be read", never "measured zero".
         self.assertEqual(L.overspent(self.tree(716), self.tree(None)), ([], []))
+
+
+class Undescribed(unittest.TestCase):
+    """`undescribed` catches a component the inventory keeps and no model can pick."""
+
+    def tree(self, **always_on_each):
+        return {"always_on_each": always_on_each}
+
+    def test_main_s_own_components_report_nothing(self):
+        # The seven on `origin/main` measure 70-190; none is near the floor.
+        base = self.tree(**{"anantys.qa": 190, "anantys.debug": 80})
+        self.assertEqual(L.undescribed(base, base), ([], []))
+
+    def test_a_description_this_head_dropped_is_its_own_error(self):
+        raised, inherited = L.undescribed(self.tree(**{"anantys.qa": 190}),
+                                          self.tree(**{"anantys.qa": L.ROUTABLE_MIN}))
+        self.assertEqual(inherited, [])
+        self.assertIn("anantys.qa always-on 20", raised[0])
+        self.assertIn("base 190", raised[0])
+
+    def test_a_component_the_baseline_already_shipped_mute_owns_no_remedy(self):
+        mute = self.tree(**{"anantys.qa": L.ROUTABLE_MIN})
+        raised, inherited = L.undescribed(mute, mute)
+        self.assertEqual(raised, [])
+        self.assertEqual(len(inherited), 1)
+
+    def test_a_new_component_with_no_description_is_the_head_s_own(self):
+        # Absent from the baseline must not read as "was already mute".
+        raised, _ = L.undescribed(self.tree(**{"anantys.qa": 190}),
+                                  self.tree(**{"anantys.qa": 190, "new.role": 20}))
+        self.assertEqual(len(raised), 1)
+        self.assertIn("new here", raised[0])
+
+    def test_each_mute_component_is_its_own_finding(self):
+        raised, _ = L.undescribed(self.tree(a=190, b=180), self.tree(a=20, b=20))
+        self.assertEqual(len(raised), 2)
+
+    def test_a_row_one_token_over_the_floor_is_priced_and_silent(self):
+        # The loader printed a number, so it found something to price.
+        self.assertEqual(L.undescribed(self.tree(a=190),
+                                       self.tree(a=L.ROUTABLE_MIN + 1)), ([], []))
+
+    def test_a_table_the_sweep_could_not_read_rules_on_nothing(self):
+        self.assertEqual(L.undescribed(self.tree(a=190), {}), ([], []))
 
 
 class QueueHeads(unittest.TestCase):

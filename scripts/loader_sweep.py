@@ -9,14 +9,21 @@ place that shows up is a user's session.
 
 The loader is cheap to ask and needs no credentials. `claude plugin install`
 into a sealed `HOME` plus `claude plugin details` takes about a second per head
-and answers three questions no text gate can:
+and answers four questions no text gate can:
 
   * **Does it install at all?** `claude plugin validate .` resolves `.` to the
     marketplace file and stops, so it passes a tree whose `plugin.json` is gone.
     Installing is the only check that reaches the plugin.
-  * **Is every component exposed?** The inventory is the loader's own count. A
-    skill whose frontmatter the loader rejects is missing from it, silently —
-    there is no error, just a shorter list.
+  * **Is every component exposed?** The inventory is the loader's own count, and
+    a component it cannot read at all is absent from it.
+  * **Can the model reach each one?** Being in the inventory is not being
+    routable. A skill whose frontmatter the loader *rejects* keeps its row —
+    the loader takes its identity from the directory — and loses the
+    description, which is the only thing a model selects on. Measured on
+    `origin/main`'s tree, `anantys.qa` with an unterminated string appended to
+    its frontmatter still prints under `Skills (5)` and still answers to
+    `/anantys.qa`; what changes is its always-on row, `~190` to `< 20`. `lost`
+    cannot see that, and `overspent` looks the other way up. See `undescribed`.
   * **What does it cost?** `details` prices both of the loader's budgets per
     head — the always-on total and each component's on-invoke row — against the
     ceilings `check_cost` enforces. `check_cost` rules on one tree and its merge
@@ -81,6 +88,13 @@ PLUGIN = "anantys-team-agents"
 INVENTORY = re.compile(r"^\s*(Skills|Agents|Hooks|MCP servers|LSP servers)\s*\((\d+)\)\s*(.*)$")
 VERSION = re.compile(r"^" + re.escape(PLUGIN) + r"\s+(\S+)")
 
+#: A component's always-on cost is its name plus its description, and nothing else.
+#: The loader prints any cost it will not quantify as `< 20`, which `tokens` reads as
+#: 20, so a row at or under this number has no description the loader could price —
+#: whatever the cause. Measured on `origin/main`: the seven components run 70-190,
+#: and all three ways to lose a description land on the same `< 20`.
+ROUTABLE_MIN = 20
+
 
 def run(*args, **kw):
     """Capture a command; never raise — a failing loader call is data."""
@@ -108,7 +122,9 @@ def parse_details(text):
             out["inventory"][kind] = sorted(n for n in (p.strip() for p in names.split(",")) if n)
     if m := LOADER_TOTAL.search(text):
         out["always_on"] = tokens(m.group(1))
-    out["on_invoke"] = {c: tokens(oi) for c, _, oi in LOADER_ROW.findall(text)}
+    rows = LOADER_ROW.findall(text)
+    out["always_on_each"] = {c: tokens(ao) for c, ao, _ in rows}
+    out["on_invoke"] = {c: tokens(oi) for c, _, oi in rows}
     return out
 
 
@@ -161,6 +177,46 @@ def overspent(baseline, head):
         # A component the baseline never had is this head's own, so `None` must
         # not read as "was under the limit and is over now".
         if before is not None and before > limit and now <= before:
+            inherited.append(finding)
+        else:
+            raised.append(finding + (f" (base {before})" if before is not None else " (new here)"))
+    return raised, inherited
+
+
+def undescribed(baseline, head):
+    """Components the loader exposes but cannot route to, as `(raised, inherited)`.
+
+    `lost` asks whether a component is in the inventory and `overspent` whether
+    it costs too much. Neither asks the question between them: a component that
+    is listed, is invocable by name, and carries nothing a model could select it
+    on. Its always-on row is the loader's own answer — that row *is* the name
+    plus the description — so a row at `ROUTABLE_MIN` is the finding.
+
+    Three causes land here and share one remedy, which is why they are one check
+    and not three. Measured against `origin/main`'s tree, with `claude` 2.1.278:
+
+        frontmatter + `extra: "unterminated`   validate errors,  row `< 20`
+        `description:` key deleted             validate *warns*, row `< 20`
+        `description: QA a feature.`           validate silent,  row `< 20`
+
+    Only the first reddens `claude plugin validate`, and `.github/workflows/
+    validate.yml` is deliberately not `--strict`, so the second merges green
+    too. The remedy in every case is a description the loader can price, wholly
+    inside the head's own diff — so this is an error, on the same test the rest
+    of this file uses.
+
+    The split is `overspent`'s, for `overspent`'s reason: a component the
+    baseline already shipped unroutable owns this head no remedy.
+    """
+    raised, inherited = [], []
+    for component, now in sorted(head.get("always_on_each", {}).items()):
+        if now is None or now > ROUTABLE_MIN:
+            continue
+        before = baseline.get("always_on_each", {}).get(component)
+        finding = f"{component} always-on {now} <= {ROUTABLE_MIN}"
+        # Absent from the baseline is this head's own component, never "was
+        # already unroutable" — the same `None` trap `overspent` documents.
+        if before is not None and before <= ROUTABLE_MIN:
             inherited.append(finding)
         else:
             raised.append(finding + (f" (base {before})" if before is not None else " (new here)"))
@@ -343,11 +399,14 @@ def main(argv=None):
             continue
         missing, extra = lost(base, head), gained(base, head)
         raised, inherited = overspent(base, head)
+        mute, mute_inherited = undescribed(base, head)
         notes = (["LOST " + ", ".join(missing)] if missing else []) + \
                 (["added " + ", ".join(extra)] if extra else []) + \
                 ([f"NAME IGNORED x{len(head['misnamed'])}"] if head["misnamed"] else []) + \
                 (["OVER " + ", ".join(raised)] if raised else []) + \
-                (["inherits " + ", ".join(inherited)] if inherited else [])
+                (["UNROUTABLE " + ", ".join(mute)] if mute else []) + \
+                (["inherits " + ", ".join(inherited + mute_inherited)]
+                 if inherited or mute_inherited else [])
         # Both counts are optional: a table this script cannot read leaves `None`,
         # and subtracting it is how the sweep used to die on the heads it exists for.
         cost = f"{head['always_on'] - base['always_on']:+d}" \
@@ -358,6 +417,9 @@ def main(argv=None):
             failures.append((label, "exposes fewer components: " + ", ".join(missing)))
         for finding in raised:
             failures.append((label, f"over a loader budget this head raised: {finding}"))
+        for finding in mute:
+            failures.append((label, f"exposed but unroutable — the loader prices no "
+                                    f"description for it: {finding}"))
         for directory, declared in head["misnamed"]:
             failures.append((label, f"{directory}/ declares `name: {declared}`; the loader "
                                     f"exposes `{directory}` and discards the field"))
