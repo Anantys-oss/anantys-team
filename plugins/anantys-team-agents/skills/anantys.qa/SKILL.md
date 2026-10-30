@@ -106,7 +106,13 @@ legwork first so the questions are few and precise:
 
 - Read `README.md`, `CLAUDE.md`/`AGENTS.md`, `Makefile`, `docker-compose*.yml`, `.env.example`, `package.json` scripts.
 - Detect running services: `docker ps`, and probe likely dev hostnames.
-- **Never read `.env` values into the transcript.** Reference *how* to obtain a secret (`grep -oE 'X=.*' .env`), never the secret itself.
+- **Never read `.env` values into the transcript.** Establish that a key *exists* without printing
+  what it holds — `grep -c '^STRIPE_KEY=' .env` answers `1` or `0`, and `cut -d= -f1 .env` lists the
+  keys with none of the values. A pattern that reaches past the `=` (`grep -oE 'X=.*' .env`, `grep X
+  .env`, `cat`, `source`) prints the secret in full: that is not a reference to the credential, it
+  *is* the credential, and the redaction rule below applies to it exactly as it applies to a console
+  line. The value itself is never yours to fetch — ask the operator for it at the moment a case needs
+  it (see `templates/qa-config.md`, Credentials), and keep it out of every file you write.
 
 Then ask the operator only what you could not infer, in one batch:
 
@@ -142,7 +148,9 @@ converted file in the confirmation below. Appending a `shared` block to a flat f
 sections read by nothing and no environment marked default — the local campaign stops resolving.
 
 Confirm the file back to the operator before writing. `.anantys/qa.md` is committed — so it must
-contain **no secrets**, only the commands that retrieve them.
+contain **no secrets**, only the commands that retrieve them. A recorded command is a note for the
+**operator**, not a step for you: its output is the credential, so running it leaks exactly what
+keeping it out of the file protected. Write the command down; never execute it.
 
 ## `plan` — derive the campaign from the feature source
 

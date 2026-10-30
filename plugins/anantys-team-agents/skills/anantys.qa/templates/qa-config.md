@@ -22,7 +22,10 @@ single `local` environment named `local`, marked default — it keeps working un
 `init` to add a `shared` one: it first rewrites the flat sections as the `local` block below.
 
 > **No secrets.** Record the *command* that retrieves a credential, never the credential.
-> This file is committed.
+> This file is committed. The command is here for the **operator** to run — its output is the
+> credential, so an agent that runs it has put in the transcript the one thing this file withholds.
+> Prefer a presence check over a reader: `grep -c '^STRIPE_KEY=' .env` says whether the key is set
+> without printing it; `grep -oE 'STRIPE_KEY=.*' .env` prints it in full.
 
 ---
 
