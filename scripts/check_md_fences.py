@@ -65,7 +65,9 @@ and `check_version_bump` already draw.
   cannot nest.** The author meant nesting; the delimiter cannot express it.
   CommonMark keeps an info-bearing line as content and ends the block at the
   next *bare* run instead, so the block boundaries land somewhere nobody wrote.
-  Remedy: lengthen the outer fence.
+  Remedy: lengthen the outer fence past *both* runs — one longer than the
+  longer of the two, never `outer + 1`, because when the inner run is already
+  the longer one `outer + 1` lands exactly on it and the finding comes back.
 - **A fence never closed before end of file.** Everything after it is code,
   including the headings a reader navigates by.
 
@@ -75,6 +77,15 @@ precise rather than a heuristic about backticks — the only lines it can ever
 flag are openers that carry an info string, and a literal ``` ```bash ``` inside
 a three-backtick block is not something a writer can mean.
 
+That claim is a claim about **two** readers agreeing, and they have to be made
+to. "Openers that carry an info string" is not the same set as "lines that
+carry a run and an info string": CommonMark 4.5 forbids a backtick inside a
+backtick info string, so ``` ```json `id` ``` is a paragraph and never opens
+anything. `fences` honoured that rule; the finding loop did not, and reported
+such a line as an inner opener in a file whose block boundaries were already
+exactly where its author put them — a false positive, with a remedy that moved
+no boundary. Both readers now call `opens`, which is that rule and nothing else.
+
 ## Why not a markdown library
 
 The sibling gates are stdlib-only and CI installs nothing. The fence rules this
@@ -82,7 +93,15 @@ needs are small and closed: CommonMark 4.5 says an opener is a run of at least
 three backticks or tildes, indented at most three spaces; a closer is a run of
 the *same* character, at least as long, with nothing but whitespace after it;
 and a backtick info string may not itself contain a backtick. That is the whole
-specification, and `scan` below is it.
+specification, and `opens` plus `fences` below is it.
+
+One rule is deliberately *not* implemented: inside a list item a fence is
+indented relative to the item's content column, so a legal fence can sit four
+or more spaces from the margin. `FENCE` refuses those, which makes the gate
+blind to nesting under a list rather than wrong about it —
+`test_four_spaces_of_indent_is_not_a_fence` pins the choice. Implementing it
+means tracking container blocks, which is the markdown library this section
+declines.
 
 Usage: python3 scripts/check_md_fences.py [root]
 Exit 1 on errors.
@@ -100,6 +119,21 @@ SKIP_PARTS = {".git", "__pycache__", "node_modules"}
 #: A fence delimiter line: up to three spaces of indent, then a run of one
 #: delimiter character, then the info string. Groups: indent, run, info.
 FENCE = re.compile(r"^( {0,3})(`{3,}|~{3,})(.*)$")
+
+
+def opens(match):
+    """True if a fence-shaped line is a legal *opener*, not merely fence-shaped.
+
+    CommonMark 4.5: a backtick info string may not contain a backtick. So
+    ``` ```json `id` ``` is a paragraph wherever it stands — at top level, and
+    as a line inside another fence. Both readers below have to apply that rule
+    or the gate reports an opener its own scanner refuses to open, which is the
+    one false positive the precision claim above says cannot happen.
+
+    Tildes are deliberately exempt: a tilde info string may contain anything,
+    backticks included.
+    """
+    return not (match.group(2)[0] == "`" and "`" in match.group(3))
 
 
 def fences(text):
@@ -122,9 +156,7 @@ def fences(text):
             i += 1
             continue
         run = start.group(2)
-        # A backtick info string may not contain a backtick (CommonMark 4.5), so
-        # ```` ```` is a closer-shaped line, never an opener with "`" as info.
-        if run[0] == "`" and "`" in start.group(3):
+        if not opens(start):
             i += 1
             continue
         body = []
@@ -152,11 +184,18 @@ def problems(rel, text):
             inner = FENCE.match(line)
             if not inner or inner.group(2)[0] != run[0] or len(inner.group(2)) < len(run):
                 continue
+            if not opens(inner):
+                continue
+            # One longer than whichever run is longer. `len(run) + 1` is not
+            # enough when the inner run is already the longer of the two: the
+            # author follows the advice, the outer grows to the inner's length,
+            # and the same finding comes back.
+            longer = run[0] * (max(len(run), len(inner.group(2))) + 1)
             yield (
                 f"{rel}:{offset}: `{inner.group(2)}{inner.group(3).strip()}` opens a fence inside "
                 f"the `{run}` fence at line {opened}, which cannot nest at that length — the block "
                 f"ends somewhere nobody wrote it. Lengthen the outer fence to "
-                f"`{run[0] * (len(run) + 1)}`"
+                f"`{longer}`"
             )
 
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Fixture tests for check_md_fences — run: python3 -m unittest discover scripts
 
-`scan`-level tests here are not decoration: the gate's whole precision claim is
+`fences`-level tests here are not decoration: the gate's whole precision claim is
 that its three CommonMark rules (same character, at-least-as-long, nothing but
 whitespace after) make a false positive impossible, so each rule gets a case
 that fails the gate if the rule is dropped. The regression case at the bottom is
@@ -99,6 +99,63 @@ class Scan(unittest.TestCase):
 
     def test_two_sibling_blocks_are_two_fences(self):
         self.assertEqual(len(list(c.fences("```\na\n```\n\n```\nb\n```\n"))), 2)
+
+    def test_a_backtick_in_the_info_string_is_not_an_opener(self):
+        """CommonMark 4.5, stated once so both readers can share it."""
+        self.assertFalse(c.opens(c.FENCE.match("```json `id`")))
+        self.assertTrue(c.opens(c.FENCE.match("```json")))
+
+    def test_a_tilde_info_string_may_contain_a_backtick(self):
+        self.assertTrue(c.opens(c.FENCE.match("~~~json `id`")))
+
+
+class Precision(unittest.TestCase):
+    """The two readers of the opener rule must not drift apart again."""
+
+    #: An outer block whose body holds a fence-shaped line CommonMark can never
+    #: read as an opener. The block already ends where its author wrote it.
+    ALREADY_CORRECT = "````markdown\n```json `id`\nx\n````\n"
+
+    def test_a_line_that_cannot_open_is_not_reported_as_an_inner_opener(self):
+        (opened, closed, _, _), = c.fences(self.ALREADY_CORRECT)
+        self.assertEqual((opened, closed), (1, 4))
+        self.assertEqual(list(c.problems("t.md", self.ALREADY_CORRECT)), [])
+
+    def test_the_same_shape_at_the_outer_length_is_also_clean(self):
+        """Not length-dependent: the line is a paragraph, not a short opener."""
+        code, out = run({"t.md": "```markdown\n```json `id`\nx\n```\n"})
+        self.assertEqual(code, 0, out)
+
+    def test_an_inner_opener_without_the_backtick_is_still_reported(self):
+        """The guard narrows the finding; it must not delete it."""
+        code, out = run({"t.md": "```markdown\n```json\nx\n```\n```\n"})
+        self.assertEqual(code, 1)
+        self.assertIn("t.md:2:", out)
+
+
+class Remedy(unittest.TestCase):
+    """The prescribed edit has to be one an author can apply once."""
+
+    #: Inner run longer than the outer, so `outer + 1` lands on the inner.
+    LONGER_INNER = "```markdown\n````bash\nls\n````\n```\n"
+
+    def test_the_remedy_clears_the_longer_inner_run(self):
+        first, *_ = c.problems("t.md", self.LONGER_INNER)
+        self.assertIn("Lengthen the outer fence to `" + "`" * 5 + "`", first)
+
+    def test_applying_the_remedy_once_removes_the_finding(self):
+        fixed = self.LONGER_INNER.replace("```markdown", "`````markdown").replace(
+            "ls\n````\n```\n", "ls\n````\n`````\n"
+        )
+        code, out = run({"t.md": fixed})
+        self.assertEqual(code, 0, out)
+
+    def test_outer_plus_one_would_not_have(self):
+        """Pins why `max` is there: the old remedy reproduced the finding."""
+        outer_plus_one = self.LONGER_INNER.replace("```markdown", "````markdown").replace(
+            "ls\n````\n```\n", "ls\n````\n````\n"
+        )
+        self.assertTrue(list(c.problems("t.md", outer_plus_one)))
 
 
 class Findings(unittest.TestCase):
