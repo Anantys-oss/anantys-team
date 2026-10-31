@@ -3,6 +3,7 @@
   "owner": {
     "name": "Anantys-OSS"
   },
+  "description": "Roles that put Claude plus a real browser to work on a project: design, ops, debug, review, QA.",
   "plugins": [
     {
       "name": "anantys-team-agents",
