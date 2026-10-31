@@ -11,7 +11,7 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
-from loader_grants import grant_tokens  # noqa: E402
+from loader_grants import WILDCARD, grant_tokens  # noqa: E402
 
 
 class Separators(unittest.TestCase):
@@ -55,9 +55,26 @@ class ParenthesesSuspendBoth(unittest.TestCase):
             ["Bash(git log:*)", "Bash(ls:*)"],
         )
 
-    def test_an_unclosed_parenthesis_swallows_the_rest(self):
-        """No closure check in the loader, so none here."""
+    def test_an_unclosed_parenthesis_swallows_the_rest_of_its_element(self):
+        """No closure check in the loader, so none here — within one element."""
         self.assertEqual(grant_tokens("Bash(git log, Read"), ["Bash(git log, Read"])
+
+    def test_an_unclosed_parenthesis_does_not_reach_the_next_line(self):
+        """`s` is declared inside `for(let t of e)`, so the boundary closes it.
+
+        Without the reset the third line is the one opaque token
+        `Write, Edit, Bash`, and the bare-`Bash` census matches nothing.
+        """
+        self.assertEqual(
+            grant_tokens("Read\nBash(mkdir:*\nWrite, Edit, Bash"),
+            ["Read", "Bash(mkdir:*", "Write", "Edit", "Bash"],
+        )
+
+    def test_a_parenthesis_opened_and_closed_on_one_line_is_unaffected(self):
+        self.assertEqual(
+            grant_tokens("Bash(git diff:*)\nRead, Grep"),
+            ["Bash(git diff:*)", "Read", "Grep"],
+        )
 
     def test_a_close_without_an_open_just_resumes_splitting(self):
         self.assertEqual(grant_tokens(") Bash Read"), [")", "Bash", "Read"])
@@ -121,6 +138,46 @@ class Provenance(unittest.TestCase):
         for raw, expected in pairs:
             with self.subTest(raw=raw):
                 self.assertEqual(grant_tokens(raw), expected)
+
+
+class TheWildcardIsNotAToolName(unittest.TestCase):
+    """`Rp` is the inner half; `Sht`/`AR` are what the loader applies."""
+
+    def test_the_wildcard_token_is_what_sht_collapses_on(self):
+        self.assertEqual(WILDCARD, "*")
+
+    def test_the_wildcard_tokenizes_as_its_own_token(self):
+        """So a gate can find it — the collapse is the caller's to model."""
+        self.assertEqual(grant_tokens("Read, *"), ["Read", WILDCARD])
+
+    def test_a_scope_ending_in_a_star_is_not_the_wildcard(self):
+        self.assertNotIn(WILDCARD, grant_tokens("Bash(git log:*), mcp__s__*"))
+
+
+class TheElementBoundary(unittest.TestCase):
+    """Pairs captured from 2.1.278's `Rp` over *multi*-element input.
+
+    The corpus in `Provenance` fed `Rp` one element at a time, which is the
+    half of it that cannot exercise `s`'s per-element reset — the half the
+    `\n` rule models. Each `elements` below was passed to the shipped
+    tokenizer as the list it is; `raw` is the same value as the frontmatter
+    text these gates actually read.
+    """
+
+    def test_the_port_matches_the_shipped_tokenizer_across_elements(self):
+        pairs = [
+            (["Bash(git log:*", "Read, Grep"], ["Bash(git log:*", "Read", "Grep"]),
+            (["Read", "Bash(mkdir:*", "Write, Edit, Bash"],
+             ["Read", "Bash(mkdir:*", "Write", "Edit", "Bash"]),
+            (["Bash(", "a b"], ["Bash(", "a", "b"]),
+            (["a(b", "c)d e"], ["a(b", "c)d", "e"]),
+            (["a)", "b c"], ["a)", "b", "c"]),
+            (["Read, Write", "Glob"], ["Read", "Write", "Glob"]),
+            (["", "Read"], ["Read"]),
+        ]
+        for elements, expected in pairs:
+            with self.subTest(elements=elements):
+                self.assertEqual(grant_tokens("\n".join(elements)), expected)
 
 
 if __name__ == "__main__":
