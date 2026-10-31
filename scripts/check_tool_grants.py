@@ -65,7 +65,7 @@ import sys
 from itertools import takewhile
 from pathlib import Path
 
-from loader_grants import grant_tokens
+from loader_grants import WILDCARD, grant_tokens
 
 # Grants that are inherently generic — never reported as unreferenced.
 GENERIC = {"Bash", "Read", "Write", "Edit", "Glob", "Grep"}
@@ -390,6 +390,15 @@ def agent_scopes(grants):
 
 def check(path, grants, body, known_mcp, agents=(), is_agent=False):
     errors, warnings = [], []
+    if WILDCARD in grants:
+        # Every finding below asks whether the declared list covers the prose.
+        # With `*` in the field there is no declared list in force: `Sht`
+        # collapses it and the loader drops the key, so the component holds
+        # every tool. "Prose runs `git log` but no Bash grant is" would be
+        # false, once per command, and the one true statement — the field grants
+        # everything — is `check_platform`'s, which reports it on this same
+        # edit. A second diagnosis for one edit is what both gates avoid.
+        return errors, warnings
     if is_agent:
         scope_errors, grants = agent_scopes(grants)
         errors += scope_errors

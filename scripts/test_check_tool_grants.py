@@ -13,6 +13,26 @@ def role(grants, body, agents=()):
     return c.check(Path("role.md"), grants, body, {"navigate", "tabs_context_mcp"}, agents)
 
 
+class TheWildcardLeavesNoListInForce(unittest.TestCase):
+    """`*` makes the loader drop the field, so nothing in it is ungranted."""
+
+    def test_no_finding_is_reported_against_a_wildcard_field(self):
+        errors, warnings = role(
+            ["Read", "*"], "Run `git log` in a real browser and call `tabs_context_mcp`."
+        )
+        self.assertEqual((errors, warnings), ([], []))
+
+    def test_the_same_field_without_the_wildcard_still_reports(self):
+        errors, _ = role(
+            ["Read"], "Run `git log` in a real browser and call `tabs_context_mcp`."
+        )
+        self.assertTrue(errors)
+
+    def test_a_scope_ending_in_a_star_is_not_the_wildcard(self):
+        errors, _ = role(["Bash(git log:*)"], "Walk the scenarios in a real browser.")
+        self.assertIn("grants no browser tool", errors[0])
+
+
 class ToolGrants(unittest.TestCase):
     def test_browser_prose_without_browser_grant_is_an_error(self):
         errors, _ = role(["Bash", "Read"], "Walk the scenarios in a real browser.")

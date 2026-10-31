@@ -120,6 +120,45 @@ class CheckPlatform(unittest.TestCase):
         self.assertEqual(len(found), 1)
         self.assertIn("`(git log:*)` is not a well-formed tool identifier", found[0])
 
+    def test_the_wildcard_is_reported_as_every_tool_not_as_malformed(self) -> None:
+        # `Sht` collapses the field to `*` and the loader's `allowed-tools`
+        # reader returns `undefined` — the widest authority the field can
+        # express. Called "not a well-formed tool identifier — the skill loads
+        # without it", it read as the narrowest.
+        wide = "allowed-tools: Read, *"
+        found = self.check(GOOD_SKILL.replace(GOOD_SKILL.splitlines()[3], wide))
+        self.assertEqual(len(found), 1, found)
+        self.assertIn("every tool the session holds", found[0])
+        self.assertNotIn("not a well-formed", found[0])
+
+    def test_the_wildcard_reports_how_many_grants_it_voids(self) -> None:
+        wide = "allowed-tools: Read, Bash(git:*), *"
+        found = self.check(GOOD_SKILL.replace(GOOD_SKILL.splitlines()[3], wide))
+        self.assertIn("the 2 grant(s) listed beside it do not apply", found[0])
+
+    def test_the_wildcard_suppresses_the_shape_errors_beside_it(self) -> None:
+        # One edit, one diagnosis: a malformed neighbour is not the finding when
+        # the field grants everything regardless of what else it names.
+        wide = "allowed-tools: mcp_chrome_nav, *"
+        found = self.check(GOOD_SKILL.replace(GOOD_SKILL.splitlines()[3], wide))
+        self.assertEqual(len(found), 1, found)
+
+    def test_a_scope_ending_in_a_star_is_not_the_wildcard(self) -> None:
+        self.assertEqual(self.check(GOOD_SKILL.replace("Bash(git:*)", "Bash(git log:*)")), [])
+
+    def test_an_unclosed_parenthesis_does_not_hide_the_next_line(self) -> None:
+        # The block form's own blind spot. Without the element-boundary reset,
+        # `Write, Edit, mcp_chrome_nav` arrives as one opaque token that matches
+        # no shape rule and no narrowing rule, and the tree comes back clean.
+        wrapped = (
+            "allowed-tools:\n"
+            "  - Read\n"
+            "  - Bash(mkdir:*\n"
+            "  - Write, Edit, mcp_chrome_nav\n"
+        )
+        found = self.check(GOOD_SKILL.replace(GOOD_SKILL.splitlines()[3] + "\n", wrapped))
+        self.assertTrue(any("`mcp_chrome_nav` is not a well-formed" in e for e in found), found)
+
     def test_block_sequence_grants_are_still_checked(self) -> None:
         # The form a 500-character grant line invites. Read only the key's own
         # line and the value is the empty string: nothing is iterated, and the

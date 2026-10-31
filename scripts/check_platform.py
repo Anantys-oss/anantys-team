@@ -89,7 +89,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from loader_grants import grant_tokens
+from loader_grants import WILDCARD, grant_tokens
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -293,6 +293,21 @@ def check_component(path: Path, known: frozenset[str], tools_key: str) -> None:
                 "grant list is indistinguishable from an absent one, so the narrowing it "
                 "looks like it sets is not set"
             )
+        if WILDCARD in tools:
+            # The widest authority this field can express, and the only token
+            # that is not a tool name: `Sht` collapses the list to `*` and the
+            # `allowed-tools` reader drops the field, so the other grants in it
+            # stop applying. Reported as the absent-key case above, because it
+            # is the same load-time state — and reported *instead* of the shape
+            # errors below, which would call the field's widest token malformed
+            # and the narrow ones beside it fine.
+            errors.append(
+                f"{rel(path)}: `{tools_key}:` holds `{WILDCARD}`, so the loader drops the "
+                "whole field — the component loads with every tool the session holds, and "
+                f"the {len(tools) - 1} grant(s) listed beside it do not apply. Name the "
+                "tools, or delete the key and say so"
+            )
+            return
         for tool in tools:
             if tool.startswith("mcp__") and "__" not in tool[5:] and TOOL_SHAPE.match(tool):
                 # Loader-legal, and that is the problem: one segment is both a
