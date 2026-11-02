@@ -1,7 +1,7 @@
 ---
 name: anantys.ops
 description: Browser-driven web/SEO ops reviewer — pilot a real browser across live pages and SaaS dashboards (Search Console, Analytics, SERP) to collect data and produce an actionable, quantified optimization report with trend deltas. Use for recurring acquisition/SEO audits.
-allowed-tools: mcp__claude-in-chrome__tabs_context_mcp, mcp__claude-in-chrome__tabs_create_mcp, mcp__claude-in-chrome__navigate, mcp__claude-in-chrome__computer, mcp__claude-in-chrome__read_page, mcp__claude-in-chrome__find, mcp__claude-in-chrome__get_page_text, mcp__claude-in-chrome__javascript_tool, mcp__claude-in-chrome__form_input, mcp__claude-in-chrome__update_plan, Read, Write, Glob, Bash(mkdir:*), Bash(git:*), Bash(ls:*)
+allowed-tools: mcp__claude-in-chrome__tabs_context_mcp, mcp__claude-in-chrome__tabs_create_mcp, mcp__claude-in-chrome__navigate, mcp__claude-in-chrome__computer, mcp__claude-in-chrome__read_page, mcp__claude-in-chrome__find, mcp__claude-in-chrome__get_page_text, mcp__claude-in-chrome__javascript_tool, mcp__claude-in-chrome__read_console_messages, mcp__claude-in-chrome__read_network_requests, mcp__claude-in-chrome__form_input, mcp__claude-in-chrome__update_plan, Read, Write, Glob, Bash(mkdir:*), Bash(git:*), Bash(ls:*)
 ---
 
 ## Mission
@@ -44,6 +44,20 @@ If no prior data exists, note this is the first audit and skip comparisons. When
 2. Present a plan via `update_plan`: the domains you'll visit, and the approach (hub audit → top pages deep-dive → Search Console → Analytics → SERP → report).
 3. Wait for user approval before proceeding.
 
+## Reading a page: prove the render before recording a number
+
+Every page-side number in Phases 1 and 1b comes from `javascript_tool` or
+`get_page_text`. A page whose own JS threw, or whose content sits behind a chunk
+that failed to load, returns a **well-formed, small, wrong** answer: the
+`innerText` of a shell, zero internal links, no structured data. Nothing errors.
+
+So for every page you read: after extracting, call `read_console_messages` and
+`read_network_requests` before recording anything. If you find an uncaught
+exception, a page error, or a failed request for a document/script/stylesheet,
+that page is **UNMEASURED** — not a zero and not a finding. Record the literal
+`UNMEASURED` plus the error in place of each affected number, and tell the user
+which pages came back unmeasured.
+
 ## Phase 1: Hub / Landing Page Audit
 
 Navigate to the hub/landing URL the user gave. Screenshot it, then extract (via `get_page_text` + JS) and evaluate:
@@ -61,6 +75,9 @@ Record all findings.
 A hub/index is rarely the page that earns clicks — the individual content pages it links to are. Cross-reference the hub's links with Search Console top-pages data (Phase 2 or prior audit) to pick the **top 5-10 pages by clicks/impressions**.
 
 For each, navigate + screenshot + extract via JS: title (+length), meta description (+length), H1/H2/H3, structured data, canonical, word count (`document.body.innerText.split(/\s+/).length`), internal links, FAQ presence, OG image. Then evaluate: does the title match the target query and beat competitors? Is the meta description click-worthy (numbers/freshness)? Content depth, rich-snippet readiness, internal linking. Record per-page findings in a table — these pages have the highest CTR leverage.
+
+Run the render check on each page before you trust its numbers: a word count of
+40 on an article page is a failed render, not a thin page.
 
 ## Phase 2: Search Console (28 days)
 
@@ -120,6 +137,12 @@ Overwrite **`<workspace>/current.md`** — the living snapshot that persists bet
 
 Rules for `current.md`: always overwrite the whole file (it is a snapshot; the journal is the append log). Carry forward completed actions; if a prior "Next Action" was done, move it to Completed, else keep it and flag its age. Accumulate the Audit History table from the previous `current.md`.
 
+An `UNMEASURED` cell is not data: never compute a delta from it, never let it
+replace a previous audit's number as the new baseline, and keep the prior value
+visible in the Previous column. Carry the row forward marked `UNMEASURED
+(<date>)` so the next audit knows to re-read that page rather than reading a
+drop that never happened.
+
 ## Rules
 
 - **Read-only on the codebase.** Modify NO application/code files. The only files you write are the journal entry and `current.md` under the workspace.
@@ -129,3 +152,4 @@ Rules for `current.md`: always overwrite the whole file (it is a snapshot; the j
 - If a service requires login and you can't access data, note it clearly and proceed with what's available. Never invent metrics.
 - Take screenshots at each phase to document the audit trail.
 - If the user provided extra queries/focus areas in $ARGUMENTS, fold them into the relevant phases.
+- **A real reading of a broken render is still a wrong metric.** "Never invent metrics" covers the dashboards; it covers the site's own pages too. An extraction from a page that errored is `UNMEASURED`, not a low score — reporting it as a finding is inventing a metric by a slower route.
