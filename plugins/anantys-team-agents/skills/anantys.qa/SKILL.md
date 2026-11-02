@@ -1,7 +1,7 @@
 ---
 name: anantys.qa
 description: Run a browser-driven QA campaign against a completed feature. Derives an executable test plan from a spec-kit tasks.md, a freeform feature brief (--brief), a set of tracker issues (--from linear:SKU-…), or one or more GitHub pull requests (--from pr:<url>), executes it in a real browser — against a local dev stack or a deployed environment (staging / a preview), selected with --env — recording PASS/FAIL/BLOCKED per assertion, accumulates operator adjudications so a defect is never re-filed twice, and emits a copy-pasteable fix brief for the dev agent. Environment specifics live in a project-local .anantys/qa.md, never in the skill. Use to QA a finished feature — however it was built — before release.
-allowed-tools: Bash, Read, Write, Edit, Glob, Grep, Task, TaskCreate, TaskUpdate, TaskList, AskUserQuestion
+allowed-tools: Bash, Read, Write, Edit, Glob, Grep, AskUserQuestion
 ---
 
 ## Mission
@@ -511,3 +511,10 @@ whole number on its own; show a non-zero value below 1% as `<1%` (never `0%`) an
 - **BLOCKED is a real result.** Report it as loudly as a FAIL — an unreachable case is untested,
   and a green blocker list that quietly contains one is worse than a red one.
 - Report what you actually observed. Never a PASS you inferred.
+- **This skill holds no delegation tool**, so "never modify product code" is a property of the
+  grant and not only of a rule: there is no subagent to hand a fix to, and `qa-report.md` is the
+  only channel out.
+- **Campaign state lives in the campaign's files**, never in session-local task tracking. The
+  progress table is computed from `qa-plan.md` and the walk is recorded in `qa-runs.md`, because
+  a run is resumed, re-read and adjudicated by *later sessions* — a tracker this session can see
+  is gone by the time it matters.
