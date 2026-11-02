@@ -166,6 +166,17 @@ Resolve the source (see "Locating the feature"), then read it for the two roles 
   id, assign one (`R1`, `R2`, …) and write it back into the **copy** (never the operator's original)
   — ids are referenced by runs, notes and reports forever.
 
+  Then **reconcile the requirement set against the other two sections** and write the count into
+  the plan header. A spec-kit source carries its own denominator — `tasks.md` is the what-shipped
+  list, so `plan` can say "Phases covered: n of m" and name what it excluded. A brief carries no
+  such list: **What shipped** is keyed by PR and **Not shipped** only holds the gaps its author
+  remembered, so neither enumerates the requirements. An id in *neither* section therefore reads
+  as shipped by default — `plan` derives assertions for it, `run` walks them, and the FAIL on a
+  surface that was never built is filed as a defect. Every id must land in exactly one of the two.
+  If any land in neither, STOP, name them to the operator, and ask which side they belong on —
+  never infer it from the diff, and never let a brief-derived plan omit the line that a spec-kit
+  one always has.
+
 Then transform into scenarios (identical for every source):
 
 - **Group by user journey, not by task.** Requirements are written by concern; a campaign must be
