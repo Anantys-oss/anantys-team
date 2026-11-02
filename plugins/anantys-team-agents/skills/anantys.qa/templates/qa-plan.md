@@ -26,6 +26,11 @@ scenario. A case you could not run is `BLOCKED`.
 Phases covered: <n> of <m> from `tasks.md`. **Excluded: Phase <k> (Polish)** — optional hardening,
 not user-observable.
 
+From a brief instead, the same line reads **Requirements covered: <n> of <m>**, as the brief's own
+**Requirements covered** section counts them. One form or the other is always present: this is the
+only place the plan states what it was measured against, and a brief-derived plan that omits it is
+indistinguishable from one whose whole requirement set was accounted for.
+
 **Progress — `<env>` · <N> assertions** (the default environment's from `plan`, plus one per
 environment that has results — who writes and refreshes each: SKILL.md, "Progress table")
 
