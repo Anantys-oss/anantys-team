@@ -23,6 +23,7 @@ The user names the branch to review (a branch name, a PR number/URL, or "the cur
 - Local branches: `git branch --list`.
 - Open PRs: `gh pr list --state open --json number,title,headRefName,author,isDraft` (if `gh` is unavailable, fall back to `git branch -r`).
 - Present the candidates and ask which one to review.
+- **Mark which ones are drafts, and say how many.** In an agent-pushed queue they are often *all* of them — a list that omits it reads as a list of merge candidates, which is the opposite of what the authors declared. `isDraft` is already in the `--json` above; print it.
 
 ## Review workflow
 
@@ -36,6 +37,8 @@ Confirm you are on the branch (`git branch --show-current`) before assessing. If
 
 ### Step B — Identify the PR
 `gh pr view <branch> --json number,state,author,url,isDraft,title` (fallback: skip if no `gh`). Show PR number, author, state, URL up front — context before verdict.
+
+**Draft is part of that context, and `state` does not carry it.** `state` is `OPEN` for a draft and for a ready PR alike; `isDraft` is the only field that tells them apart, and you already asked for it — so report it rather than dropping it: `#42 (draft) — <author>`. A draft is the author's own standing statement that the branch is not offered for merge. Reviewing one is fine and often the point. Reaching a verdict without ever naming it is not: the human reads "Merge" as a decision about a PR someone was waiting on, when nobody was.
 
 ### Step C — Show only the branch's own changes
 Diff against the **merge base**, so base changes don't pollute the review:
@@ -79,6 +82,7 @@ Then **wait for the user's decision.** Do not act on Merge/Close until they conf
 - **Summarize the diff** — a readable table + assessment beats a wall of raw diff.
 - **Base wins on conflicts** — the branch adapts to the base.
 - **Show PR info before the verdict** — context first.
+- **A draft is a hold, not a formality** — part of that context, and `state` does not carry it. Recommend **Merge** on a draft only after saying it is one and handing the user `gh pr ready <n>`, theirs to run like the push. Merging the branch locally and closing the PR succeeds on a draft precisely because it routes around the one guard that exists — `gh pr merge` stops with *"is not mergeable … most likely, this is because it is a draft"*, while `git merge` has no opinion. That bypass must never be the reason a held branch lands. **Skip** is the honest verdict when the only thing missing is the author lifting their own hold.
 - **Wait for the user** before merging or closing. The recommendation is yours; the decision is theirs.
 - **Never push** — stop at the local merge and hand the push command to the user.
 - Report what you actually verified (tests run, audit done), not what you assume.
