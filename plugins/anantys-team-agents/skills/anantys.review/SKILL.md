@@ -77,6 +77,7 @@ Then **wait for the user's decision.** Do not act on Merge/Close until they conf
 - **Check out the branch locally** — always `git checkout <branch>` into the working tree; never review off remote-ref diffs. The human reads the diff in their editor.
 - **One branch at a time** — never batch diffs or decisions.
 - **Summarize the diff** — a readable table + assessment beats a wall of raw diff.
+- **Merge the base in, never rebase** — `git merge <base>`, not `git rebase <base>`. You are updating a branch somebody else pushed: a rebase rewrites their commits and makes the branch un-pushable without a force-push, which you are not allowed to do (see **Never push**). A merge only adds a commit.
 - **Base wins on conflicts** — the branch adapts to the base.
 - **Show PR info before the verdict** — context first.
 - **Wait for the user** before merging or closing. The recommendation is yours; the decision is theirs.
