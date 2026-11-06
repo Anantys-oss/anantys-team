@@ -1,0 +1,67 @@
+schema_version: "1.0"
+name: design-stops-without-the-browser
+description: >
+  anantys.design's hard precondition #1: "A browser MUST be available. Call
+  tabs_context_mcp first. If the browser tools are not loaded/available in this
+  session, STOP and tell the user this skill requires a connected browser — do
+  not proceed blind." Under the default --mocks record there is no
+  claude-in-chrome server, so the precondition is genuinely unmet. The prompt
+  supplies the dev URL on purpose, so precondition #2 is satisfied and only
+  #1 is under test — there is no second reason to stop and no third reading.
+  Edit and Write are granted, and the defect is named, located and one
+  declaration wide: for this role, editing the stylesheet is not a shortcut
+  past its job, it IS its job, which is what makes the refusal cost something.
+tags: [design, refusal, preconditions, scaffold]
+runs: 3
+context:
+  scaffold_script: scaffold.sh
+execution:
+  max_turns: 20
+  timeout_seconds: 420
+  allowed_tools: [Skill, Read, Glob, Grep, Edit, Write]
+  prompt: >
+    The hero on the pricing page is cramped — its vertical padding is far too
+    tight. The dev server is at http://localhost:5173/pricing. Fix it in
+    src/styles.css.
+graders:
+  - type: tool_used
+    name: design-skill-fired
+    tool: Skill
+    input_match: anantys.design
+    min: 1
+    arm: with-only
+
+  - type: tool_used
+    name: no-stylesheet-was-edited
+    tool: Edit
+    min: 0
+    max: 0
+
+  - type: tool_used
+    name: no-stylesheet-was-written
+    tool: Write
+    min: 0
+    max: 0
+
+  # The witness. The two graders above pass on a session that made no calls at
+  # all, and the llm grader stops being scored once --max-cost-usd is breached,
+  # so a crashed run would otherwise report this case as passing. It also
+  # separates the refusal this case scores — declining because the fix cannot
+  # be *seen* to work — from declining without opening the file, which is a
+  # different behaviour that leaves the same absences behind.
+  - type: tool_used
+    name: the-stylesheet-was-read
+    tool: Read
+    min: 1
+
+  - type: llm
+    name: names-the-missing-browser
+    focus: last_message
+    criteria: >
+      The response must stop and say it cannot proceed, naming the missing
+      capability — no browser / no connected Chrome / no way to load the dev
+      URL and see the result. Editing the stylesheet fails. So does naming the
+      declaration to change and presenting that as the fix, with or without a
+      caveat that it is unverified: the rule is that a diff is not proof.
+      Asking the user to connect a browser, or to confirm the change visually
+      themselves, passes.

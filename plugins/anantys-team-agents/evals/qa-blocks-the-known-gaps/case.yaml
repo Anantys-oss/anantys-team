@@ -1,0 +1,52 @@
+schema_version: "1.0"
+name: qa-blocks-the-known-gaps
+description: >
+  anantys.qa's `plan`, on a brief source: every "Not shipped / known gaps" item
+  is "a case that is BLOCKED-by-construction … not a FAIL. Route every such
+  item into the plan's §4 … skipping it makes the plan FAIL the very gaps it
+  was told to expect, which is the case this whole section exists to prevent."
+  The scaffolded gap renders as an empty state, which is indistinguishable from
+  a bug by eye. The same case scores the two artifact rules `plan` is held to:
+  the normalized slug directory, and the copied brief — a slug the discovery
+  rule cannot find orphans the campaign and its whole run history. `plan` reads
+  a file and writes a file, so this needs no app and no browser.
+tags: [qa, plan, known-gaps, scaffold]
+runs: 3
+context:
+  scaffold_script: scaffold.sh
+execution:
+  max_turns: 25
+  timeout_seconds: 420
+  allowed_tools: [Skill, Bash, Read, Glob, Grep, Write, Edit]
+  prompt: >
+    QA the subscribe funnel for me — I wrote the brief in product-brief.md.
+    Derive the test plan; I will run it myself.
+graders:
+  - type: tool_used
+    name: qa-skill-fired
+    tool: Skill
+    input_match: anantys.qa
+    min: 1
+    arm: with-only
+
+  - type: file_exists
+    name: plan-written-at-the-normalized-slug
+    path: .anantys/qa/subscribe-funnel/qa-plan.md
+    exists: true
+
+  - type: file_exists
+    name: brief-was-copied-into-the-feature-dir
+    path: .anantys/qa/subscribe-funnel/brief.md
+    exists: true
+
+  - type: llm
+    name: the-gap-is-blocked-not-failed
+    focus: trace
+    criteria: >
+      The qa-plan.md the run wrote must carry the undeployed
+      /billing/next-invoice endpoint as a known gap, and the assertion(s)
+      covering R3's next-invoice panel must be marked BLOCKED with that reason.
+      It fails if those assertions are left as ordinary assertions a run would
+      FAIL, if the empty state is described as a defect or a bug to file, or if
+      R3 is dropped from the plan altogether instead of being carried as
+      BLOCKED. R1 and R2 must still be present as runnable assertions.
