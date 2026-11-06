@@ -259,7 +259,14 @@ spelling, which is what `input_match` sees.
 
 The witness graders stay on `trace` and must: `the-branch-was-checked-out` and
 `the-contract-was-read` assert the role *did* something, and a `contains` is only
-made easier by the extra text, never wrong.
+made easier by the extra text, never wrong. `check_evals.py` now holds that
+must: a declared witness scoring `target: last_message` is an error, because the
+closing turn is prose and `git checkout …` is never in it — the witness would
+fail every correct run while still counting as the case's one live verdict. The
+same rule's other half is the scaffold: a `scaffold.sh` that creates nothing
+leaves every grader scoring an empty directory, so it must run at least one
+command that builds something — a heredoc, a redirect, `git init`, `mkdir`,
+`cp`, `touch`. Two scaffolds here write no heredoc and are correct.
 
 A `tool_used` grader that asserts a tool was *not* called needs `min: 0` spelled
 out. `min` defaults to 1, so a bare `max: 0` asks for `expected 1..0` — a range

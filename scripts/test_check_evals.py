@@ -424,7 +424,7 @@ class TestMutations(unittest.TestCase):
         ) as fixture:
             nested = fixture.evals / "a-case" / "fixture"
             nested.mkdir()
-            (nested / "scaffold.sh").write_text("#!/bin/sh\n")
+            (nested / "scaffold.sh").write_text(GOOD_SCAFFOLD)
             self.assertEqual(fixture.errors(), [])
 
     def test_a_case_with_no_scaffold_is_not_a_finding(self):
@@ -812,6 +812,103 @@ class TestCrashedRunFloor(unittest.TestCase):
                 check_evals.crash_floors(graders),
                 declared[case_file.parent.name],
                 case_file.parent.name,
+            )
+
+
+class TestWitnessReachable(unittest.TestCase):
+    """The witness's `target` — the field that decides if the role is fillable."""
+
+    WITNESS = """\
+  - type: regex
+    name: the-branch-was-checked-out
+    target: trace
+    pattern: git\\s+checkout
+    match: contains
+
+"""
+    ROW = "| `the-branch-was-checked-out` — `git\\s+checkout` | `git checkout x` | `git merge x` |\n"
+
+    def fixture(self, target):
+        # A seventh, non-vacuous grader, declared the witness: 3/7 and 3/6.
+        case = GOOD_CASE.replace("  - type: llm", self.WITNESS + "  - type: llm")
+        case = case.replace("    target: trace\n    pattern: git\\s+checkout", f"    target: {target}\n    pattern: git\\s+checkout")
+        readme = with_floor("0.43", "0.50").replace(
+            "| `a-case` | `the-workspace-survived` |",
+            "| `a-case` | `the-branch-was-checked-out` |",
+        )
+        return SuiteFixture(case=case, readme=readme + self.ROW)
+
+    def test_a_witness_on_the_last_message_can_never_see_the_action(self):
+        with self.fixture("last_message") as fixture:
+            errors = [e for e in fixture.errors() if "last_message" in e]
+        self.assertTrue(
+            any("witness 'the-branch-was-checked-out'" in e for e in errors),
+            f"expected the unreachable-witness error, got {errors}",
+        )
+
+    def test_the_same_witness_on_the_trace_is_clean(self):
+        with self.fixture("trace") as fixture:
+            self.assertEqual(fixture.errors(), [])
+
+    def test_a_non_witness_grader_may_score_the_last_message(self):
+        # The rule is about the role, not the field: an outcome grader reading
+        # the closing prose is a normal verdict, and only the witness has to
+        # stay capable of separating a run from a crash.
+        case = GOOD_CASE.replace("  - type: llm", self.WITNESS + "  - type: llm")
+        case = case.replace("    target: trace\n    pattern: git\\s+checkout", "    target: last_message\n    pattern: git\\s+checkout")
+        with SuiteFixture(
+            case=case, readme=with_floor("0.43", "0.50") + self.ROW
+        ) as fixture:
+            self.assertEqual(fixture.errors(), [])
+
+    def test_every_live_witness_scores_something_the_run_did(self):
+        evals = check_evals.REPO / "plugins" / "anantys-team-agents" / "evals"
+        declared = check_evals.parse_witness_table((evals / "README.md").read_text())
+        for case_file in sorted(evals.glob("*/case.yaml")):
+            graders = check_evals.parse_case(case_file.read_text())["graders"]
+            witness = declared[case_file.parent.name]
+            for grader in graders:
+                if grader.get("name") == witness and grader.get("type") == "regex":
+                    self.assertIn(
+                        grader.get("target"),
+                        ("trace", "files"),
+                        case_file.parent.name,
+                    )
+
+
+class TestScaffoldBuilds(unittest.TestCase):
+    """A scaffold that creates nothing, and the two shapes that legitimately do."""
+
+    def test_a_scaffold_gutted_to_exit_zero_is_caught(self):
+        with SuiteFixture(scaffold="#!/usr/bin/env bash\nexit 0\n") as fixture:
+            errors = [e for e in fixture.errors() if "creates nothing" in e]
+        self.assertTrue(errors, "expected the empty-workspace error")
+
+    def test_a_scaffold_that_only_silences_a_command_is_caught(self):
+        # `>/dev/null` is a redirect, and the shape it hides is a scaffold that
+        # probes the environment without building anything in it.
+        scaffold = "#!/usr/bin/env bash\nset -euo pipefail\ngit status >/dev/null\n"
+        with SuiteFixture(scaffold=scaffold) as fixture:
+            errors = [e for e in fixture.errors() if "creates nothing" in e]
+        self.assertTrue(errors, "expected the empty-workspace error")
+
+    def test_a_scaffold_building_a_repo_without_a_heredoc_is_clean(self):
+        # `review-never-pushes` and `review-waits-for-the-decision` have this
+        # shape — so "must contain a heredoc" is the wrong rule, measured.
+        scaffold = (
+            "#!/usr/bin/env bash\nset -euo pipefail\ngit init -q -b main .\n"
+            "printf 'x\\n' > src/checkout.js\ngit add -A\ngit commit -qm x\n"
+        )
+        with SuiteFixture(scaffold=scaffold) as fixture:
+            self.assertEqual(fixture.errors(), [])
+
+    def test_every_live_scaffold_builds_something(self):
+        evals = check_evals.REPO / "plugins" / "anantys-team-agents" / "evals"
+        scaffolds = sorted(evals.glob("*/scaffold.sh"))
+        self.assertEqual(len(scaffolds), 10)
+        for script in scaffolds:
+            self.assertEqual(
+                check_evals.check_scaffold_builds(script.name, script), [], script.name
             )
 
 

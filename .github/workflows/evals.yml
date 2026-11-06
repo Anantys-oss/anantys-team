@@ -37,7 +37,7 @@ name: evals
 #                    schema_version removed · execution.prompt removed
 #   both (3)         an unknown grader `type:` · `graders:` misspelled ·
 #                    a grader about a tool the case does not grant
-#   check_evals (15) name != directory · input_match naming a skill the plugin
+#   check_evals (17) name != directory · input_match naming a skill the plugin
 #                    does not ship · a pattern that no longer compiles, or that
 #                    drifted from the README row verifying it · allowed_tools
 #                    emptied · `exists: true` with no write-capable grant ·
@@ -45,8 +45,11 @@ name: evals
 #                    escapes its case directory, or that names nothing ·
 #                    max_turns / timeout_seconds / runs below the README's floor,
 #                    or absent · `arm: with-only` on a grader that is not the
-#                    routing indicator
-#   neither (0)
+#                    routing indicator · a declared witness's `target` flipped
+#                    to `last_message`, where the action it asserts can never
+#                    appear · a `scaffold.sh` that creates nothing
+#   neither (0)      of the 25 corruptions tried so far — the last two rows
+#                    above were in this row until the sweep widened again
 #
 # The last two `check_evals` rows were added by widening the sweep, not by
 # reading the gates again: "neither (0)" was true of the mutations that had been

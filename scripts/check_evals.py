@@ -45,7 +45,7 @@ the suite is an error here, for the same reason the vector table is: a grader
 edit moves the floor silently, and the floor is the one number read off a run
 that produced no evidence at all.
 
-So the suite is prose with YAML syntax until something executes it. Five of its
+So the suite is prose with YAML syntax until something executes it. Seven of its
 load-bearing properties are checkable with no credential at all, and each is
 documented in `evals/README.md` as having been verified once, by hand, at
 authoring time:
@@ -146,6 +146,19 @@ authoring time:
      error. Nothing here gates on the value; the rule gates on the *claim*,
      which is what goes stale when a grader is added, removed or marked
      `with-only`.
+
+  7. **Whether the witness is still reachable, and whether the scaffold builds
+     anything.** Rules 1–6 read *which* grader holds the witness role and what
+     its pattern says; neither reads the two fields that decide whether the role
+     can be filled at all. A witness's `target` flipped from `trace` to
+     `last_message` asks for an action in the closing prose, so it fails every
+     correct run — and a `scaffold.sh` gutted to `exit 0` leaves every grader in
+     the case scoring an empty directory, with the fixture-supply rule reading
+     heredocs that are no longer there and passing on that absence. Both were
+     measured as MISSED by this checker and by the loader at `--max-cost-usd 0`
+     (CLI 2.1.278, one mutation at a time) before the rules below existed. The
+     scaffold rule asks for a *creating command*, not a heredoc: two scaffolds
+     here build a git repo with `printf` and are correct.
 
 What this checker deliberately does not do: score a role. That needs the agent
 runs, a credential, and a human reading the result. It asserts only that the
@@ -424,6 +437,18 @@ def parse_case_floor_table(readme: str) -> dict[str, tuple[str, str]]:
 HEREDOC = re.compile(
     r"^(?:cat|tee)\s+(?:-a\s+)?>>?\s*(\S+)\s*<<-?\s*'?([A-Za-z_]\w*)'?$"
 )
+# A scaffold command that puts something in the workspace. Every grader in a
+# case is a verdict about the tree that case's own `scaffold.sh` built, so a
+# scaffold gutted to `exit 0` leaves all of them resolving against an empty
+# directory — and the fixture-supply rule, which reads this file's heredocs,
+# then has nothing to read and passes. Two scaffolds in this suite legitimately
+# write no heredoc (they `git init` a repo and `printf` into it), so the rule is
+# "creates something", not "writes a heredoc". `/dev/null` is excluded: a
+# redirect there is how a scaffold silences a command, not how it builds a file.
+WORKSPACE_WRITE = re.compile(
+    r">>?\s*(?!/dev/null)[^\s|&>]|^\s*(?:git\s+(?:init|clone)|mkdir|touch|cp|mv|ln)\b",
+    re.M,
+)
 
 
 def scaffold_fixture(script: str) -> dict[str, str]:
@@ -557,13 +582,10 @@ def check_suite(evals_dir: pathlib.Path) -> list[str]:
                 )
 
         errors += check_scaffold(where, case, case_file.parent)
+        script_path = case_file.parent / (case.get("scaffold_script") or "scaffold.sh")
+        errors += check_scaffold_builds(where, script_path)
         witness = declared.get(case_file.parent.name)
-        errors += check_fixture_supply(
-            where,
-            graders,
-            witness,
-            case_file.parent / (case.get("scaffold_script") or "scaffold.sh"),
-        )
+        errors += check_fixture_supply(where, graders, witness, script_path)
 
         for grader in graders:
             if UNREADABLE in grader:
@@ -638,6 +660,24 @@ def check_suite(evals_dir: pathlib.Path) -> list[str]:
                     documented.add(gname)
 
             if gtype == "regex":
+                # The witness is the one grader that separates a run from a
+                # crash, and it does that by asserting the role *did* something.
+                # An action is spelled in the message stream (`trace`) or in the
+                # workspace (`files`); `last_message` is the closing turn alone,
+                # where `git checkout …` never appears. So the target decides
+                # whether the role is still observable, and no other rule reads
+                # it: flipping it leaves the witness failing on every correct
+                # run while the floor arithmetic still counts the verdict as
+                # scored — the case reads as a broken role, not a broken case.
+                if gname == witness and grader.get("target") == "last_message":
+                    errors.append(
+                        f"{where}: witness '{gname}' scores "
+                        f"`target: last_message`, the run's closing prose — but a "
+                        f"witness asserts an action, and an action appears in "
+                        f"`trace` or in `files`, never in that turn. The pattern "
+                        f"cannot match on a correct run, so the case fails every "
+                        f"time and nothing here is left observing what the run did"
+                    )
                 if grader.get("target") == "trace" and "Bash" not in allowed:
                     errors.append(
                         f"{where}: grader '{gname}' scores the shell trace, but the "
@@ -723,6 +763,22 @@ def check_suite(evals_dir: pathlib.Path) -> list[str]:
             f"regex grader in the suite"
         )
     return errors
+
+
+def check_scaffold_builds(where, script: pathlib.Path) -> list[str]:
+    """A scaffold that creates nothing, which every grader is then decided by.
+
+    A missing file is rule 3's error, not this one's — reported once, there.
+    """
+    if not script.is_file() or WORKSPACE_WRITE.search(script.read_text()):
+        return []
+    return [
+        f"{where}: {script.name} creates nothing — no redirect to a file and no "
+        f"`git init` / `mkdir` / `cp` / `touch`, so the run starts in an empty "
+        f"directory and every grader is a verdict about a workspace the case "
+        f"does not describe. The fixture-supply rule reads this file's heredocs "
+        f"and finds none, so it passes on the same absence"
+    ]
 
 
 def check_scaffold(where, case: dict, case_dir: pathlib.Path) -> list[str]:
