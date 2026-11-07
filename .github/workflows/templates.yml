@@ -14,5 +14,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        # `check_template_fields` splits error from warning on the merge-base with
+        # `main`. The default shallow checkout has no merge-base, which degrades
+        # every mismatch to a warning — the gate says so, but a gate that reports
+        # its own blindness is still blind.
+        with:
+          fetch-depth: 0
       - run: python3 -m unittest discover -s scripts
       - run: python3 scripts/check_template_paths.py
+      - run: python3 scripts/check_template_fields.py
