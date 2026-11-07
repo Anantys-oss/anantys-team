@@ -24,6 +24,23 @@ this product), and mutations no gate catches at all (the queue's blind spots).
 The mutations are deliberately dull — a version bumped in one of its two homes, a
 read-only agent handed `Write`, a template a role references deleted. Exotic
 breakage proves nothing; these are the regressions this repo has actually shipped.
+
+**A gate is not one program here, and the blind-spot verdict is the one place that
+matters.** `overlay()` runs one version per path, picked by newest commit date,
+and `gate_drift.py` already established why that pick is arbitrary rather than
+latest-wins: 52 of 62 differing pairs of carriers are *incomparable* — neither
+head is an ancestor of the other, so each rewrote the gate independently.
+Measured on this queue, `check_tool_grants.py` exists in 11 distinct versions
+across 40 heads, `check_plugins.py` in 10. Exactly one of those 11 rejects a role
+that dropped its `allowed-tools:` line (`absent-grant`), and it is not the newest
+one. Reported from the newest alone, the queue reads as blind to a regression it
+has already fixed — which is the single most expensive thing this tool can say,
+because the remedy it implies is "go write the gate".
+
+So a mutation no selected gate catches is re-asked of every *rival* version
+before it is called a blind spot. Rivals are priced on pristine `main` too — a
+version red there cannot rescue anything — and are not matrix rows: they answer
+one question, in the blind-spot section, naming the head to merge.
 """
 
 from __future__ import annotations
@@ -44,6 +61,9 @@ QA = "plugins/anantys-team-agents/skills/anantys.qa/SKILL.md"
 QA_PLAN = "plugins/anantys-team-agents/skills/anantys.qa/templates/qa-plan.md"
 AUDITOR = "plugins/anantys-team-agents/agents/anantys.code-auditor.md"
 REVIEW = "plugins/anantys-team-agents/skills/anantys.review/SKILL.md"
+#: The only role whose grants are narrowed, so the only one whose grant line a
+#: gate can be shown to read rather than skip.
+OPS = "plugins/anantys-team-agents/skills/anantys.ops/SKILL.md"
 
 #: Applied on top of every mutation, because a mutation has to look like a PR.
 #:
@@ -90,6 +110,13 @@ MUTATIONS: dict[str, list[tuple[str, str | None, str | None]]] = {
     "agent-name-mismatch": [(AUDITOR, "name: anantys.code-auditor", "name: code-auditor")],
     # A role that grants a tool nobody audited, in a repo with a grants baseline.
     "silent-grant-widening": [(QA, "allowed-tools: Bash, Read", "allowed-tools: Bash, BashOutput, Read")],
+    # Deleting the grant line is the widest widening there is: the role loads with
+    # every tool the session holds. It reads as the *narrowest* mutation on this
+    # list — one line shorter — which is why it belongs on it.
+    # A comment, not a renamed key: the frontmatter must be short a field, not
+    # carrying an unknown one, or a gate that rules on unknown fields "catches"
+    # this by objecting to something the mutation is not about.
+    "absent-grant": [(OPS, "allowed-tools:", "# allowed-tools:")],
 }
 
 
@@ -105,29 +132,53 @@ def heads() -> list[str]:
     return [r for r in refs.splitlines() if r and r != "origin"]
 
 
-def overlay() -> dict[str, bytes]:
-    """Every gate in the queue, newest commit wins.
+def blob(ref: str, path: str) -> bytes:
+    done = subprocess.run(
+        ("git", "show", f"{ref}:{path}"), cwd=ROOT, capture_output=True, check=False
+    )
+    return done.stdout if done.returncode == 0 else b""
+
+
+def ancestor(older: str, newer: str) -> bool:
+    return (
+        subprocess.run(
+            ("git", "merge-base", "--is-ancestor", older, newer), cwd=ROOT, capture_output=True
+        ).returncode
+        == 0
+    )
+
+
+def overlay() -> tuple[dict[str, bytes], dict[str, list[tuple[str, bytes]]]]:
+    """Every gate in the queue, newest commit wins — plus the versions it outvoted.
 
     A gate is read from the head that committed it last rather than from the head
     that happens to sort first: several gates were amended on a descendant branch,
     and running the ancestor's copy would price a version nobody proposes to merge.
     Support files come along — a grants gate without its baseline is a crash, not a
     verdict, and `.github` matters because a gate may read the workflow running it.
+
+    That pick is right for the amended-descendant case and arbitrary everywhere
+    else, so the versions it outvoted are returned beside it. A version is a
+    **rival** when no carrier of it is an ancestor of the selected head: nobody
+    amended it, somebody wrote it in parallel, and it is still open. A version
+    whose carriers are all ancestors is genuinely superseded and is dropped.
+    Only `scripts/check_*.py` gets rivals — a rival workflow or baseline is not a
+    program this tool can run and ask.
     """
     newest: dict[str, tuple[int, str]] = {}
+    carriers: dict[str, dict[str, list[str]]] = {}
     for ref in heads():
         when = int(git("show", "-s", "--format=%ct", ref) or 0)
-        for path in git("ls-tree", "-r", "--name-only", ref, "--", "scripts", ".github").splitlines():
-            keep = path.startswith("scripts/check_") or path.endswith(("-baseline.txt", ".yml"))
-            if keep and when >= newest.get(path, (0, ""))[0]:
+        for line in git("ls-tree", "-r", ref, "--", "scripts", ".github").splitlines():
+            meta, _, path = line.partition("\t")
+            if not (path.startswith("scripts/check_") or path.endswith(("-baseline.txt", ".yml"))):
+                continue
+            carriers.setdefault(path, {}).setdefault(meta.split()[2], []).append(ref)
+            if when >= newest.get(path, (0, ""))[0]:
                 newest[path] = (when, ref)
-    files = {}
-    for path, (_, ref) in newest.items():
-        blob = subprocess.run(
-            ("git", "show", f"{ref}:{path}"), cwd=ROOT, capture_output=True, check=False
-        )
-        if blob.returncode == 0:
-            files[path] = blob.stdout
+
+    files = {path: blob(ref, path) for path, (_, ref) in newest.items()}
+    files = {path: body for path, body in files.items() if body}
     # The checkout wins over every remote head, committed or not. Otherwise the
     # tool prices the queue as it was pushed and stays silent about the gate the
     # reader is editing — the one case where the answer could still change
@@ -136,7 +187,21 @@ def overlay() -> dict[str, bytes]:
         local = ROOT / path
         if local.is_file():
             files[path] = local.read_bytes()
-    return files
+
+    rivals: dict[str, list[tuple[str, bytes]]] = {}
+    for path in files:
+        if not path.startswith("scripts/check_"):
+            continue
+        chosen = newest[path][1]
+        for refs in carriers[path].values():
+            if all(ancestor(ref, chosen) for ref in refs):
+                continue
+            # `files[path]` may be the reader's working copy rather than any blob
+            # on a ref, so the selected version is excluded by content, not by sha.
+            body = blob(refs[0], path)
+            if body and body != files[path]:
+                rivals.setdefault(path, []).append((refs[0], body))
+    return files, rivals
 
 
 def apply(tree: Path, ops: list[tuple[str, str | None, str | None]]) -> None:
@@ -188,30 +253,65 @@ def run_gates(tree: Path) -> dict[str, tuple[int, str]]:
     absent on a CI box and interactive on a laptop. Hanging the sweep on it would
     report nothing about the other ten.
     """
+    return {gate.stem: run_one(gate, tree) for gate in sorted((tree / "scripts").glob("check_*.py"))}
+
+
+def run_one(gate: Path, tree: Path) -> tuple[int, str]:
+    try:
+        done = subprocess.run(
+            (sys.executable, str(gate)), cwd=tree, capture_output=True, text=True, timeout=120
+        )
+        return (done.returncode, finding(done.stdout + done.stderr))
+    except subprocess.TimeoutExpired:
+        return (124, "timed out after 120s")
+
+
+def run_rivals(tree: Path, rivals: dict[str, list[tuple[str, bytes]]]) -> dict[str, tuple[int, str]]:
+    """Each outvoted version of each gate, swapped into the tree one at a time.
+
+    Keyed `check_x@head` so a rival can never be mistaken for a matrix row: it is
+    not asked of every mutation, so counting it as "catches nothing" where it was
+    never run would invent an inert gate out of an unanswered question.
+    """
     cells = {}
-    for gate in sorted((tree / "scripts").glob("check_*.py")):
-        try:
-            done = subprocess.run(
-                (sys.executable, str(gate)), cwd=tree, capture_output=True, text=True, timeout=120
-            )
-            cells[gate.stem] = (done.returncode, finding(done.stdout + done.stderr))
-        except subprocess.TimeoutExpired:
-            cells[gate.stem] = (124, "timed out after 120s")
+    for path, versions in rivals.items():
+        gate = tree / path
+        if not gate.is_file():
+            continue
+        keep = gate.read_bytes()
+        for ref, body in versions:
+            gate.write_bytes(body)
+            cells[f"{gate.stem}@{ref.removeprefix('origin/')}"] = run_one(gate, tree)
+        gate.write_bytes(keep)
     return cells
 
 
 Cells = dict[str, tuple[int, str]]
 
 
+def blind(baseline: Cells, cells: Cells) -> bool:
+    """No selected gate that was green on pristine `main` reddened here."""
+    return not any(rc for g, (rc, _) in cells.items() if baseline.get(g, (0, ""))[0] == 0)
+
+
 def sweep(names: list[str]) -> tuple[Cells, dict[str, Cells]]:
-    files = overlay()
+    files, rivals = overlay()
     runs: dict[str, Cells] = {}
+    base: Cells = {}
     for label, ops in [("(pristine)", [])] + [(n, MUTATIONS[n]) for n in names]:
         toll = [] if label in NO_BUMP or not ops else BUMP
         tree = Path(tempfile.mkdtemp(prefix="koan-gate-power-")) / "t"
         try:
             build(tree, files, ops + toll)
-            runs[label] = run_gates(tree)
+            cells = run_gates(tree)
+            # Rivals are priced on pristine `main` once, then asked only where the
+            # selected versions came up empty — the only answer that could change.
+            if not base:
+                cells |= run_rivals(tree, rivals)
+                base = cells
+            elif blind(base, cells):
+                cells |= run_rivals(tree, rivals)
+            runs[label] = cells
         finally:
             git("worktree", "remove", "--force", str(tree))
             shutil.rmtree(tree.parent, ignore_errors=True)
@@ -228,18 +328,28 @@ def verdicts(baseline: Cells, runs: dict[str, Cells]) -> dict:
     fourteen mutations says the narrower gate adds nothing *here*, never that it
     adds nothing. A gate red on `main` is excluded from every verdict rather than
     counted as catching nothing — it was not asked.
+
+    A `check_x@head` key is an outvoted version of a gate, not a gate: it is asked
+    only of the mutations the matrix came up empty on. It is kept out of every
+    relation above and feeds exactly one, `rescued` — a blind spot that stops being
+    one once the right version of a gate already in the queue is the one running.
     """
-    gates = sorted(baseline)
+    gates = sorted(g for g in baseline if "@" not in g)
     usable = [g for g in gates if baseline[g][0] == 0]
     caught = {
         g: sorted(m for m, cs in runs.items() if cs.get(g, (0, ""))[0] != 0) for g in usable
     }
     sets = {g: set(hits) for g, hits in caught.items()}
+    unblind = [g for g in baseline if "@" in g and baseline[g][0] == 0]
+    blinds = sorted(m for m in runs if not any(runs[m].get(g, (0, ""))[0] for g in usable))
     return {
         "gates": gates,
         "usable": usable,
         "caught": caught,
-        "blind": sorted(m for m in runs if not any(runs[m].get(g, (0, ""))[0] for g in usable)),
+        "blind": blinds,
+        "rescued": {
+            m: sorted(g for g in unblind if runs[m].get(g, (0, ""))[0]) for m in blinds
+        },
         "inert": sorted(g for g, hits in caught.items() if not hits),
         "dupes": sorted(
             tuple(sorted(gs))
@@ -274,6 +384,10 @@ def report(baseline: Cells, runs: dict[str, Cells]) -> None:
         print(f"\nCaught by no green gate ({len(v['blind'])}/{len(runs)}):")
         for m in v["blind"]:
             print(f"  - {m}")
+            for g in v["rescued"][m]:
+                gate, _, ref = g.partition("@")
+                print(f"      but {gate} catches it on {ref} — merge that version, not the newest")
+                print(f"      {runs[m][g][1]}")
         if len(usable) < len(gates):
             print(f"  ({len(gates) - len(usable)} gate(s) red on main could not be asked)")
 

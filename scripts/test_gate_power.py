@@ -98,6 +98,42 @@ class Apply(unittest.TestCase):
         self.assertFalse((self.tree / "f.md").exists())
 
 
+class Rivals(unittest.TestCase):
+    """An outvoted version of a gate is a second opinion, not a second gate."""
+
+    def test_a_rival_version_is_not_counted_as_a_gate(self):
+        v = g.verdicts(cells(a=0, **{"a@h": 0}), {"m": cells(a=1)})
+        self.assertEqual(v["gates"], ["a"])
+        self.assertEqual(v["usable"], ["a"])
+
+    def test_a_rival_asked_of_nothing_is_not_an_inert_gate(self):
+        """It was never run on `m`. Absent is unasked, not silent."""
+        v = g.verdicts(cells(a=0, **{"a@h": 0}), {"m": cells(a=1)})
+        self.assertEqual(v["inert"], [])
+        self.assertEqual(v["dupes"], [])
+
+    def test_a_blind_mutation_a_rival_reddens_on_is_rescued_by_name(self):
+        v = g.verdicts(cells(a=0, **{"a@h": 0}), {"m": cells(a=0, **{"a@h": 1})})
+        self.assertEqual(v["blind"], ["m"])
+        self.assertEqual(v["rescued"], {"m": ["a@h"]})
+
+    def test_a_rival_red_on_pristine_main_cannot_rescue(self):
+        """Red everywhere is a broken version, not a sharper one."""
+        v = g.verdicts(cells(a=0, **{"a@h": 1}), {"m": cells(a=0, **{"a@h": 1})})
+        self.assertEqual(v["blind"], ["m"])
+        self.assertEqual(v["rescued"], {"m": []})
+
+    def test_a_mutation_the_matrix_catches_gets_no_rescue_entry(self):
+        v = g.verdicts(cells(a=0, **{"a@h": 0}), {"m": cells(a=1, **{"a@h": 1})})
+        self.assertEqual(v["blind"], [])
+        self.assertEqual(v["rescued"], {})
+
+    def test_blind_ignores_a_gate_that_was_already_red_on_main(self):
+        """The rival pass must fire on a mutation only a red gate reddened on."""
+        self.assertTrue(g.blind(cells(a=1, b=0), cells(a=1, b=0)))
+        self.assertFalse(g.blind(cells(a=1, b=0), cells(a=1, b=1)))
+
+
 class MutationTable(unittest.TestCase):
     def test_every_mutation_that_writes_a_version_opts_out_of_the_toll(self):
         """The toll bumps both manifests. A mutation that writes a version too
@@ -105,6 +141,13 @@ class MutationTable(unittest.TestCase):
         for name, ops in g.MUTATIONS.items():
             if any(old and "version" in old for _, old, _ in ops):
                 self.assertIn(name, g.NO_BUMP, name)
+
+    def test_the_absent_grant_mutation_removes_a_field_rather_than_renaming_one(self):
+        """A renamed key is an unknown field — a gate may object to that instead,
+        and the cell then reads as a catch of a widening nobody checked."""
+        (path, old, new), = g.MUTATIONS["absent-grant"]
+        self.assertTrue(new.lstrip().startswith("#"), new)
+        self.assertEqual(new.replace("#", "").strip(), old.strip())
 
 
 if __name__ == "__main__":
