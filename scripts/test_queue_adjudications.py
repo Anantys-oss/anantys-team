@@ -65,6 +65,44 @@ class ParseHunks(unittest.TestCase):
         diff = "--- a/f.md\n+++ b/f.md\n@@ -1,0 +2 @@\n+only an insertion\n"
         self.assertEqual(qa.parse_hunks(diff), {})
 
+    def test_a_deleted_file_keeps_its_own_path(self):
+        # `+++ /dev/null` names no subject, so it comes off the `--- a/` side.
+        # Keyed on `+++ b/` alone the region lands under `a.md`, which never had
+        # those lines, and `gone.md` vanishes from a report about who decides it.
+        diff = (
+            "diff --git a/a.md b/a.md\n--- a/a.md\n+++ b/a.md\n@@ -5 +5 @@\n-old\n+a rule\n"
+            "diff --git a/gone.md b/gone.md\ndeleted file mode 100644\n"
+            "--- a/gone.md\n+++ /dev/null\n@@ -1,3 +0,0 @@\n-x\n-y\n-z\n"
+        )
+        self.assertEqual(
+            qa.parse_hunks(diff),
+            {"a.md": [(5, 1, ["a rule"])], "gone.md": [(1, 3, [])]},
+        )
+
+    def test_a_new_file_asserts_nothing_about_the_base(self):
+        diff = "--- /dev/null\n+++ b/new.md\n@@ -0,0 +1,2 @@\n+a\n+b\n"
+        self.assertEqual(qa.parse_hunks(diff), {})
+
+    def test_a_header_naming_neither_side_plainly_is_dropped_not_misfiled(self):
+        # git quotes a path containing a space. Guessing is worse than losing it:
+        # the previous file would be charged with a region it does not have.
+        diff = (
+            "--- a/a.md\n+++ b/a.md\n@@ -5 +5 @@\n-old\n+a rule\n"
+            '--- "a/odd name.md"\n+++ "b/odd name.md"\n@@ -1 +1 @@\n-p\n+q\n'
+        )
+        self.assertEqual(qa.parse_hunks(diff), {"a.md": [(5, 1, ["a rule"])]})
+
+    def test_a_removed_line_that_looks_like_a_header_does_not_steal_the_subject(self):
+        # A deleted markdown line `-- note` renders as `--- note` in the diff.
+        diff = (
+            "--- a/a.md\n+++ b/a.md\n@@ -5,2 +5 @@\n--- note\n-old\n+a rule\n"
+            "--- a/gone.md\n+++ /dev/null\n@@ -1 +0,0 @@\n-x\n"
+        )
+        self.assertEqual(
+            qa.parse_hunks(diff),
+            {"a.md": [(5, 2, ["a rule"])], "gone.md": [(1, 1, [])]},
+        )
+
     def test_a_minus_line_belonging_to_a_dropped_hunk_is_not_captured(self):
         # The insertion hunk is skipped; the `+` under it must not leak into the
         # replacement hunk that follows, or the verdict is computed from text the
@@ -133,37 +171,63 @@ class Relocated(unittest.TestCase):
     def test_a_binary_file_has_no_counts_and_is_skipped(self):
         self.assertEqual(qa.relocated("-\t-\tlogo.png\n"), set())
 
+    def test_a_rename_row_is_not_a_path_which_is_why_edges_disables_renames(self):
+        # With rename detection on, git collapses the move-out into one row whose
+        # third field is a transform, not a filename. Nothing from `parse_hunks`
+        # ever equals it, so the relocation would silently never be found.
+        self.assertEqual(qa.relocated("41\t429\tskill.md => reference/run.md\n"),
+                         {"skill.md => reference/run.md"})
+
     def test_empty_numstat(self):
         self.assertEqual(qa.relocated(""), set())
 
 
 class EdgesOverRealBranches(unittest.TestCase):
-    """`edges` against a fixture repo: three heads cut from one base."""
+    """`edges` against a fixture *clone*: three heads cut from one base.
+
+    The heads live on a remote and the working copy holds only `main`, because
+    that is the shape `edges` runs in and the shape in which a bare branch name
+    is not a revision. A single-repository fixture is the one topology where
+    reading `headRefName` directly happens to work, which is why it did.
+    """
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
-        self.repo = self.tmp.name
         self.addCleanup(self.tmp.cleanup)
-        git(self.repo, "init", "-q", "-b", "main")
+        self.origin = str(Path(self.tmp.name, "origin"))
+        Path(self.origin).mkdir()
+        git(self.origin, "init", "-q", "-b", "main")
         base = "\n".join(f"line {n}" for n in range(1, 11)) + "\n"
-        Path(self.repo, "skill.md").write_text(base)
-        Path(self.repo, "manifest.json").write_text('{"version": "0.6.0"}\n')
-        git(self.repo, "add", "-A")
-        git(self.repo, "commit", "-qm", "base")
+        Path(self.origin, "skill.md").write_text(base)
+        Path(self.origin, "manifest.json").write_text('{"version": "0.6.0"}\n')
+        git(self.origin, "add", "-A")
+        git(self.origin, "commit", "-qm", "base")
+        self._clone = None
+
+    @property
+    def repo(self):
+        """A clone of the fixture remote, made once every head exists."""
+        if self._clone is None:
+            self._clone = str(Path(self.tmp.name, "work"))
+            git(self.tmp.name, "clone", "-q", self.origin, self._clone)
+        return self._clone
 
     def write(self, edits):
         for path, text in edits.items():
-            target = Path(self.repo, path)
+            target = Path(self.origin, path)
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(text)
 
-    def head(self, name, edits):
-        git(self.repo, "checkout", "-q", "-b", name, "main")
+    def head(self, name, edits, remove=()):
+        git(self.origin, "checkout", "-q", "-b", name, "main")
         self.write(edits)
-        git(self.repo, "add", "-A")
-        git(self.repo, "commit", "-qm", name)
-        git(self.repo, "checkout", "-q", "main")
-        return {"number": int(name[1:]), "headRefName": name, "title": name}
+        for path in remove:
+            git(self.origin, "rm", "-q", path)
+        git(self.origin, "add", "-A")
+        git(self.origin, "commit", "-qm", name)
+        git(self.origin, "checkout", "-q", "main")
+        return {"number": int(name[1:]), "headRefName": name, "title": name,
+                "ref": f"origin/{name}"}
 
     def replaced(self, line, text):
         lines = [f"line {n}" for n in range(1, 11)]
@@ -242,12 +306,13 @@ class EdgesOverRealBranches(unittest.TestCase):
         self.assertTrue(all(r["verdict"] == "divergent" for r in rows))
 
     def stacked_on(self, parent, number, edits):
-        git(self.repo, "checkout", "-q", "-b", f"p{number}", parent)
+        git(self.origin, "checkout", "-q", "-b", f"p{number}", parent)
         self.write(edits)
-        git(self.repo, "add", "-A")
-        git(self.repo, "commit", "-qm", f"p{number}")
-        git(self.repo, "checkout", "-q", "main")
-        return {"number": number, "headRefName": f"p{number}", "title": f"p{number}"}
+        git(self.origin, "add", "-A")
+        git(self.origin, "commit", "-qm", f"p{number}")
+        git(self.origin, "checkout", "-q", "main")
+        return {"number": number, "headRefName": f"p{number}", "title": f"p{number}",
+                "ref": f"origin/p{number}"}
 
     def test_a_head_stacked_on_another_is_not_a_decision(self):
         # p2 is cut from p1 and rewrites the very line p1 rewrote. Their merge
@@ -267,6 +332,36 @@ class EdgesOverRealBranches(unittest.TestCase):
         rows = qa.edges("main", [first, second, third], repo=self.repo)
         self.assertEqual([(r["a"], r["b"]) for r in rows], [(1, 3), (2, 3)])
         self.assertTrue(all(r["verdict"] == "divergent" for r in rows))
+
+    def test_a_stale_local_branch_of_the_same_name_does_not_decide_the_report(self):
+        # The defect this fixture used to hide. `gh` names a branch on the
+        # remote; a leftover local `p2` resolves too, and git prefers it. Here
+        # the local copy agrees with p1, so reading it reports `identical` —
+        # no decision — about two heads that in fact contradict each other.
+        heads = [
+            self.head("p1", {"skill.md": self.replaced(5, "route it to section 4")}),
+            self.head("p2", {"skill.md": self.replaced(5, "record an annotation")}),
+        ]
+        repo = self.repo
+        git(repo, "branch", "p2", "origin/p1")
+        rows = qa.edges("main", heads, repo=repo)
+        self.assertEqual([row["verdict"] for row in rows], ["divergent"])
+        self.assertEqual(rows[0]["text_b"], ["record an annotation"])
+
+    def test_a_move_out_git_calls_a_rename_still_collides(self):
+        # p1 moves the whole file to a new path; p2 rewrites line 5 in place.
+        # With rename detection on, p1's hunks are keyed under `reference/run.md`
+        # and nothing is keyed under `skill.md`, so the pair shares no path and
+        # the collision is reported as absent — the loudest possible silence,
+        # because a resolver taking p1 loses p2's rule without a conflict.
+        moved = "\n".join(f"line {n}" for n in range(1, 11)) + "\n"
+        heads = [
+            self.head("p1", {"reference/run.md": moved}, remove=["skill.md"]),
+            self.head("p2", {"skill.md": self.replaced(5, "a real rule")}),
+        ]
+        rows = qa.edges("main", heads, repo=self.repo)
+        self.assertEqual([(row["path"], row["verdict"]) for row in rows],
+                         [("skill.md", "subsumed")])
 
 
 class Report(unittest.TestCase):

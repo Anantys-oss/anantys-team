@@ -54,8 +54,15 @@ view already exists (`pr_landing_order.py --contracts` lists converged paths)
 and it does not locate anything: in this repo nineteen of twenty-one heads edit
 one `SKILL.md`, which tells a reviewer only that the file is popular.
 
+Every head is read at `origin/<headRefName>`, never at the bare branch name
+`gh` reports. The names collide: a local `koan/x` left over from an earlier
+session resolves, so git answers about it without saying it is not the branch
+the pull request is open on, and the report is computed from unpushed text.
+Fetch before running; a head pushed since the last fetch has no local
+remote-tracking ref and git will say so rather than substitute one.
+
 Usage: python3 scripts/queue_adjudications.py [--base REF] [--limit N] [--all]
-Exit 0 always — this is an operator report, not a gate.
+Exit 0 once it has the refs — this is an operator report, not a gate.
 """
 
 import argparse
@@ -82,9 +89,19 @@ def parse_hunks(diff: str) -> dict[str, list[tuple[int, int, list[str]]]]:
     Pure insertions (`-N,0`) are dropped. Two heads appending different rules at
     the same anchor both keep their text, so there is nothing to decide; only a
     hunk that removes a line forces a choice about that line.
+
+    A deleted file's header is `+++ /dev/null`, so the subject has to come from
+    the `--- a/` side. Keying only on `+++ b/` leaves the previous file's path
+    in hand and credits the deletion's region to it: a head that drops
+    `templates/qa-config.md` then reads as replacing lines 1-40 of whatever
+    `SKILL.md` preceded it in the diff, and the real deletion — the one a
+    partner editing that file in place genuinely has to decide about — is never
+    recorded at all. A header naming neither side plainly (a path git had to
+    quote) yields no path, so its hunks are dropped rather than misfiled.
     """
     out: dict[str, list[tuple[int, int, list[str]]]] = collections.defaultdict(list)
     path: str | None = None
+    removed_from: str | None = None
     pending: tuple[str, int, int] | None = None
     added: list[str] = []
 
@@ -94,9 +111,21 @@ def parse_hunks(diff: str) -> dict[str, list[tuple[int, int, list[str]]]]:
             out[p].append((start, count, added))
 
     for line in diff.split("\n"):
-        if line.startswith("+++ b/"):
+        if line.startswith("--- "):
+            removed_from = line[4:]
+            continue
+        if line.startswith("+++ "):
             flush()
-            path, pending, added = line[6:], None, []
+            target = line[4:]
+            if target.startswith("b/"):
+                path = target[2:]
+            elif removed_from and removed_from.startswith("a/"):
+                path = removed_from[2:]
+            else:
+                path = None
+            # Consumed: git emits `--- a/x` directly above its `+++`, so a later
+            # `---` can only be a removed line whose own text begins with `-- `.
+            removed_from, pending, added = None, None, []
             continue
         match = HUNK.match(line)
         if match:
@@ -127,10 +156,21 @@ def classify(added_a: list[str], added_b: list[str]) -> str:
 
 
 def open_heads(limit: int, repo: str | None = None) -> list[dict]:
-    """[{number, headRefName, title}] for the open queue, lowest number first."""
+    """[{number, headRefName, title, ref}] for the open queue, lowest number first.
+
+    `ref` is the remote-tracking ref, and supplying it is the point. `gh` names
+    a *branch on the remote*; a bare `koan/x` handed to git resolves against the
+    local refs, where it is either absent (git fails, and this report's contract
+    is to exit 0) or present at whatever commit the operator last had — a ref
+    git will answer about without mentioning that it is not the branch the pull
+    request is open on. Measured on the checkout this was written in: 16 of 128
+    open heads had a local branch behind its remote, so an eighth of the queue
+    was adjudicated from text nobody has pushed, silently.
+    """
     args = ["gh", "pr", "list", "--state", "open", "--limit", str(limit),
             "--json", "number,headRefName,title"]
-    return sorted(json.loads(run(args, cwd=repo)), key=lambda p: p["number"])
+    found = sorted(json.loads(run(args, cwd=repo)), key=lambda p: p["number"])
+    return [{**pr, "ref": f"origin/{pr['headRefName']}"} for pr in found]
 
 
 def relocated(numstat: str) -> set[str]:
@@ -144,6 +184,12 @@ def relocated(numstat: str) -> set[str]:
 
     `pr_landing_order.py` reaches the same classification from `merge-tree` and
     orders around it. This needs only the direction of the line count.
+
+    Reads a `--no-renames` numstat, because with rename detection on git prints
+    the pair as one row named `old.md => new.md` (or `dir/{a => b}/f`), a string
+    no path from `parse_hunks` is ever equal to. The move-out would then never
+    be found, and the restructurer's collisions would read as divergent — the
+    exact misclassification this function exists to prevent.
     """
     out = set()
     for line in numstat.strip().split("\n"):
@@ -168,16 +214,25 @@ def is_ancestor(ref: str, other: str, repo: str | None = None) -> bool:
 
 
 def edges(base: str, heads: list[dict], repo: str | None = None) -> list[dict]:
-    """One row per pair of heads that replace an overlapping region of `base`."""
+    """One row per pair of heads that replace an overlapping region of `base`.
+
+    Each head is read at its `ref` — the caller names the ref it means, because
+    a pull request's branch name is not a revision this process can resolve.
+
+    Both diffs pass `--no-renames` so the two of them describe the same set of
+    files: a rename is one row in a numstat and a new path in the hunks, and the
+    disagreement makes `relocated` and `parse_hunks` key the same change twice
+    under two names.
+    """
     per_head, refs, moves = {}, {}, {}
     for head in heads:
-        ref = head["headRefName"]
+        ref = head["ref"]
         merge_base = run(["git", "merge-base", base, ref], cwd=repo).strip() or base
         span = f"{merge_base}..{ref}"
         per_head[head["number"]] = parse_hunks(
-            run(["git", "diff", "--unified=0", span], cwd=repo))
+            run(["git", "diff", "--unified=0", "--no-renames", span], cwd=repo))
         moves[head["number"]] = relocated(
-            run(["git", "diff", "--numstat", span], cwd=repo))
+            run(["git", "diff", "--numstat", "--no-renames", span], cwd=repo))
         refs[head["number"]] = ref
 
     titles = {h["number"]: h["title"] for h in heads}
