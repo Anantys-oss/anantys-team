@@ -134,6 +134,42 @@ class Rivals(unittest.TestCase):
         self.assertFalse(g.blind(cells(a=1, b=0), cells(a=1, b=1)))
 
 
+class RunRivals(unittest.TestCase):
+    """Swapping a version in is a real edit to the tree the sweep is mid-way through."""
+
+    def setUp(self):
+        self.tree = Path(tempfile.mkdtemp())
+        (self.tree / "scripts").mkdir()
+        self.gate = self.tree / "scripts" / "check_x.py"
+        self.gate.write_text("import sys\nsys.exit(0)\n")
+
+    def exits(self, code, why):
+        return f"import sys\nprint({why!r})\nsys.exit({code})\n".encode()
+
+    def test_each_version_gets_its_own_row_named_for_its_head(self):
+        out = g.run_rivals(
+            self.tree,
+            {"scripts/check_x.py": [("origin/koan/a", self.exits(1, "ERROR a")), ("origin/koan/b", self.exits(0, "ok"))]},
+        )
+        self.assertEqual(sorted(out), ["check_x@koan/a", "check_x@koan/b"])
+        self.assertEqual(out["check_x@koan/a"], (1, "ERROR a"))
+        self.assertEqual(out["check_x@koan/b"][0], 0)
+
+    def test_the_selected_version_is_put_back(self):
+        """The matrix row for this gate was already recorded from the file on disk;
+        leaving a rival in place would silently repoint every later read of it."""
+        before = self.gate.read_bytes()
+        g.run_rivals(self.tree, {"scripts/check_x.py": [("origin/koan/a", self.exits(1, "ERROR a"))]})
+        self.assertEqual(self.gate.read_bytes(), before)
+
+    def test_a_rival_of_a_gate_absent_from_this_tree_is_skipped(self):
+        """A head can carry a gate `main` has no counterpart for."""
+        self.assertEqual(
+            g.run_rivals(self.tree, {"scripts/check_gone.py": [("origin/koan/a", self.exits(1, "x"))]}),
+            {},
+        )
+
+
 class MutationTable(unittest.TestCase):
     def test_every_mutation_that_writes_a_version_opts_out_of_the_toll(self):
         """The toll bumps both manifests. A mutation that writes a version too
