@@ -17,24 +17,35 @@ Which means the gate is a merge subject like any other file, and landing two car
 produces a `check_plugins.py` that no author wrote, reviewed, or ran. The reviewable
 artifact — the diff a human reads on each PR — is not the artifact that ships.
 
-Three outcomes, and only one of them is quiet:
+Four outcomes, and only one of them is quiet:
 
   * the gate file conflicts. Loud: somebody resolves it by hand and reads what they wrote.
   * the gate merges clean and its *test* file conflicts. Still loud, and worth separating,
     because the thing that stopped the merge is the evidence, not the subject. The gate
     was combined silently; the resolver's attention is on the test.
-  * both merge clean. Git has assembled a new gate, every check was green on both heads,
+  * the gate and its test both merge clean and some *other* file conflicts. Also loud, and
+    not this tool's subject. `merge-tree --write-tree` still writes a tree, with conflict
+    markers in the conflicted paths — so a verdict read off it is a verdict on a tree
+    nobody will ever land. Whoever resolves the conflict produces different content, and
+    the gate they ship is tested against that, not against this. Measured over the queue,
+    196 pairs across 14 gates fall here; for `check_ci_coverage.py` it is every pair the
+    sweep reaches, and the table used to call all 20 of them clean.
+  * nothing conflicts. Git has assembled a new gate, every check was green on both heads,
     and the only question left is whether the result still passes the tests that are the
     sole reason to believe either version was right. When it does not, nothing anywhere
     was red before the merge and nothing names the pair afterwards.
 
-That third case is the error this reports. The second is a warning: an honest cost, but
-one that hides which file actually changed. The first is noise and is counted, not listed.
+That fourth case is the error this reports. The second and third are warnings: honest
+costs, but ones that hide which file actually changed. The first is noise and is counted,
+not listed.
 
 A pair whose merged gate passes is not certified — the merged tests are themselves a
 merge, and two test files that each cover their own author's branch do not between them
 cover the union. Passing means "no evidence of breakage", which is the strongest claim
-available without writing the tests nobody has.
+available without writing the tests nobody has. A tree carrying no test module for the
+gate at all is weaker still and is reported `untested`, never folded into `clean`: a
+count of pairs nothing ran reads as a clean bill, and that is the one mistake a sweep
+whose whole output is a tally cannot afford.
 
     python3 scripts/gate_drift.py                      # every gate, every incomparable pair
     python3 scripts/gate_drift.py --file check_plugins.py
@@ -103,19 +114,27 @@ def merge(a: str, b: str) -> tuple[str, set[str]]:
 
 
 def verdict(gate: str, conflicts: set[str], failed: bool | None, solo: bool = False) -> str:
-    """Which outcome a merged pair landed in. `failed` is None when the merge never
-    got far enough to run anything; `solo` is True when some head is red on its own.
+    """Which outcome a merged pair landed in. `failed` is None when nothing was run;
+    `solo` is True when some head is red on its own.
 
     A pair whose gate was already failing on one head is `red-alone`, never `broken`.
     The claim this file exists to make is that the *merge* broke something, and a gate
     that never passed cannot be broken by combining it with anything.
+
+    Any conflict at all outranks a test result. A pair that conflicts outside the gate
+    is `other-conflict` rather than `clean` or `broken`, because the tree its result
+    would come from is one the conflict guarantees nobody lands.
     """
     if f"scripts/{gate}" in conflicts:
         return "conflict"
     if f"scripts/test_{gate}" in conflicts:
         return "test-conflict"
+    if conflicts:
+        return "other-conflict"
     if solo:
         return "red-alone"
+    if failed is None:
+        return "untested"
     return "broken" if failed else "clean"
 
 
@@ -170,14 +189,21 @@ def main(argv: list[str]) -> int:
     broken, alone = [], {}
     for gate, carriers in sorted(found.items()):
         pairs = forks(carriers)[: args.limit]
-        tally = {"conflict": 0, "test-conflict": 0, "red-alone": 0, "broken": 0, "clean": 0}
+        tally = dict.fromkeys(
+            ("conflict", "test-conflict", "other-conflict",
+             "red-alone", "untested", "broken", "clean"), 0
+        )
         for a, b in pairs:
             tree, conflicts = merge(a, b)
             failed = None
-            if not conflicts & {f"scripts/{gate}", f"scripts/test_{gate}"}:
+            if not conflicts:
                 failed = tested(tree, gate)
                 for head in (a, b):
-                    alone.setdefault((gate, head), tested(head, gate))
+                    # Not setdefault: its default is evaluated even on a hit, so the
+                    # memo never saved a run. Over the queue that was 2058 redundant
+                    # worktree-and-unittest cycles of 2478 — 57% of a full sweep.
+                    if (gate, head) not in alone:
+                        alone[gate, head] = tested(head, gate)
             name = verdict(gate, conflicts, failed, any(alone.get((gate, h)) for h in (a, b)))
             tally[name] += 1
             if name == "broken":

@@ -11,6 +11,7 @@ head with its own ancestor charges a conflict to a merge nobody performs.
 """
 
 import unittest
+import unittest.mock
 
 import gate_drift as gd
 
@@ -57,10 +58,24 @@ class AVerdictNamesWhatTheMergeDid(unittest.TestCase):
         both = {"scripts/check_a.py", "scripts/test_check_a.py"}
         self.assertEqual(gd.verdict("check_a.py", both, None), "conflict")
 
-    def test_a_conflict_in_an_unrelated_file_does_not_excuse_the_gate(self) -> None:
+    def test_a_conflict_in_an_unrelated_file_is_not_a_merge_this_tool_can_judge(self) -> None:
         self.assertEqual(
-            gd.verdict("check_a.py", {"README.md"}, True), "broken"
+            gd.verdict("check_a.py", {"README.md"}, True), "other-conflict"
         )
+
+    def test_a_pair_conflicting_elsewhere_is_not_handed_a_clean_bill(self) -> None:
+        self.assertEqual(
+            gd.verdict("check_a.py", {"README.md"}, False), "other-conflict"
+        )
+
+    def test_a_conflict_in_another_gate_is_still_not_this_gates_verdict(self) -> None:
+        self.assertEqual(
+            gd.verdict("check_a.py", {"scripts/check_b.py"}, False), "other-conflict"
+        )
+
+    def test_the_gates_own_conflict_outranks_an_unrelated_one(self) -> None:
+        both = {"scripts/check_a.py", "README.md"}
+        self.assertEqual(gd.verdict("check_a.py", both, None), "conflict")
 
     def test_a_clean_merge_that_still_passes_is_clean(self) -> None:
         self.assertEqual(gd.verdict("check_a.py", set(), False), "clean")
@@ -76,7 +91,15 @@ class AVerdictNamesWhatTheMergeDid(unittest.TestCase):
         )
 
     def test_a_tree_with_no_test_module_cannot_be_called_broken(self) -> None:
-        self.assertEqual(gd.verdict("check_a.py", set(), None), "clean")
+        self.assertNotEqual(gd.verdict("check_a.py", set(), None), "broken")
+
+    def test_a_tree_with_no_test_module_is_not_a_clean_bill_either(self) -> None:
+        self.assertEqual(gd.verdict("check_a.py", set(), None), "untested")
+
+    def test_a_red_head_outranks_having_run_nothing(self) -> None:
+        self.assertEqual(
+            gd.verdict("check_a.py", set(), None, solo=True), "red-alone"
+        )
 
 
 class ConflictsAreReadFromTheMergeNotGuessed(unittest.TestCase):
@@ -90,6 +113,46 @@ class ConflictsAreReadFromTheMergeNotGuessed(unittest.TestCase):
     def test_a_path_with_spaces_survives_to_the_end_of_the_line(self) -> None:
         out = "CONFLICT (add/add): Merge conflict in docs/a file.md\n"
         self.assertEqual(gd.CONFLICT.findall(out), ["docs/a file.md"])
+
+
+class TheSweepRunsAGateOncePerHead(unittest.TestCase):
+    """What `main` spends. Every call here is a worktree plus a unittest process, and
+    the heaviest gate in the queue costs seventeen seconds of them, so a repeat is not
+    a tidiness complaint.
+    """
+
+    def sweep(self, carriers: dict[str, str], conflicts: set[str]) -> list[str]:
+        """Run `main` over one synthetic gate, returning the subjects of every
+        `tested()` call in order. Merges resolve to `conflicts` for every pair."""
+        calls: list[str] = []
+
+        def tested(subject: str, gate: str) -> bool:
+            calls.append(subject)
+            return False
+
+        with unittest.mock.patch.multiple(
+            gd,
+            heads=lambda remote: sorted(carriers),
+            gates=lambda refs: {"check_a.py": carriers},
+            ancestor=lambda a, b: False,
+            merge=lambda a, b: (f"tree-{a}-{b}", conflicts),
+            tested=tested,
+        ):
+            gd.main(["--file", "check_a.py"])
+        return calls
+
+    def test_three_forked_heads_cost_three_solo_runs_not_six(self) -> None:
+        calls = self.sweep({"a": "x", "b": "y", "c": "z"}, set())
+        self.assertEqual(sorted(c for c in calls if not c.startswith("tree-")),
+                         ["a", "b", "c"])
+
+    def test_every_pair_is_still_merged_and_measured(self) -> None:
+        calls = self.sweep({"a": "x", "b": "y", "c": "z"}, set())
+        self.assertEqual([c for c in calls if c.startswith("tree-")],
+                         ["tree-a-b", "tree-a-c", "tree-b-c"])
+
+    def test_a_pair_conflicting_elsewhere_is_never_run(self) -> None:
+        self.assertEqual(self.sweep({"a": "x", "b": "y"}, {"README.md"}), [])
 
 
 if __name__ == "__main__":
