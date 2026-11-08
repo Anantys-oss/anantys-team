@@ -1,0 +1,14 @@
+# Errors that already existed when this gate was added.
+#
+# Same contract as `tool-grants-baseline.txt`: one `<path>: <message>` per line.
+# A gate may not fix the violations it detects — that duplicates the change which
+# owns the fix, and forces the two to land in one order. When a line's error is
+# gone the check prints "fixed, so delete from ..." — a warning, not a failure.
+#
+# The fix for the line below is one field in one file, and it is already written:
+# `origin/koan/the-browser-is-a-manifest-field` adds `mcpServers` to the manifest
+# and rewrites the 24 affected grants into the loader's namespaced form. It has no
+# pull request, which is why this error survived long enough to need a baseline
+# entry rather than a merge. Delete this line in the change that lands it.
+
+plugins/anantys-team-agents/.claude-plugin/plugin.json: declares no `mcpServers`, so 1 granted server (claude-in-chrome) has no provider on a bare install — every grant to it resolves to nothing, and a role whose precondition is a call to one of those tools stops on every invocation

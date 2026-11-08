@@ -1,0 +1,666 @@
+#!/usr/bin/env python3
+"""Fixture tests for check_tool_grants — run: python3 -m unittest discover scripts"""
+
+import sys
+import unittest
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent))
+import check_tool_grants as c  # noqa: E402
+
+
+def role(grants, body, agents=()):
+    return c.check(Path("role.md"), grants, body, {"navigate", "tabs_context_mcp"}, agents)
+
+
+class ToolGrants(unittest.TestCase):
+    def test_browser_prose_without_browser_grant_is_an_error(self):
+        errors, _ = role(["Bash", "Read"], "Walk the scenarios in a real browser.")
+        self.assertIn("grants no browser tool", errors[0])
+
+    def test_browser_prose_with_a_browser_grant_passes(self):
+        errors, _ = role(["mcp__x__navigate"], "Drive the browser to the page.")
+        self.assertEqual(errors, [])
+
+    def test_named_browser_tool_must_be_granted(self):
+        errors, _ = role(["mcp__x__navigate"], "Call `tabs_context_mcp` first.")
+        self.assertIn("`tabs_context_mcp`", errors[0])
+
+    def test_a_namespaced_tool_written_out_in_prose_is_seen(self):
+        # The spelling `check_mcp_grants`' baseline prescribes and
+        # `koan/the-browser-is-a-manifest-field` writes into two role bodies. A
+        # server class without `_` cannot cross `plugin_`, so this read as no
+        # mention at all and the role came back clean.
+        qualified = "mcp__plugin_anantys-team-agents_claude-in-chrome__tabs_context_mcp"
+        errors, _ = role(["mcp__x__navigate"], f"Call {qualified} first.")
+        self.assertIn("`tabs_context_mcp`", errors[0])
+
+    def test_a_namespaced_tool_that_is_granted_stays_clean(self):
+        qualified = "mcp__plugin_anantys-team-agents_claude-in-chrome__tabs_context_mcp"
+        errors, _ = role([qualified], f"Call {qualified} first.")
+        self.assertEqual(errors, [])
+
+    def test_backticked_non_tool_word_is_not_a_tool(self):
+        errors, _ = role(["mcp__x__navigate"], "Read `document.title` in the browser.")
+        self.assertEqual(errors, [])
+
+    def test_constrained_bash_rejects_an_ungranted_command(self):
+        errors, _ = role(["Bash(ls:*)"], "```bash\nrm -rf build\n```")
+        self.assertIn("`rm -rf build`", errors[0])
+
+    def test_subcommand_grant_permits_its_own_subcommand(self):
+        errors, _ = role(["Bash(git diff:*)"], "```bash\ngit diff --stat main...HEAD\n```")
+        self.assertEqual(errors, [])
+
+    def test_subcommand_grant_rejects_a_sibling_subcommand(self):
+        errors, _ = role(["Bash(git diff:*)"], "```bash\ngit push origin HEAD\n```")
+        self.assertIn("`git push origin HEAD`", errors[0])
+
+    def test_subcommand_grant_is_not_a_bare_prefix_match(self):
+        errors, _ = role(["Bash(git diff:*)"], "```bash\ngit difftool\n```")
+        self.assertIn("`git difftool`", errors[0])
+
+    def test_bare_bash_grant_allows_any_command(self):
+        errors, _ = role(["Bash"], "```bash\nrm -rf build\n```")
+        self.assertEqual(errors, [])
+
+    def test_unreferenced_grant_warns(self):
+        _, warnings = role(["Bash(ls:*)"], "Read the journal.")
+        self.assertIn("`Bash(ls:*)`", warnings[0])
+
+    def test_generic_grants_are_never_unreferenced(self):
+        _, warnings = role(["Read", "Write", "Glob"], "Do the thing.")
+        self.assertEqual(warnings, [])
+
+
+class UnboundedGrant(unittest.TestCase):
+    """A prefix that bounds only the first word is bare `Bash` in disguise."""
+
+    def test_a_command_that_runs_other_commands_is_not_a_narrowing(self):
+        errors, _ = role(["Bash(git:*)"], "Commit the report with git.")
+        self.assertIn("`Bash(git:*)` is not a narrowing", errors[0])
+
+    def test_it_fires_even_when_the_prose_exercises_the_grant(self):
+        """The mention warning is silent in exactly this case — the common one."""
+        errors, warnings = role(["Bash(git:*)"], "```bash\ngit log --oneline -1\n```")
+        self.assertIn("is not a narrowing", errors[0])
+        self.assertEqual(warnings, [])
+
+    def test_naming_a_subcommand_is_a_narrowing(self):
+        errors, _ = role(["Bash(git log:*)"], "```bash\ngit log --oneline -1\n```")
+        self.assertEqual(errors, [])
+
+    def test_a_bounded_command_is_not_reported(self):
+        errors, _ = role(["Bash(mkdir:*)"], "```bash\nmkdir -p out\n```")
+        self.assertEqual(errors, [])
+
+    def test_bare_bash_is_not_reported_as_a_false_narrowing(self):
+        """`Bash` claims nothing, so there is no narrowing to contradict."""
+        errors, _ = role(["Bash"], "```bash\ngit push origin HEAD\n```")
+        self.assertEqual(errors, [])
+
+
+class InlineCommands(unittest.TestCase):
+    """A command written mid-sentence is still a command the grant must permit.
+
+    On bash fences alone this check had an empty input set for every role it
+    ran on: `ops` is the only role with a narrowed grant set, and it writes its
+    one command — `mkdir -p` — in a sentence.
+    """
+
+    def test_an_inline_span_is_checked_against_the_grant(self):
+        errors, _ = role(["Bash(ls:*)"], "Create it first with `mkdir -p out`.")
+        self.assertIn("`mkdir -p out`", errors[0])
+
+    def test_a_flag_reaches_a_command_no_grant_mentions(self):
+        """`rm` heads no grant and is not UNBOUNDED — the head anchor is blind to it."""
+        errors, _ = role(["Bash(ls:*)"], "Clear it with `rm -rf build`.")
+        self.assertIn("`rm -rf build`", errors[0])
+
+    def test_a_flagless_ungranted_command_is_the_documented_gap(self):
+        """Named so the gap is a decision, not a surprise. See `bash_commands`."""
+        errors, _ = role(["Bash(ls:*)"], "Fetch it with `curl`.")
+        self.assertEqual(errors, [])
+
+    def test_an_inline_span_its_grant_permits_passes(self):
+        errors, _ = role(["Bash(mkdir:*)"], "Create it first with `mkdir -p out`.")
+        self.assertEqual(errors, [])
+
+    def test_a_narrowed_grant_rejects_a_sibling_subcommand_inline(self):
+        errors, _ = role(["Bash(git log:*)"], "Record it with `git rev-parse HEAD`.")
+        self.assertIn("`git rev-parse HEAD`", errors[0])
+
+    def test_a_backticked_path_is_not_a_command(self):
+        """Nothing in the markup separates `mkdir -p` from `current.md`."""
+        errors, _ = role(["Bash(ls:*)"], "Overwrite `current.md` and `./seo/`.")
+        self.assertEqual(errors, [])
+
+    def test_a_known_mcp_tool_name_is_not_a_command(self):
+        """`find` is live in this tree as both a shell command and a browser tool."""
+        errors, _ = c.check(
+            Path("role.md"), ["Bash(ls:*)", "mcp__x__find"], "Use `find` to locate it.", {"find"}
+        )
+        self.assertEqual(errors, [])
+
+    def test_the_same_span_is_a_command_when_no_tool_claims_the_name(self):
+        """The exclusion is the mcp vocabulary, not a hardcoded word."""
+        errors, _ = role(["Bash(ls:*)"], "Use `find` to locate it.")
+        self.assertIn("`find`", errors[0])
+
+
+class Pipelines(unittest.TestCase):
+    """A line is a pipeline, so a grant must answer for every command in it.
+
+    `permitted()` bounds the head of the string it is handed. Handed a whole
+    line it bounds the first command and nothing after the first operator —
+    the same defect `UNBOUNDED` rejects one level up.
+    """
+
+    def test_a_command_after_a_pipe_is_checked(self):
+        errors, _ = role(["Bash(git log:*)"], "```bash\ngit log --oneline | tee notes.txt\n```")
+        self.assertIn("`tee notes.txt`", errors[0])
+
+    def test_a_command_after_double_ampersand_is_checked(self):
+        errors, _ = role(["Bash(git log:*)"], "```bash\ngit log --oneline && rm -rf build\n```")
+        self.assertIn("`rm -rf build`", errors[0])
+
+    def test_a_command_substitution_inside_a_permitted_command_is_checked(self):
+        """`git diff $(git merge-base ...)` is two git subcommands, one granted."""
+        errors, _ = role(
+            ["Bash(git diff:*)"],
+            "```bash\ngit diff $(git merge-base <base> HEAD)...HEAD --stat\n```",
+        )
+        self.assertEqual(len(errors), 1)
+        self.assertIn("`git merge-base`", errors[0])
+
+    def test_an_inline_span_is_split_too(self):
+        """The anchor still admits the span as a unit; what is compared is its parts."""
+        errors, _ = role(["Bash(git checkout:*)"], "Run `git checkout <base> && git merge <b>`.")
+        self.assertIn("`git merge`", errors[0])
+
+    def test_every_segment_of_a_fully_granted_pipeline_passes(self):
+        errors, _ = role(
+            ["Bash(git log:*)", "Bash(tee:*)"], "```bash\ngit log --oneline | tee notes.txt\n```"
+        )
+        self.assertEqual(errors, [])
+
+    def test_a_pipe_inside_quotes_is_not_an_operator(self):
+        """Splitting on the raw text would make `grep -E 'a|b'` two broken commands."""
+        errors, _ = role(["Bash(grep:*)"], "```bash\ngrep -E 'a|b' file\n```")
+        self.assertEqual(errors, [])
+
+    def test_a_redirect_target_is_not_a_command(self):
+        errors, _ = role(["Bash(ls:*)"], "```bash\nls -l > out.txt 2>&1\n```")
+        self.assertEqual(errors, [])
+
+    def test_a_line_that_yields_no_command_is_kept_whole(self):
+        """A bash fence holding output keeps the behaviour, and the text, it had."""
+        self.assertEqual(c.segments("OK (3 passed)"), ["OK (3 passed)"])
+
+    def test_an_unbalanced_quote_is_not_taken_apart(self):
+        self.assertEqual(c.segments("echo 'unterminated"), ["echo 'unterminated"])
+
+    def test_a_single_command_is_unchanged(self):
+        self.assertEqual(c.segments("mkdir -p artifacts/qa"), ["mkdir -p artifacts/qa"])
+
+
+class NamingIsNotRunning(unittest.TestCase):
+    """A role that justifies a grant it withholds must not be read as wanting it.
+
+    This is the one direction where a false positive inverts the gate: the
+    cheapest way to discharge it is to add the grant, or to delete the sentence
+    explaining why the grant is absent. Live in this tree — `ops` writes
+    "`allowed-tools` grants no `git`", and `git` is `UNBOUNDED`, so the head
+    anchor read the justification as an invocation.
+    """
+
+    def test_a_grant_the_prose_says_it_withholds_is_not_an_invocation(self):
+        errors, _ = role(
+            ["Bash(mkdir:*)", "Bash(ls:*)"],
+            "`allowed-tools` grants no `git` — this role never needs it.",
+        )
+        self.assertEqual(errors, [])
+
+    def test_a_forbidden_command_is_not_an_invocation(self):
+        errors, _ = role(["Bash(ls:*)"], "Never run `git reset --hard` here.")
+        self.assertEqual(errors, [])
+
+    def test_negation_does_not_reach_across_a_sentence(self):
+        """Otherwise one `not` anywhere above discharges the rest of the file."""
+        errors, _ = role(["Bash(ls:*)"], "This is not a runbook. Record it with `git log`.")
+        self.assertIn("`git log`", errors[0])
+
+    def test_an_unnegated_mention_is_still_a_command(self):
+        errors, _ = role(["Bash(ls:*)"], "Record it with `git log --oneline`.")
+        self.assertIn("`git log --oneline`", errors[0])
+
+    def test_a_fenced_command_is_an_invocation_whatever_the_prose_says(self):
+        """A fence is a runbook line. Negation reads spans, never fences."""
+        errors, _ = role(["Bash(ls:*)"], "Never do this:\n\n```bash\ngit reset --hard\n```\n")
+        self.assertIn("`git reset --hard`", errors[0])
+
+
+class MentionIsNotSpelling(unittest.TestCase):
+    """What counts as referencing a grant. Both cases here were live in this tree."""
+
+    AUDITOR = "anantys.code-auditor"
+
+    def test_an_ordinary_word_does_not_discharge_a_grant_that_shares_it(self):
+        """`qa` held an unexercised `Task` in silence because it writes about tasks."""
+        _, warnings = role(["Task"], "Read tasks.md, then group by task, not by concern.")
+        self.assertIn("`Task`", warnings[0])
+
+    def test_a_substring_of_another_word_does_not_discharge_a_command_grant(self):
+        _, warnings = role(["Bash(ls:*)"], "Use whichever tools the role was granted.")
+        self.assertIn("`Bash(ls:*)`", warnings[0])
+
+    def test_the_grant_named_as_written_still_passes(self):
+        _, warnings = role(["AskUserQuestion"], "Confirm with AskUserQuestion first.")
+        self.assertEqual(warnings, [])
+
+    def test_a_dispatch_discharges_the_task_grant(self):
+        """`review` names the agent, never the tool — and it is the role that dispatches."""
+        _, warnings = role(["Task"], f"Dispatch the `{self.AUDITOR}` agent.", {self.AUDITOR})
+        self.assertEqual(warnings, [])
+
+    def test_dispatching_without_the_task_grant_is_an_error(self):
+        errors, _ = role(["Read"], f"Dispatch the `{self.AUDITOR}` agent.", {self.AUDITOR})
+        self.assertIn(self.AUDITOR, errors[0])
+        self.assertIn("`Task` is not granted", errors[0])
+
+    def test_a_name_that_is_no_agent_in_the_tree_is_not_a_dispatch(self):
+        errors, _ = role(["Read"], f"Dispatch the `{self.AUDITOR}` agent.", set())
+        self.assertEqual(errors, [])
+
+
+class ProseSurface(unittest.TestCase):
+    """A split SKILL.md must not shrink what the checker reads."""
+
+    def setUp(self):
+        import tempfile
+
+        self.skill = Path(tempfile.mkdtemp()) / "SKILL.md"
+        self.skill.parent.mkdir(parents=True, exist_ok=True)
+
+    def _skill(self, body, **refs):
+        self.skill.write_text(body, encoding="utf-8")
+        if refs:
+            (self.skill.parent / "reference").mkdir(exist_ok=True)
+            for name, text in refs.items():
+                (self.skill.parent / "reference" / f"{name}.md").write_text(text, encoding="utf-8")
+        return self.skill
+
+    def test_a_skill_without_a_reference_dir_is_unchanged(self):
+        body, warnings = c.prose_surface(self._skill("just prose\n"), "just prose\n")
+        self.assertEqual((body, warnings), ("just prose\n", []))
+
+    def test_a_named_reference_file_joins_the_prose(self):
+        text = "Read `reference/run.md` first.\n"
+        body, warnings = c.prose_surface(self._skill(text, run="Ask with AskUserQuestion.\n"), text)
+        self.assertIn("AskUserQuestion", body)
+        self.assertEqual(warnings, [])
+
+    def test_a_grant_justified_only_in_a_reference_file_is_not_unreferenced(self):
+        """The false positive the qa split introduces: the sole body mention moved."""
+        text = "Actions are in `reference/run.md`.\n"
+        path = self._skill(text, run="Confirm with AskUserQuestion before running.\n")
+        body, _ = c.prose_surface(path, text)
+        _, warnings = c.check(path, ["AskUserQuestion"], body, set())
+        self.assertEqual(warnings, [])
+
+    def test_an_ungranted_command_in_a_reference_file_is_still_an_error(self):
+        text = "Steps: `reference/run.md`.\n"
+        path = self._skill(text, run="```bash\nrm -rf build\n```\n")
+        body, _ = c.prose_surface(path, text)
+        errors, _ = c.check(path, ["Bash(ls:*)"], body, set())
+        self.assertIn("`rm -rf build`", errors[0])
+
+    def test_an_unnamed_reference_file_warns(self):
+        text = "Only `reference/run.md` is named.\n"
+        path = self._skill(text, run="steps\n", orphan="prose no action reads\n")
+        body, warnings = c.prose_surface(path, text)
+        self.assertNotIn("no action reads", body)
+        self.assertEqual(warnings, ["reference/orphan.md is not named in SKILL.md — no action loads it"])
+
+
+class BareBash(unittest.TestCase):
+    """The widest grant must not be the quietest one."""
+
+    def test_a_prefix_beside_bare_bash_is_void(self):
+        errors, _ = role(["Bash", "Bash(git:*)", "Read"], "Classify the report.")
+        self.assertEqual(len(errors), 1)
+        self.assertIn("is void", errors[0])
+        self.assertIn("drop one", errors[0])
+
+    def test_the_void_error_replaces_the_narrowing_error(self):
+        """Both would name the same grant; only one remedy changes the set."""
+        errors, _ = role(["Bash", "Bash(git:*)", "Read"], "Classify the report.")
+        self.assertNotIn("is not a narrowing", " ".join(errors))
+
+    def test_a_bounded_prefix_beside_bare_bash_is_void_too(self):
+        """`Bash(git log:*)` excludes nothing once bare `Bash` is in the set."""
+        errors, _ = role(["Bash", "Bash(git log:*)"], "Classify the report.")
+        self.assertIn("is void", errors[0])
+
+    def test_bare_bash_alone_is_not_an_error(self):
+        """Most roles here need broad shell — the gate prices it, never forbids it."""
+        errors, _ = role(["Bash", "Read"], "Classify the report.")
+        self.assertEqual(errors, [])
+
+    def test_prose_runs_a_command_with_no_bash_grant_at_all(self):
+        """The module's first-named direction, on the population it is worst for."""
+        errors, _ = role(["Read"], "```bash\nrm -rf build\n```")
+        self.assertIn("`rm -rf build`", errors[0])
+        self.assertIn("no Bash grant is granted", errors[0])
+
+    def test_no_bash_grant_and_no_commands_still_passes(self):
+        errors, _ = role(["Read"], "Classify the report. Nothing else.")
+        self.assertEqual(errors, [])
+
+
+class BareBashCoverage(unittest.TestCase):
+    """`main` must name the roles it cannot speak about."""
+
+    def setUp(self):
+        import tempfile
+
+        self.root = Path(tempfile.mkdtemp())
+        self.skill = self.root / "plugins/p/skills/s/SKILL.md"
+        self.skill.parent.mkdir(parents=True)
+        self.addCleanup(setattr, c, "BASELINE", c.BASELINE)
+        c.BASELINE = self.root / "baseline.txt"
+
+    def _run(self, grants):
+        import contextlib
+        import io
+
+        self.skill.write_text(
+            f"---\nallowed-tools: {grants}\n---\nClassify the report.\n", encoding="utf-8"
+        )
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            code = c.main(self.root)
+        return code, out.getvalue()
+
+    def test_bare_bash_is_reported_and_attributed(self):
+        code, report = self._run("Bash, Read")
+        self.assertEqual(code, 0)
+        self.assertIn("1/1 roles grant bare `Bash`", report)
+        self.assertIn("plugins/p/skills/s/SKILL.md", report)
+
+    def test_a_narrowed_role_is_not_reported(self):
+        """Positive control: the warning must distinguish the two grant shapes."""
+        code, report = self._run("Bash(git log:*), Read")
+        self.assertEqual(code, 0)
+        self.assertNotIn("grant bare `Bash`", report)
+
+
+class Baseline(unittest.TestCase):
+    """A gate must be introducible green while its violations still exist."""
+
+    OFFENCE = "plugins/p/skills/s/SKILL.md: prose commits to driving a browser but grants no browser tool"
+
+    def setUp(self):
+        import tempfile
+
+        self.root = Path(tempfile.mkdtemp())
+        skill = self.root / "plugins/p/skills/s/SKILL.md"
+        skill.parent.mkdir(parents=True)
+        skill.write_text("---\nallowed-tools: Read\n---\nDrive a browser.\n", encoding="utf-8")
+        self.addCleanup(setattr, c, "BASELINE", c.BASELINE)
+        c.BASELINE = self.root / "baseline.txt"
+
+    def _declare(self, text):
+        c.BASELINE.write_text(text, encoding="utf-8")
+
+    def _run(self):
+        """(exit code, report) — captured, so a suite run stays readable."""
+        import contextlib
+        import io
+
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            code = c.main(self.root)
+        return code, out.getvalue()
+
+    def test_an_undeclared_error_fails(self):
+        self.assertEqual(self._run()[0], 1)
+
+    def test_a_declared_error_does_not_fail(self):
+        self._declare(f"# comment\n\n{self.OFFENCE}\n")
+        code, report = self._run()
+        self.assertEqual(code, 0)
+        self.assertIn("BASE ", report)
+
+    def test_declaring_one_error_does_not_excuse_another(self):
+        self._declare("plugins/p/skills/s/SKILL.md: something else entirely\n")
+        self.assertEqual(self._run()[0], 1)
+
+    def test_a_stale_entry_warns_instead_of_failing(self):
+        """The fix landing must not turn the gate red in its turn."""
+        self._declare("plugins/p/skills/s/SKILL.md: an error nothing reports\n")
+        skill = self.root / "plugins/p/skills/s/SKILL.md"
+        skill.write_text("---\nallowed-tools: Read\n---\nNo hands here.\n", encoding="utf-8")
+        code, report = self._run()
+        self.assertEqual(code, 0)
+        self.assertIn("fixed, so delete", report)
+
+
+class SubjectSet(unittest.TestCase):
+    """Which files the gate governs, which is not `plugins/*/`.
+
+    `marketplace.json`'s `source` names where a plugin lives and is a free-form
+    relative path. `check_plugins` reads the catalog and so already walks
+    `**/.claude-plugin/plugin.json`: on a tree with a plugin at `vendor/extra` it
+    reported real errors about that plugin's roles while this gate reported none.
+    Two gates in one CI run, disagreeing about which files the repo contains —
+    and the one that saw the tree proved it was reachable.
+    """
+
+    OFFENCE = "`Bash(git:*)` is not a narrowing"
+
+    def setUp(self):
+        import tempfile
+
+        self.root = Path(tempfile.mkdtemp())
+        self.addCleanup(setattr, c, "BASELINE", c.BASELINE)
+        c.BASELINE = self.root / "baseline.txt"
+
+    def _plant(self, where):
+        skill = self.root / where / "skills/s/SKILL.md"
+        skill.parent.mkdir(parents=True)
+        skill.write_text(
+            "---\nallowed-tools: Bash(git:*)\n---\nRun `git log --oneline`.\n",
+            encoding="utf-8",
+        )
+
+    def _run(self):
+        import contextlib
+        import io
+
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            code = c.main(self.root)
+        return code, out.getvalue()
+
+    def test_a_role_outside_plugins_is_audited(self):
+        self._plant("vendor/extra")
+        code, report = self._run()
+        self.assertEqual(code, 1)
+        self.assertIn(self.OFFENCE, report)
+        self.assertIn("vendor/extra/skills/s/SKILL.md", report)
+
+    def test_the_same_role_under_plugins_is_the_control(self):
+        """Positive control: the error is the unbounded grant, not the path."""
+        self._plant("plugins/p")
+        code, report = self._run()
+        self.assertEqual(code, 1)
+        self.assertIn(self.OFFENCE, report)
+
+    def test_an_agent_outside_plugins_is_a_dispatch_target(self):
+        """`agents` feeds the mention check, so a missed agent also mis-reports `Task`."""
+        self._plant("plugins/p")
+        agent = self.root / "vendor/extra/agents/auditor.md"
+        agent.parent.mkdir(parents=True)
+        agent.write_text("---\ntools: Read\n---\nbody\n", encoding="utf-8")
+        skill = self.root / "plugins/p/skills/s/SKILL.md"
+        skill.write_text(
+            "---\nallowed-tools: Task\n---\nDispatch `auditor`.\n", encoding="utf-8"
+        )
+        self.assertNotIn("grants `Task` but the prose never mentions it", self._run()[1])
+
+
+class Parse(unittest.TestCase):
+    def _write(self, text):
+        path = Path(self.tmp) / "r.md"
+        path.write_text(text, encoding="utf-8")
+        return path
+
+    def setUp(self):
+        import tempfile
+
+        self.tmp = tempfile.mkdtemp()
+
+    def test_agent_style_quoted_list(self):
+        p = self._write('---\ntools: ["Bash", "Read"]\n---\nbody\n')
+        self.assertEqual(c.parse(p), (["Bash", "Read"], "body\n"))
+
+    def test_skill_style_bare_list(self):
+        p = self._write("---\nallowed-tools: Bash, Read\n---\nbody\n")
+        self.assertEqual(c.parse(p), (["Bash", "Read"], "body\n"))
+
+    def test_block_sequence_indented_under_the_key(self):
+        p = self._write("---\ntools:\n  - Bash\n  - Read\n---\nbody\n")
+        self.assertEqual(c.parse(p), (["Bash", "Read"], "body\n"))
+
+    def test_block_sequence_bulleted_at_the_key_indentation(self):
+        """Same list to the loader, and `check_platform` reads it as one."""
+        p = self._write("---\ntools:\n- Bash\n- Read\n---\nbody\n")
+        self.assertEqual(c.parse(p), (["Bash", "Read"], "body\n"))
+
+    def test_a_block_item_holding_a_space_stays_one_grant(self):
+        p = self._write("---\nallowed-tools:\n  - Bash(git diff:*)\n---\nbody\n")
+        self.assertEqual(c.parse(p), (["Bash(git diff:*)"], "body\n"))
+
+    def test_the_block_read_stops_at_the_next_key(self):
+        p = self._write("---\ntools:\n  - Bash\nmodel: opus\n---\nbody\n")
+        self.assertEqual(c.parse(p), (["Bash"], "body\n"))
+
+    def test_a_block_sequence_does_not_read_as_an_ungranted_role(self):
+        """The verdict, not the parse: `[]` claims the role holds nothing, so
+        every command its prose runs comes back ungranted. Respelling a grant
+        list may not invent errors."""
+        grants, body = c.parse(
+            self._write("---\ntools:\n  - Bash(git diff:*)\n---\nRun `git diff --stat`.\n")
+        )
+        errors, _ = c.check(Path("role.md"), grants, body, set())
+        self.assertEqual(errors, [])
+
+    def test_missing_frontmatter(self):
+        self.assertIsNone(c.parse(self._write("no frontmatter here\n")))
+
+
+class AgentScopes(unittest.TestCase):
+    """An agent's `tools:` is a toolset — see docs/a-scope-the-loader-drops.md."""
+
+    def test_a_scoped_bash_grant_on_an_agent_is_an_error(self):
+        errors, _ = agent(["Bash(git diff:*)", "Read"], "Run `git diff --stat`.")
+        self.assertIn("`Bash(git diff:*)` scopes nothing", errors[0])
+
+    def test_the_same_grant_on_a_skill_is_clean(self):
+        """The whole point: one spelling, two fields, two meanings."""
+        errors, _ = role(["Bash(git diff:*)"], "Run `git diff --stat`.")
+        self.assertEqual(errors, [])
+
+    def test_a_scoped_agent_grant_is_measured_as_the_bare_tool(self):
+        """Not just reported — the role really does hold all of `Bash`, so the
+        command check may not go on rejecting what the runtime permits."""
+        errors, _ = agent(["Bash(git diff:*)"], "```bash\nrm -rf build\n```")
+        self.assertEqual(len(errors), 1)
+        self.assertIn("scopes nothing", errors[0])
+
+    def test_two_scopes_on_one_tool_report_twice_and_grant_once(self):
+        errors, warnings = agent(
+            ["Bash(git diff:*)", "Bash(gh pr view:*)"], "```bash\ngit push\n```"
+        )
+        self.assertEqual(len(errors), 2)
+        self.assertEqual(warnings, [])
+
+    def test_task_keeps_its_scope(self):
+        """`ruleContent` is read for exactly one tool: it is the list of
+        subagent types the agent may spawn."""
+        errors, warnings = agent(["Task(sub)", "Read"], "Dispatch with `Task`.")
+        self.assertEqual(errors, [])
+        self.assertEqual(warnings, [])
+
+    def test_a_scoped_task_grant_still_covers_a_dispatch(self):
+        errors, _ = agent(["Task(other)"], "Dispatch other for this.", agents=("other",))
+        self.assertEqual(errors, [])
+
+    def test_an_unscoped_agent_grant_list_is_untouched(self):
+        errors, _ = agent(["Bash", "Read", "Glob", "Grep"], "Run `git diff --stat`.")
+        self.assertEqual(errors, [])
+
+    def test_the_bare_bash_census_sees_a_widened_grant(self):
+        """`main` counts roles holding unrestricted shell. An agent whose only
+        Bash is scoped belongs in that census — it holds the same tool."""
+        self.assertEqual(c.agent_scopes(["Bash(git diff:*)"])[1], ["Bash"])
+
+
+class FirstPartyTools(unittest.TestCase):
+    """The vocabulary between mcp tools and shell commands — see `FIRST_PARTY`."""
+
+    def test_prose_using_an_ungranted_tool_is_an_error(self):
+        errors, _ = role(["Bash", "Read"], "Use `WebFetch` to post the report.")
+        self.assertIn("prose uses `WebFetch` but it is not granted", errors)
+
+    def test_a_granted_tool_is_clean(self):
+        errors, _ = role(["Bash", "Read", "WebFetch"], "Use `WebFetch` to post it.")
+        self.assertEqual(errors, [])
+
+    def test_a_scoped_grant_answers_its_own_tool(self):
+        errors, _ = role(["Bash", "Read", "WebFetch(docs:*)"], "Call `WebFetch`.")
+        self.assertEqual(errors, [])
+
+    def test_one_error_per_tool_not_per_mention(self):
+        body = "First `WebSearch`, then `WebSearch` again, then `WebSearch`."
+        errors, _ = role(["Bash", "Read"], body)
+        self.assertEqual(len(errors), 1)
+
+    def test_a_withheld_tool_is_documentation_not_a_demand(self):
+        errors, _ = role(["Bash", "Read"], "This role is not granted `NotebookEdit`.")
+        self.assertEqual(errors, [])
+
+    def test_a_backticked_non_tool_capital_is_ignored(self):
+        errors, _ = role(["Bash", "Read"], "Write it to `PASS` in the table.")
+        self.assertEqual(errors, [])
+
+    def test_bash_is_left_to_the_command_comparison(self):
+        """`Bash` in prose is judged by the commands it runs, not by membership —
+        otherwise every narrowed role is told it lacks a tool it holds scoped."""
+        errors, _ = role(["Bash(git log:*)", "Read"], "Shell out with `Bash`.")
+        self.assertNotIn("prose uses `Bash` but it is not granted", errors)
+
+    def test_task_is_left_to_the_dispatch_check(self):
+        errors, _ = role(["Read"], "Dispatch with `Task`.")
+        self.assertEqual(errors, [])
+
+    def test_an_empty_grant_list_is_check_platforms_diagnosis(self):
+        """An absent key parses to `[]` and loads as every tool. Reporting every
+        tool the prose names would answer one edit twice, and loudly."""
+        errors, _ = role([], "Use `WebFetch` and `WebSearch` here.")
+        self.assertEqual([e for e in errors if "is not granted" in e], [])
+
+    def test_an_agent_toolset_is_read_the_same_way(self):
+        errors, _ = agent(["Bash", "Read"], "Use `WebFetch` for the upstream doc.")
+        self.assertIn("prose uses `WebFetch` but it is not granted", errors)
+
+
+def agent(grants, body, agents=()):
+    return c.check(
+        Path("a.md"), grants, body, {"navigate", "tabs_context_mcp"}, agents, True
+    )
+
+
+if __name__ == "__main__":
+    unittest.main()
