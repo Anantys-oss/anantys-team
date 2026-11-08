@@ -1,7 +1,7 @@
 ---
 name: anantys.qa
 description: Run a browser-driven QA campaign against a completed feature. Derives an executable test plan from a spec-kit tasks.md, a freeform feature brief (--brief), a set of tracker issues (--from linear:SKU-…), or one or more GitHub pull requests (--from pr:<url>), executes it in a real browser — against a local dev stack or a deployed environment (staging / a preview), selected with --env — recording PASS/FAIL/BLOCKED per assertion, accumulates operator adjudications so a defect is never re-filed twice, and emits a copy-pasteable fix brief for the dev agent. Environment specifics live in a project-local .anantys/qa.md, never in the skill. Use to QA a finished feature — however it was built — before release.
-allowed-tools: mcp__claude-in-chrome__tabs_context_mcp, mcp__claude-in-chrome__tabs_create_mcp, mcp__claude-in-chrome__navigate, mcp__claude-in-chrome__computer, mcp__claude-in-chrome__read_page, mcp__claude-in-chrome__get_page_text, mcp__claude-in-chrome__find, mcp__claude-in-chrome__form_input, mcp__claude-in-chrome__javascript_tool, mcp__claude-in-chrome__read_console_messages, Bash, Read, Write, Edit, Glob, Grep, Task, TaskCreate, TaskUpdate, TaskList, AskUserQuestion
+allowed-tools: mcp__claude-in-chrome__tabs_context_mcp, mcp__claude-in-chrome__tabs_create_mcp, mcp__claude-in-chrome__navigate, mcp__claude-in-chrome__computer, mcp__claude-in-chrome__read_page, mcp__claude-in-chrome__get_page_text, mcp__claude-in-chrome__find, mcp__claude-in-chrome__form_input, mcp__claude-in-chrome__javascript_tool, mcp__claude-in-chrome__read_console_messages, mcp__claude-in-chrome__read_network_requests, Bash, Read, Write, Edit, Glob, Grep, Task, TaskCreate, TaskUpdate, TaskList, AskUserQuestion
 ---
 
 ## Mission
@@ -409,7 +409,9 @@ operator's go before any write.
 - **Confirm your own preconditions before asserting.** A surviving session, a leftover record, or
   state you created yourself by re-walking a flow invalidates the result. A defect you caused is
   not a defect.
-- **Screenshot anything visual**, and capture the URL plus any console/network error on every FAIL.
+- **Screenshot anything visual**, and capture the URL plus any console/network error on every FAIL
+  — `read_console_messages` and `read_network_requests`, read before you navigate away. Both are
+  required by the fix brief, and neither survives the next page load.
 - **Never infer a PASS from a screen you did not reach.**
 - Check every FAIL against the adjudication annotations in `qa-plan.md` **scoped to this environment
   or to `all`** before filing it. If it is already ruled intended or a known drift there, record
