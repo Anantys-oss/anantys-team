@@ -79,6 +79,52 @@ class DeclaredButUngranted(unittest.TestCase):
         _, warnings = run(SPEC, [f"mcp__{CHROME}__navigate"], TOOLS)
         self.assertEqual(warnings, [])
 
+    def test_a_bare_name_misspelling_is_one_finding_not_two(self):
+        # The role is asking for that server; the spelling is the whole defect.
+        # A `no role grants it` warning beside it is false, and its remedy —
+        # drop the server — undoes the error's.
+        errors, warnings = run(SPEC, ["mcp__claude-in-chrome__navigate"], TOOLS)
+        self.assertEqual(len(errors), 1)
+        self.assertEqual(warnings, [])
+
+    def test_an_unprobed_server_no_role_grants_warns_once(self):
+        # "the tool half of every grant to it went unverified" over zero grants
+        # is a vaguer restatement of the ungranted warning, not a second fact.
+        _, warnings = run(SPEC, ["Read"], {"claude-in-chrome": None})
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("that no role grants", warnings[0][1])
+
+    def test_an_unprobed_server_a_role_grants_still_warns_unverified(self):
+        _, warnings = run(SPEC, [f"mcp__{CHROME}__navigate"], {"claude-in-chrome": None})
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("could not be asked", warnings[0][1])
+
+
+class ManifestTally(unittest.TestCase):
+    """The name the manifest-charged error reports is the one its remedy is written in."""
+
+    def test_a_namespaced_grant_is_reported_by_its_declarable_name(self):
+        errors, _ = run({}, [f"mcp__{CHROME}__computer"], {})
+        self.assertIn("(claude-in-chrome)", errors[0][1])
+        self.assertNotIn(CHROME, errors[0][1])
+
+    def test_a_bare_grant_is_reported_unchanged(self):
+        errors, _ = run({}, ["mcp__claude-in-chrome__computer"], {})
+        self.assertIn("(claude-in-chrome)", errors[0][1])
+
+    def test_both_spellings_of_one_server_are_tallied_once(self):
+        errors, _ = run(
+            {}, [f"mcp__{CHROME}__computer", "mcp__claude-in-chrome__navigate"], {}
+        )
+        self.assertEqual(len(errors), 1)
+        self.assertIn("1 granted server (claude-in-chrome)", errors[0][1])
+
+    def test_another_plugins_prefix_is_not_stripped(self):
+        # `plugin_other_x` is not this plugin's rendering of anything, so the
+        # segment is the name as declared.
+        errors, _ = run({}, ["mcp__plugin_other_x__navigate"], {})
+        self.assertIn("(plugin_other_x)", errors[0][1])
+
 
 class Grants(unittest.TestCase):
     def frontmatter(self, block):

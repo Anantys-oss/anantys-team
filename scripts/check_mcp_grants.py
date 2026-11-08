@@ -30,6 +30,18 @@ That case is charged once, to the manifest. Once the field exists, a grant whose
 server segment does not resolve is the role's own — the remedy is inside its
 frontmatter — and so is a tool name the server does not list.
 
+**The tally is keyed on the server a grant means, never on how it spells it.** Two
+findings came out of keying it on the spelling. A grant namespaced
+`mcp__plugin_<plugin>_<server>__…` under a manifest that declares nothing made the
+manifest error name the server by the prefix *the loader builds* — and that error's
+remedy is an `mcpServers` key, which is written in the declared spelling, so an
+author who pasted the reported name back got `plugin_<plugin>_plugin_<plugin>_…`
+and a fresh error. And a grant that names a declared server by its bare name is a
+misspelling, not an absence: charging the role for it while leaving the server out
+of the tally gave one typo a second finding — `declares the MCP server … that no
+role grants`, whose remedy (drop the server) is the opposite of the error's (fix
+the spelling), about a server a role does grant.
+
 **A server that will not launch is a warning, not an error.** The remedy is not in
 any diff: CI may have no `claude` on PATH, and a browser extension's server
 answers `tools/list` whether or not a browser is attached, but a different server
@@ -112,6 +124,17 @@ WHOLE_SERVER = (None, "*")
 #: name, and not the one a grant is written in.
 def exposed(plugin: str, server: str) -> str:
     return f"plugin_{plugin}_{server}"
+
+
+#: The `plugin.json` key a grant segment is asking for — `exposed` read backwards.
+#: Needed because the manifest-charged error's remedy *is* a `mcpServers` key, and
+#: a key is written in the declared spelling. Naming the server as the grant spells
+#: it told an author to declare `plugin_anantys-team-agents_claude-in-chrome`, which
+#: `exposed` then renders as `plugin_anantys-team-agents_plugin_…`, so following the
+#: remedy verbatim trades one error for another. A segment that carries no prefix is
+#: already a declared name and comes back unchanged.
+def declared(plugin: str, segment: str) -> str:
+    return segment.removeprefix(f"plugin_{plugin}_")
 
 
 def send(proc, message: dict) -> None:
@@ -267,12 +290,20 @@ def check(plugin, servers, roles, advertised, manifest):
             segment, tool = m.groups()
             if not servers:
                 # Charged to the manifest below, once. The role is not wrong to
-                # want a browser; the plugin is wrong not to ship one.
-                named.add(segment)
+                # want a browser; the plugin is wrong not to ship one. Tallied
+                # under the name the remedy will be written in, not the one the
+                # grant spells it with — see `declared`.
+                named.add(declared(plugin, segment))
                 continue
             server = prefixes.get(segment)
             if server is None:
                 if segment in servers:
+                    # A misspelling, not an absence: this role is asking for that
+                    # server. Tally it, or the manifest also warns that `no role
+                    # grants` it — a second finding for one typo, whose remedy
+                    # (drop the server) is the opposite of the error's (fix the
+                    # spelling), and which is false besides.
+                    named.add(segment)
                     errors.append(
                         (
                             path,
@@ -332,7 +363,10 @@ def check(plugin, servers, roles, advertised, manifest):
                 f"connected and unaudited in every session the plugin is enabled",
             )
         )
-    for server in sorted(s for s in servers if advertised.get(s) is None):
+    # Granted ones only: "the tool half of every grant to it" is a claim about a
+    # set, and over the empty set it reads as a second, vaguer copy of the
+    # `no role grants it` warning directly above.
+    for server in sorted(s for s in servers if s in named and advertised.get(s) is None):
         warnings.append(
             (
                 manifest,
