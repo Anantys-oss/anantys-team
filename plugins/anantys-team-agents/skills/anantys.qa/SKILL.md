@@ -304,9 +304,10 @@ deployed to staging but not the local stack, or the reverse):
 
 - Every `qa-runs.md` run header names its environment (`templates/qa-plan.md`).
 - The per-assertion status in `qa-plan.md` is recorded **per environment** (`local: FAIL ·
-  staging: PASS`) — the suffix is the authoritative record, required on every assertion that has
-  run anywhere; the checkbox is checked only when every declared environment is PASS. A run
-  updates only the selected environment's status, never another's.
+  staging: PASS`), one of `PASS | PASS (noted) | FAIL | BLOCKED | not run` — the suffix is the
+  authoritative record, required on every assertion that has run anywhere; the checkbox is checked
+  only when every declared environment is PASS or PASS (noted). A run updates only the selected
+  environment's status, never another's.
 - `retest`, `status` and `report` read only the results recorded for the selected environment and
   say which environment they describe. `status` and `report` also name every other environment
   that has results, so a defect recorded elsewhere is never silently out of view.
@@ -346,7 +347,7 @@ An assertion the run did not walk **keeps its previous status** on this environm
 never resets a result to `not run`.
 
 A **DEFECT** is an assertion that FAILs after the adjudication check (Judging rules) — a
-PASS-with-note is not one. A `BLOCKED` result never stops an interactive run: record it and walk on.
+`PASS (noted)` is not one. A `BLOCKED` result never stops an interactive run: record it and walk on.
 Both modes keep every other rule: preflight stops the campaign, and a `shared` env still needs the
 operator's go before any write.
 
@@ -411,8 +412,10 @@ operator's go before any write.
 - **Screenshot anything visual**, and capture the URL plus any console/network error on every FAIL.
 - **Never infer a PASS from a screen you did not reach.**
 - Check every FAIL against the adjudication annotations in `qa-plan.md` **scoped to this environment
-  or to `all`** before filing it. If it is already ruled intended or a known drift there, record it
-  as PASS-with-note and move on. A ruling scoped to another environment never passes a FAIL here —
+  or to `all`** before filing it. If it is already ruled intended or a known drift there, record
+  this environment's suffix as `PASS (noted)` — never `FAIL`, which the progress table and
+  `report` would both read back as an open defect — and move on. A ruling scoped to another
+  environment never passes a FAIL here —
   file it, and mention the other env's ruling in the evidence so the operator can extend it.
 
 ## `retest` — the second pass after a fix
@@ -443,10 +446,18 @@ Append the ruling as an annotation on that assertion in `qa-plan.md`, with the d
 the reason, in the form future runs will read:
 
 ```markdown
-- [ ] A4 Checkout is priced for the selected plan and period (FR-012).
+- [ ] A4 Checkout is priced for the selected plan and period (FR-012). — `local`: PASS (noted) ·
+      `staging`: FAIL
       ⚠️ *Adjudicated 2026-08-03 (operator, env: `local`): the grid/checkout price gap is a sandbox
       key drift, not a product defect. Only a mismatch in **plan or period** is a real A4 failure.*
 ```
+
+**The annotation is only half the write — rewrite the status it rules on.** In the same edit, every
+environment the ruling covers whose suffix reads `FAIL` becomes `PASS (noted)`; `--env all` covers
+them all, `--env <name>` covers that one and **leaves the others at `FAIL`** (as `staging` stays
+above). The progress table, `status` and `report` all count the recorded suffix and never re-read
+the ruling, so one left at `FAIL` stays an open defect to all three. An assertion that has not run
+on a covered environment keeps `not run`; a ruling is not a result.
 
 An annotation with **no** `env:` (written before environments existed) is scoped to the default
 environment only — except a **REMOVED** strike-through, which is a product decision and reads as
@@ -518,8 +529,9 @@ they are computed from `qa-plan.md`, never estimated.
 | 0% (0) | 0% (0) | 0% (0) | 0% (0) | 100% (<N>) |
 ```
 
-**DEFECT** counts the assertions whose status on this environment is FAIL; a PASS-with-note counts
-as PASS. **Done** = has a result on this environment (PASS, DEFECT or BLOCKED). The identities hold for the
+**DEFECT** counts the assertions whose recorded status on this environment is `FAIL`; a
+`PASS (noted)` counts as PASS. **Done** = has a result on this environment (PASS, DEFECT or
+BLOCKED). The identities hold for the
 **counts** — Done = PASS + DEFECT + BLOCKED, Done + Not run = N — never for the rounded
 percentages, so never adjust a count to make the percentages add up. Round each percentage to a
 whole number on its own; show a non-zero value below 1% as `<1%` (never `0%`) and a value above

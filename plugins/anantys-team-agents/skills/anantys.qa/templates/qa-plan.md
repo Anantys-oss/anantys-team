@@ -53,15 +53,20 @@ environment that has results — who writes and refreshes each: SKILL.md, "Progr
 **Assert**
 
 - [ ] A1 <observable outcome> (FR-0xx). — `local`: PASS · `staging`: not run
-- [ ] A2 <observable outcome> (FR-0yy). — `local`: FAIL · `staging`: not run
+- [ ] A2 <observable outcome> (FR-0yy). — `local`: PASS (noted) · `staging`: not run
       ⚠️ *Adjudicated <date> (operator, env: `<name>` | `all`): <ruling + reason>. Only <narrowed
       condition> is a real A2 failure.*
 - [ ] ~~A3 <dropped behaviour>~~ — **REMOVED from the product** (<date>, operator, env:
       `all`). Do not report its absence as a defect.
 
-The per-environment suffix (`` `<env>`: PASS | FAIL | BLOCKED | not run ``) is the authoritative
-result, required on every assertion that has run on any environment; a run rewrites only its own
-environment's entry. The checkbox is checked only when **every** declared environment is PASS.
+The per-environment suffix (`` `<env>`: PASS | PASS (noted) | FAIL | BLOCKED | not run ``) is the
+authoritative result, required on every assertion that has run on any environment; a run rewrites
+only its own environment's entry. The checkbox is checked only when **every** declared environment
+is PASS or PASS (noted).
+
+`PASS (noted)` is the recorded status of a FAIL an adjudication ruled is not a defect — the only
+value that keeps *both* facts: the product did fail observably, and that failure is not counted.
+Left at `FAIL`, a ruled assertion is still an open defect to every table and report.
 
 ### B — <journey name>
 
