@@ -64,8 +64,41 @@ class AFoldIsWideNotMerelyContaining(unittest.TestCase):
 
 class TheTalliesSayWhatWasNotMeasured(unittest.TestCase):
     def test_a_conflicting_pair_is_not_counted_as_assembled(self) -> None:
-        out = pg.report({}, {("a", "b"): ("conflict merging b", {}, {"f"})})
-        self.assertIn("1 pair(s) selected — 0 assembled, 1 would not merge", out)
+        out = pg.report({"a": set(), "b": set()}, {("a", "b"): ("conflict merging b", {}, {"f"})})
+        self.assertIn("1 pair(s) selected — 0 assembled, 1 collided as a pair", out)
+
+    def test_a_pair_collision_is_counted_apart_from_an_inherited_one(self) -> None:
+        # The tool exists for the first row: both heads land on `main` alone and not
+        # together. The second is `pr_landing_order.py`'s finding about one head, and
+        # summing the two is how the merge-order defect hides inside a queue where many
+        # heads already do not apply to the destination.
+        out = pg.report(
+            {"a": set(), "b": set(), "c": None, "d": set()},
+            {
+                ("a", "b"): ("conflict merging b", {}, {"f"}),
+                ("c", "d"): ("conflict merging c", {}, {"f"}),
+            },
+        )
+        self.assertIn("1 collided as a pair, 1 held a head that will not merge", out)
+
+    def test_an_unmergeable_head_does_not_charge_every_gate_with_a_failure(self) -> None:
+        # The head was never measured, so no gate failed on it. Marking it red on all
+        # of them — which the first version did, to suppress its pairs — made one
+        # unmergeable head read as nine blind gates.
+        out = pg.report({"a": set(), "b": None}, {("a", "b"): ("conflict merging b", {}, {"f"})})
+        self.assertNotIn("already red alone", out)
+
+    def test_the_report_names_how_many_heads_were_never_measured_alone(self) -> None:
+        out = pg.report({"a": set(), "b": None}, {("a", "b"): ("conflict merging b", {}, {"f"})})
+        self.assertIn("1 of 2 head(s) never measured alone", out)
+        self.assertIn("e.g. b", out)
+
+    def test_a_blind_gate_is_counted_over_the_gauged_heads_only(self) -> None:
+        out = pg.report(
+            {"a": {"check_doc_actions"}, "b": {"check_doc_actions"}, "c": None},
+            {("a", "b"): ("", {"check_doc_actions": gm.Cell(1, "stale")}, {"f"})},
+        )
+        self.assertIn("doc_actions (2/2 heads)", out)  # not 2/3, and not 3/3
 
     def test_a_green_sweep_names_the_gates_that_could_not_speak(self) -> None:
         # The claim "no pair-only failure" is worth less when two of nine gates were

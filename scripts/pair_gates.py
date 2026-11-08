@@ -178,21 +178,37 @@ def pair_only(
 
 
 def report(
-    singles: dict[str, set[str]],
+    singles: dict[str, set[str] | None],
     results: dict[tuple[str, str], tuple[str, dict[str, gm.Cell], set[str]]],
 ) -> str:
     """Only gates that are green on both heads apart and red on the pair, plus tallies.
 
     The tallies are not decoration. A sweep that prints "no pair-only failures" after
     skipping every pair as conflicting has reported nothing and reads as a clean bill.
+
+    `None` in `singles` means the head was never measured alone — it will not merge onto
+    `BASE` at all. That is a different fact from "red on every gate" and it is counted as
+    one, because it changes what every other number here means. A pair holding such a
+    head was never a merge order: it cannot assemble, nothing was subtracted against, and
+    the file's own rule — a merge conflict is not a semantic finding — applies to its own
+    tallies first.
     """
-    out, new, conflicted, measured = [], [], 0, 0
+    out, new, measured, collided, inherited = [], [], 0, 0, 0
     for (a, b), (why, cells, shared) in sorted(results.items()):
+        a_red, b_red = singles.get(a), singles.get(b)
+        if a_red is None or b_red is None:
+            # One head does not apply to `BASE`, so the pair could not have assembled
+            # whatever the other does. That is `pr_landing_order.py`'s finding about one
+            # head, counted here only so the denominator is honest.
+            inherited += 1
+            continue
         if why:
-            conflicted += 1
+            # Both heads land on `BASE` alone and not together: the merge order defect
+            # this tool exists for, and until now it was summed with the line above.
+            collided += 1
             continue
         measured += 1
-        if gates := pair_only(singles.get(a, set()), singles.get(b, set()), verdict(cells)):
+        if gates := pair_only(a_red, b_red, verdict(cells)):
             new.append((a, b, {g: cells[g] for g in gates}, shared))
     if new:
         out.append("gates green on each head apart, red on the pair:")
@@ -210,16 +226,31 @@ def report(
         out.append("no gate is red on a pair that was green on both heads apart")
     out.append(
         f"\n{len(results)} pair(s) selected — {measured} assembled, "
-        f"{conflicted} would not merge, {len(new)} with a pair-only failure"
+        f"{collided} collided as a pair, {inherited} held a head that will not merge onto "
+        f"{BASE}, {len(new)} with a pair-only failure"
     )
     # Which gates could never produce a finding here, and on how many heads. Without it
     # a green sweep looks like 9 gates clearing the queue when it was 7.
-    blind = Counter(g for failed in singles.values() for g in failed)
+    #
+    # Over the gauged heads only. A head that will not merge onto `BASE` was marked red
+    # on every gate so that nothing its pairs fail reads as pair-only — correct there,
+    # and fatal here: counting it would add one to *every* gate's tally, so a single
+    # unmergeable head makes nine green gates read as blind on it. The number is a claim
+    # about gates, and a gate nobody ran is not a gate that failed.
+    gauged = {h: failed for h, failed in singles.items() if failed is not None}
+    blind = Counter(g for failed in gauged.values() for g in failed)
     if blind:
         worst = ", ".join(
-            f"{g.removeprefix('check_')} ({n}/{len(singles)} heads)" for g, n in blind.most_common()
+            f"{g.removeprefix('check_')} ({n}/{len(gauged)} heads)" for g, n in blind.most_common()
         )
         out.append(f"already red alone, so unusable as a pair signal on those heads: {worst}")
+    # The denominator above, said out loud. `len(gauged)` is the one number a reader
+    # needs to size every tally in this report and the only one it cannot derive.
+    if ungauged := sorted(h for h, failed in singles.items() if failed is None):
+        out.append(
+            f"{len(ungauged)} of {len(singles)} head(s) never measured alone — "
+            f"will not merge onto {BASE}, e.g. {ungauged[0]}"
+        )
     return "\n".join(out)
 
 
@@ -262,13 +293,14 @@ def main(argv: list[str]) -> int:
         tree = Path(tmp) / "pair"
         gm.git("worktree", "add", "--detach", str(tree), "HEAD")
         try:
-            singles = {}
+            singles: dict[str, set[str] | None] = {}
             for h in needed:
-                # A head that will not merge onto `main` alone was never green on any
-                # gate, so every gate is marked red for it: anything its pairs fail is
-                # inherited, not pair-only, and crediting it here would be this tool
-                # reporting a merge conflict as a semantic finding.
-                singles[h] = set(names) if assemble(tree, (h,)) else verdict(gm.check(tree, names))
+                # `None`, not `set(names)`. A head that will not merge onto `main` alone
+                # was never green on any gate — but it was never red on one either, and
+                # the first version of this said red. Both readings suppress its pairs,
+                # which is what matters for `pair_only`; only one of them lets the blind
+                # tally below charge nine passing gates with a failure nobody observed.
+                singles[h] = None if assemble(tree, (h,)) else verdict(gm.check(tree, names))
             results = {}
             for a, b, shared in selected:
                 why = assemble(tree, (a, b))
