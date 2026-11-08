@@ -124,6 +124,32 @@ class TheTalliesSayWhatWasNotMeasured(unittest.TestCase):
         self.assertNotIn("already red alone", out)
 
 
+class AGreenVerdictNeedsAComparison(unittest.TestCase):
+    """The failure mode `report`'s own docstring named and the exit code never knew about."""
+
+    def test_a_pair_that_assembled_is_the_only_thing_that_counts_as_compared(self) -> None:
+        results = {
+            ("a", "b"): ("", {}, {"f"}),
+            ("a", "c"): ("conflict merging c", {}, {"f"}),
+            ("d", "e"): ("conflict merging e", {}, {"f"}),
+        }
+        singles = {"a": set(), "b": set(), "c": set(), "d": None, "e": set()}
+        self.assertEqual(pg.buckets(singles, results), (1, 1, 1))
+
+    def test_a_sweep_where_nothing_assembled_does_not_print_a_green_verdict(self) -> None:
+        out = pg.report({"a": set(), "b": set()}, {("a", "b"): ("conflict merging b", {}, {"f"})})
+        self.assertIn("nothing was compared", out)
+        self.assertNotIn("no gate is red on a pair", out)
+
+    def test_a_sweep_with_one_clean_pair_still_reports_green_as_green(self) -> None:
+        out = pg.report(
+            {"a": set(), "b": set(), "c": set()},
+            {("a", "b"): ("", {"check_a": gm.Cell(0)}, {"f"}), ("a", "c"): ("boom", {}, {"f"})},
+        )
+        self.assertIn("no gate is red on a pair", out)
+        self.assertNotIn("nothing was compared", out)
+
+
 class TheVersionHomesAreExcludedFromSelectionOnly(unittest.TestCase):
     def test_both_manifests_are_named(self) -> None:
         # Two files, one field. The pair selection would otherwise be dominated by it:

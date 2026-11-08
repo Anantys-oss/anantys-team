@@ -177,6 +177,34 @@ def pair_only(
     return pair_failed - a_failed - b_failed
 
 
+def buckets(
+    singles: dict[str, set[str] | None],
+    results: dict[tuple[str, str], tuple[str, dict[str, gm.Cell], set[str]]],
+) -> tuple[int, int, int]:
+    """(assembled, collided, inherited) over the selected pairs.
+
+    Three outcomes, where the first version of this report printed two. A pair whose
+    heads both land on `BASE` alone and conflict together is the merge-order defect this
+    tool exists for. A pair holding a head that does not apply to `BASE` at all was never
+    a merge order — that is `pr_landing_order.py`'s finding about one head — and summing
+    the two hides the first inside the second in any queue where the destination has
+    moved.
+
+    A function and not three counters inside `report`, because `main` rules on the same
+    classification: a run where nothing assembled compared nothing, and the exit code is
+    the only part of this report a CI step reads.
+    """
+    assembled = collided = inherited = 0
+    for (a, b), (why, _cells, _shared) in results.items():
+        if singles.get(a) is None or singles.get(b) is None:
+            inherited += 1
+        elif why:
+            collided += 1
+        else:
+            assembled += 1
+    return assembled, collided, inherited
+
+
 def report(
     singles: dict[str, set[str] | None],
     results: dict[tuple[str, str], tuple[str, dict[str, gm.Cell], set[str]]],
@@ -193,21 +221,12 @@ def report(
     the file's own rule — a merge conflict is not a semantic finding — applies to its own
     tallies first.
     """
-    out, new, measured, collided, inherited = [], [], 0, 0, 0
+    out, new = [], []
+    measured, collided, inherited = buckets(singles, results)
     for (a, b), (why, cells, shared) in sorted(results.items()):
         a_red, b_red = singles.get(a), singles.get(b)
-        if a_red is None or b_red is None:
-            # One head does not apply to `BASE`, so the pair could not have assembled
-            # whatever the other does. That is `pr_landing_order.py`'s finding about one
-            # head, counted here only so the denominator is honest.
-            inherited += 1
+        if why or a_red is None or b_red is None:
             continue
-        if why:
-            # Both heads land on `BASE` alone and not together: the merge order defect
-            # this tool exists for, and until now it was summed with the line above.
-            collided += 1
-            continue
-        measured += 1
         if gates := pair_only(a_red, b_red, verdict(cells)):
             new.append((a, b, {g: cells[g] for g in gates}, shared))
     if new:
@@ -222,8 +241,14 @@ def report(
             # dropped it: a sweep's rows are its output, so they carry the finding.
             for g, cell in sorted(gates.items()):
                 out.append(f"    {g.removeprefix('check_')}: {getattr(cell, 'why', '')}")
-    else:
+    elif measured:
         out.append("no gate is red on a pair that was green on both heads apart")
+    else:
+        # The sentence this docstring already warned about. A run where every selected
+        # pair conflicted subtracted nothing, and the green verdict is the same string a
+        # full clean sweep prints — the tallies below correct it, and the first line is
+        # what gets quoted.
+        out.append("nothing was compared: no selected pair assembled")
     out.append(
         f"\n{len(results)} pair(s) selected — {measured} assembled, "
         f"{collided} collided as a pair, {inherited} held a head that will not merge onto "
@@ -309,6 +334,15 @@ def main(argv: list[str]) -> int:
             gm.git("worktree", "remove", "--force", str(tree))
 
     print(report(singles, results))
+    # Rule on the comparing, not on the gates. A reported pair-only failure is this
+    # tool's output and not its verdict, so a red cell exits 0 — but a run where no pair
+    # assembled performed no subtraction at all, and `0 with a pair-only failure` is what
+    # a clean sweep prints too. `gate_matrix.py` learned this about unmeasured cells; the
+    # same sentence has been in `report`'s docstring here since the first version and
+    # was never wired to the exit code.
+    if not buckets(singles, results)[0]:
+        print("no selected pair assembled: nothing was compared", file=sys.stderr)
+        return 1
     return 0
 
 
