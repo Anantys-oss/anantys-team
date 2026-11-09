@@ -7,38 +7,44 @@ pairs. Neither asks the question a lander actually faces on a file that twelve
 heads rewrote: of the N copies of this path now in flight, is there one that
 contains the rest?
 
-When the versions of a path lie on a single ancestry chain the answer is yes and
-the work is free — land the tip and every earlier copy arrives inside it. When
-they do not, the copies are *incomparable*: no ref in the queue holds the union,
+When one of the versions contains every other the answer is yes and the work is
+free — land that one and the rest arrive inside it. The report names it, because
+"land the tip" is advice nobody can act on without the sha. Note that this is a
+**maximum**, not a total order: a head that merged two siblings holds their
+union, and the two siblings are still incomparable to each other. Asking for a
+total order would call that free landing a fork (see `holder`). When no version
+contains the rest, the copies are *incomparable*: no ref in the queue holds the union,
 and whichever lands first defines the file until someone merges the others by
 hand. Git will not say so. Two incomparable copies conflict exactly as loudly as
 two copies one commit apart, and a resolver taking "theirs" on a conflict in a
 checker is choosing its semantics without being told that is the choice.
 
-Measured on the queue this was written against, 89 open heads:
+Measured on the queue of 2026-11-09, 130 open heads — the counts move with the
+queue, the shapes do not:
 
     $ python3 scripts/queue_forks.py
-    54 path(s) carried in more than one version
-     7 with a total order — land the tip and the rest arrive inside it
-    47 forked — no ref in the queue holds the union
+    130 head(s) read
+    64 path(s) carried in more than one version
+    16 held — one version contains the rest; land it and they arrive inside it
+    48 forked — no ref in the queue holds the union, so whoever lands first decides
 
-The widest is `anantys.qa/SKILL.md` at 33 incomparable versions, which is the
-queue working as intended: thirty-three heads each fixing one defect in the
-file every role reads. That number is a cost, not a bug. Restricted to the
-tooling (`--prefix scripts/`) it is 19 forked of 22, and those are a bug:
-twenty-odd checkers exist in copies that disagree about what they reject.
+The widest is `anantys.qa/SKILL.md` at 49 incomparable versions, which is the
+queue working as intended: forty-nine heads each fixing one defect in the file
+every role reads. That number is a cost, not a bug. Restricted to the tooling
+(`--prefix scripts/`) it is 19 forked of 26, and those are a bug: twenty-odd
+checkers exist in copies that disagree about what they reject.
 
-`scripts/check_plugins.py` is the clearest, at five incomparable versions over
-thirteen open heads, and the fork is not cosmetic. Four of those heads carry the
-copy that requires a skill's frontmatter `name:` to equal its directory, dot
-included; nine carry the copy that sanitizes the directory name first. A booted
-loader settles which is right: a skill is exposed under its *directory* name
-with every character outside `[A-Za-z0-9_-]` replaced, and the frontmatter
-`name:` is read by nothing — a tree declaring `anantys.qa`, a tree declaring
-`anantys-qa` and a tree declaring neither all expose `anantys-qa` (CLI 2.1.278,
-four installs into sealed config directories). So four heads hold the gate to a
-name no session produces. One fork of nineteen, and the one whose wrong
-resolution reddens a tree assembled from individually-green heads.
+`scripts/check_plugins.py` is the clearest, at five incomparable versions, and
+the fork is not cosmetic. Some of those heads carry the copy that requires a
+skill's frontmatter `name:` to equal its directory, dot included; the rest carry
+the copy that sanitizes the directory name first. A booted loader settles which
+is right: a skill is exposed under its *directory* name with every character
+outside `[A-Za-z0-9_-]` replaced, and the frontmatter `name:` is read by nothing
+— a tree declaring `anantys.qa`, a tree declaring `anantys-qa` and a tree
+declaring neither all expose `anantys-qa` (CLI 2.1.278, four installs into
+sealed config directories). So some heads hold the gate to a name no session
+produces. One fork of nineteen, and the one whose wrong resolution reddens a
+tree assembled from individually-green heads.
 
 So this is a report and not a gate. A fork is a standing property of the queue,
 owned by no single head — the same reason `check_version_bump` warns rather than
@@ -54,7 +60,6 @@ is the superset that includes the orphan branches with no PR.
 
 import argparse
 import collections
-import itertools
 import json
 import subprocess
 import sys
@@ -116,42 +121,62 @@ def touched(ref, path):
     return (out or "").strip() or None
 
 
-def classify(commits, is_ancestor):
-    """CHAIN when every pair of version-commits is ordered, FORK otherwise.
+def holder(commits, is_ancestor):
+    """The one version-commit that contains every other, or None when there is none.
 
     Pure, so the ancestry predicate is injected: the shape of the answer is
     combinatorial and the shape of the question is a git call, and only the first
     is worth testing exhaustively.
 
-    A single version is a chain of one. A version whose commit git could not name
-    (``None`` — the path arrived in the ref's initial import, or history was
-    rewritten) is incomparable with everything, including itself, so it forks:
-    reporting a path as safe on the strength of an unknown position is the one
-    error this function must not make.
+    This is a **maximum**, not a total order, and the difference is the whole
+    point. Land-the-tip is free exactly when some copy contains the rest —
+    which does not require the copies to be comparable *to each other*. Two
+    siblings both contained by a later third are reconciled by that third;
+    demanding every pair be ordered calls that shape a fork and sends a lander
+    to merge by hand a union the queue already holds. A set that is totally
+    ordered always has a maximum, so no real fork is missed by asking the
+    weaker question.
+
+    A version whose commit git could not name (``None`` — the path arrived in
+    the ref's initial import, or history was rewritten) is incomparable with
+    everything, including itself, so nothing holds the set: reporting a path as
+    safe on the strength of an unknown position is the one error this function
+    must not make.
+    """
+    if any(c is None for c in commits):
+        return None
+    for candidate in commits:
+        if all(is_ancestor(other, candidate) for other in commits if other != candidate):
+            return candidate
+    return None
+
+
+def classify(commits, is_ancestor):
+    """CHAIN when one version-commit contains the rest, FORK otherwise.
+
+    A single version is a chain of one.
     """
     if len(commits) < 2:
         return CHAIN
-    if any(c is None for c in commits):
-        return FORK
-    return CHAIN if all(
-        is_ancestor(a, b) or is_ancestor(b, a)
-        for a, b in itertools.combinations(commits, 2)
-    ) else FORK
+    return CHAIN if holder(commits, is_ancestor) else FORK
 
 
 def survey(found, position, is_ancestor):
-    """[(path, verdict, [(commit, [refs])])] for the multi-version paths, worst first.
+    """[(path, verdict, [(commit, [refs])], tip)] for the multi-version paths, worst first.
 
     ``position`` maps (ref, path) to a commit so the caller supplies history the
-    same way it supplies ancestry.
+    same way it supplies ancestry. ``tip`` is the version-commit that contains
+    the rest (None on a fork) — the headline tells a lander to land it, so the
+    row has to name it.
     """
     rows = []
     for path, blobs in found.items():
         if len(blobs) < 2:
             continue
         carriers = [(position(refs[0], path), sorted(refs)) for refs in blobs.values()]
-        verdict = classify([c for c, _ in carriers], is_ancestor)
-        rows.append((path, verdict, sorted(carriers, key=lambda c: -len(c[1]))))
+        tip = holder([c for c, _ in carriers], is_ancestor)
+        verdict = FORK if tip is None else CHAIN
+        rows.append((path, verdict, sorted(carriers, key=lambda c: -len(c[1])), tip))
     rows.sort(key=lambda row: (row[1] != FORK, -len(row[2]), row[0]))
     return rows
 
@@ -159,14 +184,15 @@ def survey(found, position, is_ancestor):
 def report(rows, refs_read, limit):
     """The lines to print. Pure, so the counts are testable without a repository."""
     forks = [r for r in rows if r[1] == FORK]
+    held = [r for r in rows if r[1] != FORK]
     lines = [
         f"{len(refs_read)} head(s) read",
         f"{len(rows)} path(s) carried in more than one version",
-        f"{len(rows) - len(forks)} with a total order — land the tip and the rest arrive inside it",
+        f"{len(held)} held — one version contains the rest; land it and they arrive inside it",
         f"{len(forks)} forked — no ref in the queue holds the union, so whoever lands first decides",
         "",
     ]
-    for path, verdict, carriers in forks[:limit]:
+    for path, _verdict, carriers, _tip in forks[:limit]:
         lines.append(f"FORK  {len(carriers)} versions  {path}")
         for commit, refs in carriers:
             at = commit[:8] if commit else "untraced"
@@ -175,6 +201,13 @@ def report(rows, refs_read, limit):
             lines.append(f"        {at}  {len(refs):>2} head(s)  {shown}{more}")
     if len(forks) > limit:
         lines.append(f"... {len(forks) - limit} more forked path(s)")
+    for path, _verdict, carriers, tip in held[:limit]:
+        at = tip[:8]
+        holders = next(refs for commit, refs in carriers if commit == tip)
+        shown = ", ".join(r.split("/", 1)[-1] for r in holders[:3])
+        lines.append(f"HELD  {len(carriers)} versions  {path} — land {at} ({shown})")
+    if len(held) > limit:
+        lines.append(f"... {len(held) - limit} more held path(s)")
     return lines
 
 

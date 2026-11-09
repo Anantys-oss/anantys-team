@@ -29,12 +29,22 @@ def chain_ancestry(order):
 
 
 def tree_ancestry(parents):
-    """`is_ancestor` for a {commit: parent-or-None} forest."""
+    """`is_ancestor` for a {commit: parent | (parents…) | None} graph.
+
+    A tuple of parents is how a merge is spelled, which is the shape that tells
+    a total order apart from a maximum.
+    """
 
     def walk(node):
-        while node is not None:
+        stack, seen = [node], set()
+        while stack:
+            node = stack.pop()
+            if node is None or node in seen:
+                continue
+            seen.add(node)
             yield node
-            node = parents[node]
+            parent = parents[node]
+            stack.extend(parent if isinstance(parent, tuple) else [parent])
 
     return lambda a, b: a in set(walk(b))
 
@@ -72,6 +82,37 @@ class TestClassify(unittest.TestCase):
 
     def test_a_lone_untraced_version_also_forks(self):
         self.assertEqual(qf.classify([None, None], lambda a, b: True), qf.FORK)
+
+    def test_two_siblings_a_third_contains_are_held_not_forked(self):
+        # a -> b, a -> c, and d descends from both: d holds the union, so the
+        # work is free even though b and c are incomparable to each other.
+        is_ancestor = tree_ancestry({"a": None, "b": "a", "c": "a", "d": ("b", "c")})
+        self.assertEqual(qf.classify(["b", "c", "d"], is_ancestor), qf.CHAIN)
+        self.assertEqual(qf.holder(["b", "c", "d"], is_ancestor), "d")
+
+
+class TestHolder(unittest.TestCase):
+    def test_the_tip_of_a_line_holds_it(self):
+        order = ["a", "b", "c"]
+        self.assertEqual(qf.holder(order, chain_ancestry(order)), "c")
+
+    def test_the_tip_is_found_wherever_it_sits_in_the_input(self):
+        order = ["a", "b", "c"]
+        self.assertEqual(qf.holder(["c", "a", "b"], chain_ancestry(order)), "c")
+
+    def test_a_single_version_holds_itself(self):
+        self.assertEqual(qf.holder(["a"], lambda x, y: False), "a")
+
+    def test_siblings_with_no_descendant_are_held_by_nothing(self):
+        is_ancestor = tree_ancestry({"a": None, "b": "a", "c": "a"})
+        self.assertIsNone(qf.holder(["b", "c"], is_ancestor))
+
+    def test_a_descendant_of_only_some_siblings_does_not_hold_the_set(self):
+        is_ancestor = tree_ancestry({"a": None, "b": "a", "c": "a", "d": "b"})
+        self.assertIsNone(qf.holder(["b", "c", "d"], is_ancestor))
+
+    def test_an_untraced_version_means_nothing_holds_the_set(self):
+        self.assertIsNone(qf.holder(["a", None], lambda x, y: True))
 
 
 class TestSurvey(unittest.TestCase):
@@ -122,44 +163,63 @@ class TestSurvey(unittest.TestCase):
         self.assertEqual(len(seen), 2)
         self.assertEqual({ref for ref, _ in seen}, {"r2", "r3"})
 
+    def test_a_held_row_names_the_version_that_contains_the_rest(self):
+        found = {"p": {"s1": ["r1"], "s2": ["r2"]}}
+        rows = qf.survey(found, self.position, chain_ancestry(["a", "b"]))
+        self.assertEqual(rows[0][3], "b")
+
+    def test_a_forked_row_names_no_tip(self):
+        found = {"p": {"s1": ["r1"], "s2": ["r2"]}}
+        rows = qf.survey(found, self.position, tree_ancestry({"a": None, "b": None}))
+        self.assertIsNone(rows[0][3])
+
 
 class TestReport(unittest.TestCase):
-    def test_counts_separate_chains_from_forks(self):
+    def test_counts_separate_held_paths_from_forks(self):
         rows = [
-            ("a", qf.FORK, [("c1", ["origin/x"]), ("c2", ["origin/y"])]),
-            ("b", qf.CHAIN, [("c1", ["origin/x"]), ("c2", ["origin/y"])]),
+            ("a", qf.FORK, [("c1", ["origin/x"]), ("c2", ["origin/y"])], None),
+            ("b", qf.CHAIN, [("c1", ["origin/x"]), ("c2", ["origin/y"])], "c2"),
         ]
         lines = qf.report(rows, ["origin/x", "origin/y"], limit=20)
         self.assertIn("2 head(s) read", lines[0])
         self.assertIn("2 path(s) carried in more than one version", lines[1])
-        self.assertIn("1 with a total order", lines[2])
+        self.assertIn("1 held", lines[2])
         self.assertIn("1 forked", lines[3])
 
-    def test_only_forked_paths_are_detailed(self):
-        rows = [("kept", qf.FORK, [("c1", ["origin/x"])]),
-                ("quiet", qf.CHAIN, [("c1", ["origin/x"])])]
+    def test_a_held_path_names_the_commit_to_land_and_who_carries_it(self):
+        rows = [("b", qf.CHAIN,
+                 [("c1" * 20, ["origin/koan/older"]), ("deadbeef" * 5, ["origin/koan/tip"])],
+                 "deadbeef" * 5)]
+        body = "\n".join(qf.report(rows, ["origin/koan/tip"], limit=20))
+        self.assertIn("HELD", body)
+        self.assertIn("land deadbeef", body)
+        self.assertIn("koan/tip", body)
+
+    def test_only_forked_paths_list_their_versions(self):
+        rows = [("kept", qf.FORK, [("c1", ["origin/x"])], None),
+                ("quiet", qf.CHAIN, [("c1", ["origin/x"])], "c1")]
         body = "\n".join(qf.report(rows, ["origin/x"], limit=20))
-        self.assertIn("kept", body)
-        self.assertNotIn("quiet", body)
+        self.assertIn("FORK  1 versions  kept", body)
+        self.assertNotIn("FORK  1 versions  quiet", body)
 
     def test_head_names_lose_the_remote_prefix(self):
-        rows = [("p", qf.FORK, [("c0ffee12ab", ["origin/koan/some-head"])])]
+        rows = [("p", qf.FORK, [("c0ffee12ab", ["origin/koan/some-head"])], None)]
         body = "\n".join(qf.report(rows, ["origin/koan/some-head"], limit=20))
         self.assertIn("koan/some-head", body)
         self.assertIn("c0ffee12", body)
 
     def test_a_long_carrier_list_is_summarised(self):
         refs = [f"origin/koan/h{i}" for i in range(6)]
-        rows = [("p", qf.FORK, [("c1", refs)])]
+        rows = [("p", qf.FORK, [("c1", refs)], None)]
         body = "\n".join(qf.report(rows, refs, limit=20))
         self.assertIn("(+3)", body)
 
     def test_an_untraced_version_prints_as_untraced(self):
-        rows = [("p", qf.FORK, [(None, ["origin/x"])])]
+        rows = [("p", qf.FORK, [(None, ["origin/x"])], None)]
         self.assertIn("untraced", "\n".join(qf.report(rows, ["origin/x"], limit=20)))
 
     def test_the_limit_truncates_and_says_so(self):
-        rows = [(f"p{i}", qf.FORK, [("c1", ["origin/x"])]) for i in range(5)]
+        rows = [(f"p{i}", qf.FORK, [("c1", ["origin/x"])], None) for i in range(5)]
         body = "\n".join(qf.report(rows, ["origin/x"], limit=2))
         self.assertIn("... 3 more forked path(s)", body)
         self.assertNotIn("p4", body)
@@ -168,6 +228,11 @@ class TestReport(unittest.TestCase):
         lines = qf.report([], ["origin/x"], limit=20)
         self.assertIn("1 head(s) read", lines[0])
         self.assertIn("0 forked", lines[3])
+
+    def test_the_held_limit_truncates_and_says_so(self):
+        rows = [(f"p{i}", qf.CHAIN, [("c1", ["origin/x"])], "c1") for i in range(5)]
+        body = "\n".join(qf.report(rows, ["origin/x"], limit=2))
+        self.assertIn("... 3 more held path(s)", body)
 
 
 class TestAgainstAGitRepository(unittest.TestCase):
@@ -214,6 +279,13 @@ class TestAgainstAGitRepository(unittest.TestCase):
         # A sibling that rewrote the same file independently.
         cls._run("checkout", "-q", "-b", "sibling", "base")
         cls._commit("scripts/gate.py", "other\n", "sibling")
+        # A head that merged the sibling into the line: incomparable parents, and
+        # a commit that contains both.
+        cls._run("checkout", "-q", "-b", "union", "chainB")
+        cls._run("merge", "-q", "--no-commit", "sibling")
+        (cls.root / "scripts/gate.py").write_text("v2+other\n", encoding="utf-8")
+        cls._run("add", "-A")
+        cls._run("commit", "-m", "union")
         cls._run("checkout", "-q", "main")
         return True
 
@@ -271,6 +343,16 @@ class TestAgainstAGitRepository(unittest.TestCase):
         )
         self.assertEqual([(r[0], r[1]) for r in rows], [("scripts/gate.py", qf.FORK)])
         self.assertEqual(len(rows[0][2]), 4, "v0, v1, v2 and the sibling's own")
+
+    def test_a_head_that_merged_the_sibling_holds_the_union(self):
+        rows = qf.survey(
+            qf.versions(["chainA", "sibling", "union"], "scripts/"),
+            qf.touched, self._is_ancestor,
+        )
+        path, verdict, carriers, tip = rows[0]
+        self.assertEqual((path, verdict), ("scripts/gate.py", qf.CHAIN))
+        self.assertEqual(len(carriers), 3, "v1, the sibling's own, and the merge")
+        self.assertEqual(tip, self._run("rev-parse", "union").stdout.strip())
 
     def test_a_file_no_head_changed_never_reaches_the_report(self):
         rows = qf.survey(
