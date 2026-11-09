@@ -7,9 +7,10 @@ The `anantys-team-agents` plugin gives Claude a set of **roles** — each one a 
 like a teammate would:
 
 Installed, the roles are **namespaced by the plugin** — the skills additionally have their
-dots rewritten to hyphens, because a skill's identity is its *directory* name and the loader
-sanitizes it. The names below are the ones the session actually exposes; typing `/anantys`
-autocompletes all seven.
+dots rewritten to hyphens, because a skill registers under its *directory* name with every
+character outside `[A-Za-z0-9_-]` replaced. The names below are the ones the session actually
+exposes; the `anantys-team-agents:` prefix is optional (see [Command names](#command-names)),
+and typing `/anantys` autocompletes all seven.
 
 | Role | Invoke | Pattern | What they do |
 |------|--------|---------|--------------|
@@ -45,23 +46,55 @@ More roles can be added over time without changing how you install the team.
 /plugin install anantys-team-agents@anantys-oss
 ```
 
-Then invoke a skill directly. Every command is prefixed `anantys-team-agents:` — type
-`/anantys` and let the completion fill it in:
+Then invoke a skill directly. The bare name is enough — type `/anantys` and let the
+completion fill it in:
 
 ```bash
-/anantys-team-agents:anantys-design  https://dev.example.com/pricing — fix the hero spacing
-/anantys-team-agents:anantys-ops     audit example.com, hub /blog, target "trail shoes 2026"
-/anantys-team-agents:anantys-debug   the cart total is wrong on checkout — here's the repro
-/anantys-team-agents:anantys-review  review the branch agent/123-add-export — safe to merge?
+/anantys-design  https://dev.example.com/pricing  — fix the hero spacing and button contrast
+/anantys-ops     audit example.com, hub /blog, target "best running shoes" "trail shoes 2026"
+/anantys-debug   the cart total is wrong on the checkout page — here's the repro
+/anantys-review  review the branch agent/123-add-export — is it safe to merge?
 
 # the QA role takes a subcommand
-/anantys-team-agents:anantys-qa  init                 # describe your environments, once
-/anantys-team-agents:anantys-qa  plan 206-checkout    # derive from specs/206-checkout/tasks.md
-/anantys-team-agents:anantys-qa  plan --from pr:42    # …or from a PR that's ready on GitHub
-/anantys-team-agents:anantys-qa  plan --brief feat.md # …or from a hand-written feature brief
-/anantys-team-agents:anantys-qa  run                  # walk it in a real browser, local env
-/anantys-team-agents:anantys-qa  run --env staging    # …or a deployed env — additive only
-/anantys-team-agents:anantys-qa  report               # fix brief to paste into a dev session
+/anantys-qa      init                     # one-off: describe your environments (local, staging…)
+/anantys-qa      plan 206-checkout        # derive the campaign from specs/206-checkout/tasks.md
+/anantys-qa      plan --from pr:42        # …or from a PR that's ready on GitHub
+/anantys-qa      plan --brief feat.md     # …or from a hand-written feature brief
+/anantys-qa      run                      # walk it in a real browser, on the local env
+/anantys-qa      run --env staging        # …or on a deployed env — never reset, additive only
+/anantys-qa      report                   # fix brief to paste into a dev session
+```
+
+### Command names
+
+A skill's command id is `<plugin>:<directory name, sanitized>` — every character outside
+`[A-Za-z0-9_-]` becomes `-`, so `skills/anantys.qa/` registers as
+`anantys-team-agents:anantys-qa`. Agents register from their **filename** with the dot
+intact, which is why `anantys.code-auditor` is spelled that way.
+
+That was measured, not inferred — the frontmatter `name:` looks like it should decide and
+does not:
+
+| What you change | What the session exposes |
+|---|---|
+| `skills/anantys.design/`, `name: anantys.design` | `anantys-team-agents:anantys-design` |
+| same dir, `name: zzz.renamed` | `anantys-team-agents:anantys-design` — unchanged |
+| `skills/zzz.dirmoved/`, `name: anantys.design` | `anantys-team-agents:zzz-dirmoved` |
+
+Lookup is exact string equality against the registered id and its bare `:`-suffix. So
+`/anantys-qa` and `/anantys-team-agents:anantys-qa` both reach the skill, and **`/anantys.qa`
+reaches nothing**: no registered id equals it and none ends with `:anantys.qa`.
+
+The trap: `claude plugin details` prints the directory name **unsanitized** —
+`Skills (5) anantys.debug, anantys.design, …` — so it shows the one spelling that routes
+nothing, and shows it whatever the frontmatter says. It is an inventory label; reading that
+table as the registry is how the dots got restored here once already. The registry is the
+session's own `init` event, and asking it costs nothing:
+
+```bash
+claude --plugin-dir ./plugins/anantys-team-agents \
+       --print --output-format stream-json --verbose x </dev/null | head -1
+# .skills / .agents / .slash_commands — verified on claude 2.1.278
 ```
 
 ## Repository layout
@@ -89,13 +122,8 @@ anantys-team/
 - **plugin** = the installable, versioned unit a user enables in one shot.
 - **skills** = the actual capabilities Claude invokes.
 
-A skill's installed name comes from its **directory**, not from the `name:` in its frontmatter,
-and non-alphanumerics are rewritten — so `skills/anantys.qa/` ships as `anantys-qa`. Agent names
-come from their file and keep the dot. To check what a session really exposes, ask it:
-
-```bash
-claude --print --output-format stream-json --verbose x | head -1   # .skills / .agents / .slash_commands
-```
+See [Command names](#command-names) for how a directory, a frontmatter `name:` and an agent
+filename each turn into the string you type.
 
 ## License
 
