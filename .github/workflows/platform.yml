@@ -20,3 +20,9 @@ jobs:
       # before this gate existed, and reddening every PR over it would teach
       # people to ignore the gate. Errors fail; warnings are printed.
       - run: python3 scripts/check_platform.py
+      # The other half of "ask the loader": `check_platform` asks what `plugin
+      # validate` rules on, this one asks what the session actually registered.
+      # It belongs in this job and no other — it is the second gate that needs a
+      # real CLI, and the readout it reads is emitted before the first model call,
+      # so it costs no token and needs no credential on this runner.
+      - run: python3 scripts/check_registry.py
