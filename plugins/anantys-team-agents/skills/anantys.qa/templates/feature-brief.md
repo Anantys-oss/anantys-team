@@ -1,4 +1,4 @@
-# Feature brief — the `--brief` / `--from linear:` / `--from pr:` source for `/anantys.qa plan`
+# Feature brief — the `--brief` / `--from linear:` / `--from pr:` source for `/anantys-team-agents:anantys-qa plan`
 
 The universal, non-spec-kit input to `plan`. It plays the two roles a spec-kit dir plays —
 **requirements** (what each assertion cites) and **what shipped** (what was actually built) — in
