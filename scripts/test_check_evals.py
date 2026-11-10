@@ -558,6 +558,18 @@ class TestFixtureSupply(unittest.TestCase):
             f"expected the fixture-supply error, got {errors}",
         )
 
+    def test_a_pattern_a_printf_writes_into_the_fixture_is_caught(self):
+        # The same defect through the other write idiom. This is the one the
+        # rule used to pass: it read heredocs only, so a grader scoring a
+        # `printf`-written line was green whatever the run concluded.
+        scaffold = GOOD_SCAFFOLD + "printf 'returns 108.00\\n' > spec.md\n"
+        with self.fixture(scaffold) as fixture:
+            errors = [e for e in fixture.errors() if "asserts-the-value" in e]
+        self.assertTrue(
+            any("satisfied by spec.md" in e for e in errors),
+            f"expected the fixture-supply error, got {errors}",
+        )
+
     def test_the_same_pattern_is_clean_when_the_fixture_does_not_supply_it(self):
         with self.fixture(GOOD_SCAFFOLD) as fixture:
             self.assertEqual(fixture.errors(), [])
@@ -587,11 +599,40 @@ class TestFixtureSupply(unittest.TestCase):
         )
         self.assertEqual(written, {"specs/412-order-total/spec.md": "AC2."})
 
-    def test_a_printf_written_file_is_not_read_as_fixture_content(self):
-        # Only the heredoc idiom is parsed. The handful of `printf` writes in
-        # this suite hold one line of code each, and keeping the parser to one
-        # shape is what keeps this checker shell-free.
-        self.assertEqual(check_evals.scaffold_fixture("printf 'x\\n' > a.js\n"), {})
+    def test_a_printf_written_file_is_read_as_fixture_content(self):
+        # The `printf` writes in this suite are not all one line of code: the
+        # four-line `package.json` one of them writes carries the campaign slug
+        # a grader would plausibly assert. `\n` is decoded so a pattern cannot
+        # match across a line break that is not there.
+        self.assertEqual(
+            check_evals.scaffold_fixture("printf 'a\\nb\\n' > a.js\n"),
+            {"a.js": "a\nb\n"},
+        )
+
+    def test_an_echo_written_file_is_read_without_decoding_escapes(self):
+        # `echo` without `-e` emits the backslash literally, so decoding here
+        # would invent a line break the file does not have.
+        self.assertEqual(
+            check_evals.scaffold_fixture('echo "a\\nb" > a.js\n'),
+            {"a.js": "a\\nb"},
+        )
+
+    def test_a_redirect_to_dev_null_is_not_fixture_content(self):
+        # Silencing a command is not building a file.
+        self.assertEqual(
+            check_evals.scaffold_fixture("printf 'x\\n' > /dev/null\n"), {}
+        )
+
+    def test_both_writes_to_one_path_are_read(self):
+        # Two scaffolds here `printf` a file, commit it, then `printf` over it.
+        # A pattern satisfied by either version scores the fixture, so both
+        # bodies have to be in what the rule reads.
+        self.assertEqual(
+            check_evals.scaffold_fixture(
+                "printf 'v1\\n' > a.js\nprintf 'v2\\n' > a.js\n"
+            ),
+            {"a.js": "v1\n\nv2\n"},
+        )
 
     def test_a_case_with_no_witness_row_is_an_error(self):
         with SuiteFixture(readme=GOOD_README.replace("| `a-case` |", "| `b` |")) as f:

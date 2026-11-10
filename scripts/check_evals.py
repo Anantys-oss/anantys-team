@@ -154,7 +154,7 @@ authoring time:
      `last_message` asks for an action in the closing prose, so it fails every
      correct run — and a `scaffold.sh` gutted to `exit 0` leaves every grader in
      the case scoring an empty directory, with the fixture-supply rule reading
-     heredocs that are no longer there and passing on that absence. Both were
+     writes that are no longer there and passing on that absence. Both were
      measured as MISSED by this checker and by the loader at `--max-cost-usd 0`
      (CLI 2.1.278, one mutation at a time) before the rules below existed. The
      scaffold rule asks for a *creating command*, not a heredoc: two scaffolds
@@ -440,42 +440,63 @@ HEREDOC = re.compile(
 # A scaffold command that puts something in the workspace. Every grader in a
 # case is a verdict about the tree that case's own `scaffold.sh` built, so a
 # scaffold gutted to `exit 0` leaves all of them resolving against an empty
-# directory — and the fixture-supply rule, which reads this file's heredocs,
-# then has nothing to read and passes. Two scaffolds in this suite legitimately
-# write no heredoc (they `git init` a repo and `printf` into it), so the rule is
+# directory — and the fixture-supply rule, which reads this file's writes, then
+# has nothing to read and passes. Two scaffolds in this suite legitimately write
+# no heredoc (they `git init` a repo and `printf` into it), so the rule is
 # "creates something", not "writes a heredoc". `/dev/null` is excluded: a
 # redirect there is how a scaffold silences a command, not how it builds a file.
 WORKSPACE_WRITE = re.compile(
     r">>?\s*(?!/dev/null)[^\s|&>]|^\s*(?:git\s+(?:init|clone)|mkdir|touch|cp|mv|ln)\b",
     re.M,
 )
+# The other idiom that puts content in the workspace: a quoted `printf`/`echo`
+# redirected to a path. The fixture-supply rule used to read heredocs only, on
+# the premise that the `printf` writes in this suite "hold one line of code
+# each". They do not: `qa-will-not-guess-the-deployed-build/scaffold.sh` writes
+# a four-line `package.json` whose `"name": "subscribe-funnel"` is the campaign
+# slug, and both review scaffolds write a two-line `widgets.py`. A `contains`
+# grader asserting any of that scored the fixture, and the rule read nothing and
+# passed. `/dev/null` is excluded for the same reason as above.
+QUOTED_WRITE = re.compile(
+    r"^(?P<cmd>printf|echo)\s+(?:-\S+\s+)*"
+    r"(?P<quote>['\"])(?P<body>.*)(?P=quote)"
+    r"\s*>>?\s*(?!/dev/null)(?P<path>\S+)$"
+)
 
 
 def scaffold_fixture(script: str) -> dict[str, str]:
-    """The files a scaffold writes through a heredoc, path to content.
+    """The files a scaffold writes, path to content.
 
-    Every file in this suite that carries prose is written as
-    `cat > <path> <<'TAG'`; the handful written with `printf` hold one line of
-    code each. Reading the heredocs keeps this checker what the rest of it is —
-    static, on a bare `python3`, with no shell and no temp tree — and the thing
-    a pattern must not be satisfied by is the file content, never the path: a
-    witness naming `412-order-total/spec.md` matches the path it asserts a read
-    of, which is the assertion, not a defect.
+    Two idioms are read: `cat > <path> <<'TAG'`, which is how every file in this
+    suite that carries prose is written, and a quoted `printf`/`echo` redirected
+    to a path, which is how the shorter ones are. Reading the source text keeps
+    this checker what the rest of it is — static, on a bare `python3`, with no
+    shell and no temp tree — and the thing a pattern must not be satisfied by is
+    the file content, never the path: a witness naming `412-order-total/spec.md`
+    matches the path it asserts a read of, which is the assertion, not a defect.
     """
     files: dict[str, list[str]] = {}
     lines = script.splitlines()
     index = 0
     while index < len(lines):
-        match = HEREDOC.match(lines[index].strip())
+        line = lines[index].strip()
         index += 1
+        quoted = QUOTED_WRITE.match(line)
+        if quoted:
+            body = quoted["body"]
+            if quoted["cmd"] == "printf":
+                body = body.replace("\\n", "\n").replace("\\t", "\t")
+            files.setdefault(quoted["path"], []).append(body)
+            continue
+        match = HEREDOC.match(line)
         if not match:
             continue
         path, tag = match.groups()
-        body: list[str] = []
+        body_lines: list[str] = []
         while index < len(lines) and lines[index].strip() != tag:
-            body.append(lines[index])
+            body_lines.append(lines[index])
             index += 1
-        files.setdefault(path, []).append("\n".join(body))
+        files.setdefault(path, []).append("\n".join(body_lines))
     return {path: "\n".join(bodies) for path, bodies in files.items()}
 
 
@@ -776,7 +797,7 @@ def check_scaffold_builds(where, script: pathlib.Path) -> list[str]:
         f"{where}: {script.name} creates nothing — no redirect to a file and no "
         f"`git init` / `mkdir` / `cp` / `touch`, so the run starts in an empty "
         f"directory and every grader is a verdict about a workspace the case "
-        f"does not describe. The fixture-supply rule reads this file's heredocs "
+        f"does not describe. The fixture-supply rule reads this file's writes "
         f"and finds none, so it passes on the same absence"
     ]
 

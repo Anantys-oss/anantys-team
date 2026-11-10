@@ -419,12 +419,23 @@ grader — the one the paragraph above says a budget ceiling takes away. Nothing
 measured this: the vector rows check a pattern against hand-written spellings,
 never against the workspace the case's own `scaffold.sh` builds.
 
-`check_evals.py` now reads the scaffold's `cat > … <<'TAG'` heredocs and runs
-every non-witness `contains` pattern against the file contents they write. One
-limit worth stating rather than fixing: `the-contract-was-read` is satisfied by
-reading the *plan*, because `qa-plan.md`'s header links `.anantys/qa.md`. It is
-the witness, so the rule exempts it, and a run that opened the plan did happen —
-which is all that grader is for.
+`check_evals.py` now reads the scaffold's `cat > … <<'TAG'` heredocs **and its
+quoted `printf`/`echo` redirects**, and runs every non-witness `contains`
+pattern against the file contents they write. The second idiom was outside the
+rule until it was measured against the real tree: executing all ten scaffolds
+and diffing the files on disk against the files the parser saw left six
+unreadable across four cases — including the four-line `package.json` that
+carries `"name": "subscribe-funnel"`, the campaign slug, and the two-line
+`widgets.py` both review cases build. The parser's carve-out was justified in
+its own docstring by the claim that the `printf` writes "hold one line of code
+each", which stopped being true the moment one of them wrote JSON.
+
+One limit worth stating rather than fixing: `the-contract-was-read` is satisfied
+by reading the *plan*, because `qa-plan.md`'s header links `.anantys/qa.md`. It
+is the witness, so the rule exempts it, and a run that opened the plan did
+happen — which is all that grader is for. A second: `tests/__init__.py` is
+`touch`ed, not written, so it has no content for a pattern to be satisfied by —
+the parser not seeing it costs nothing.
 
 ## Not covered
 
