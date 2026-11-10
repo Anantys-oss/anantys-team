@@ -446,6 +446,50 @@ class Baseline(unittest.TestCase):
         self.assertIn("fixed, so delete", report)
 
 
+class WaiverAnchor(Baseline):
+    """A declaration is not voided by where the reader is standing.
+
+    `main`'s root is the caller's choice — the usage line takes it — and the
+    waiver key was built from it, so sweeping a subtree made every entry in the
+    baseline miss. The gate then reported the declared error *and* reported that
+    same error as fixed, in one run. Inheriting `Baseline`'s cases is the
+    positive control: at the repo root the two anchors coincide, so none of them
+    may change.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.addCleanup(setattr, c, "REPO", c.REPO)
+        c.REPO = self.root.resolve()
+
+    def _run_from(self, root):
+        import contextlib
+        import io
+
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            code = c.main(root)
+        return code, out.getvalue()
+
+    def test_a_declared_error_survives_a_subtree_sweep(self):
+        self._declare(f"{self.OFFENCE}\n")
+        code, report = self._run_from(self.root / "plugins/p")
+        self.assertEqual(code, 0)
+        self.assertIn("BASE ", report)
+
+    def test_the_same_sweep_does_not_call_the_live_waiver_fixed(self):
+        """The contradiction: one run cannot both charge and discharge an error."""
+        self._declare(f"{self.OFFENCE}\n")
+        self.assertNotIn("fixed, so delete", self._run_from(self.root / "plugins/p")[1])
+
+    def test_a_subject_outside_the_repo_keeps_the_root_spelling(self):
+        """No baseline line can name it, so the root is the only anchor left."""
+        c.REPO = self.root / "elsewhere"
+        code, report = self._run_from(self.root)
+        self.assertEqual(code, 1)
+        self.assertIn("ERROR plugins/p/skills/s/SKILL.md", report)
+
+
 class SubjectSet(unittest.TestCase):
     """Which files the gate governs, which is not `plugins/*/`.
 

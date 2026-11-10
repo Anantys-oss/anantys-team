@@ -79,6 +79,11 @@ from pathlib import Path
 
 BASELINE = Path(__file__).with_name("mcp-grants-baseline.txt")
 
+# The repo whose layout the baseline's paths are written against. Anchored to
+# this file, not to `root`, because `root` is the caller's choice — see
+# `rel_to_repo`.
+REPO = Path(__file__).resolve().parent.parent
+
 #: Pages of `tools/list` this gate will follow before calling the server unprobed.
 #: A server that never clears its cursor would otherwise be read until the
 #: deadline; no real server needs ten pages to name its tools.
@@ -377,6 +382,27 @@ def baseline() -> set[str]:
     return {s for s in (line.strip() for line in lines) if s and not s.startswith("#")}
 
 
+def rel_to_repo(path: Path, root: Path) -> Path:
+    """`path` spelled as the baseline spells it: relative to the repo.
+
+    `check` already refuses to synthesise a reported path from a plugin's name,
+    because `baseline()` matches on that exact string and a guessed path can be
+    named by no line. Deriving it from `root` is the same defect one level out:
+    `root` is the caller's choice, so under
+    `check_mcp_grants.py plugins/anantys-team-agents` every declared error
+    missed, and the gate printed `ERROR` for the entry and "fixed, so delete"
+    for that same entry in one run. A declaration cannot be voided by where the
+    reader is standing.
+
+    A subject outside this repo can be named by no baseline line, so it keeps
+    the root-relative spelling.
+    """
+    try:
+        return path.resolve().relative_to(REPO)
+    except ValueError:
+        return path.relative_to(root)
+
+
 def main(root: Path) -> int:
     # Every plugin in the tree, at whatever depth. `plugins/*/` was not the tree's
     # rule for where a plugin lives — `marketplace.json`'s `source` is, and it is a
@@ -400,18 +426,18 @@ def main(root: Path) -> int:
         try:
             servers = json.loads(manifest.read_text(encoding="utf-8")).get("mcpServers") or {}
         except json.JSONDecodeError as exc:
-            print(f"ERROR {manifest.relative_to(root)}: unreadable manifest ({exc})")
+            print(f"ERROR {rel_to_repo(manifest, root)}: unreadable manifest ({exc})")
             failed = True
             continue
         roles = [
-            (str(p.relative_to(root)), grants_of(p))
+            (str(rel_to_repo(p, root)), grants_of(p))
             for p in sorted(plugin_dir.glob("skills/*/SKILL.md")) + sorted(
                 plugin_dir.glob("agents/*.md")
             )
         ]
         advertised = {name: probe(spec) for name, spec in servers.items()}
         errors, warnings = check(
-            plugin, servers, roles, advertised, str(manifest.relative_to(root))
+            plugin, servers, roles, advertised, str(rel_to_repo(manifest, root))
         )
         for path, message in errors:
             entry = f"{path}: {message}"

@@ -90,6 +90,11 @@ UNBOUNDED = {
 
 BASELINE = Path(__file__).with_name("tool-grants-baseline.txt")
 
+# The repo whose layout the baseline's paths are written against. Anchored to
+# this file, not to `root`, because `root` is the caller's choice — see
+# `rel_to_repo`.
+REPO = Path(__file__).resolve().parent.parent
+
 # Shell tokens that end one command. `(` both ends and opens, so command
 # substitution is reached. See `segments`.
 SEPARATORS = {"|", "||", "&&", ";", "&", "(", ")"}
@@ -458,6 +463,28 @@ def baseline():
     return {s for s in (line.strip() for line in lines) if s and not s.startswith("#")}
 
 
+def rel_to_repo(path, root):
+    """`path` spelled as the baseline spells it: relative to the repo.
+
+    A reported path and a waiver key are one string, so they cannot be anchored
+    differently — and both were anchored on `root`, which the caller picks. The
+    gate's own usage line offers it: under
+    `check_tool_grants.py plugins/anantys-team-agents` every entry in the
+    baseline missed, so the two errors this repo has declared for months were
+    reported as `ERROR`, and the same two were reported in the same run as
+    "fixed, so delete" — advice whose only effect is to delete a live waiver and
+    make the gate red at the root too. A declaration cannot be voided by where
+    the reader is standing.
+
+    A subject outside this repo can be named by no baseline line, so it keeps
+    the root-relative spelling.
+    """
+    try:
+        return path.resolve().relative_to(REPO)
+    except ValueError:
+        return path.relative_to(root)
+
+
 def main(root):
     """Every role in the tree, at whatever depth it sits.
 
@@ -503,7 +530,7 @@ def main(root):
     declared, matched = baseline(), set()
     failed = False
     for path, p in parsed:
-        rel = path.relative_to(root)
+        rel = rel_to_repo(path, root)
         if p is None:
             print(f"ERROR {rel}: no frontmatter")
             failed = True
@@ -535,7 +562,7 @@ def main(root):
     # and lands on the only grant nothing reports. Most roles here legitimately
     # need broad shell, so this is coverage, not a ruling: it is per-tree and a
     # warning, and it names the roles so the silence is attributable.
-    bare = [str(path.relative_to(root)) for path, p in parsed if p and "Bash" in p[0]]
+    bare = [str(rel_to_repo(path, root)) for path, p in parsed if p and "Bash" in p[0]]
     if bare:
         print(
             f"WARN  {len(bare)}/{len(parsed)} roles grant bare `Bash` — unrestricted "

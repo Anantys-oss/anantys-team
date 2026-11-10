@@ -7,6 +7,11 @@
 #
 # When a line's error is gone the check prints "fixed, so delete from ..." —
 # a warning, not a failure. Delete the line in the change that fixed it.
+#
+# `<path>` is relative to the repo root, always — not to whatever root the check
+# was pointed at. See `rel_to_repo`: the key used to follow the sweep root, so a
+# subtree sweep voided every line here and reported each one as both an error and
+# a fix.
 
 plugins/anantys-team-agents/skills/anantys.qa/SKILL.md: prose commits to driving a browser but grants no browser tool
 

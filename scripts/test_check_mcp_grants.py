@@ -316,5 +316,61 @@ class SubjectSet(unittest.TestCase):
         self.assertIn("BASE ", report)
 
 
+class WaiverAnchor(SubjectSet):
+    """A declaration is not voided by where the reader is standing.
+
+    `check` already refuses to synthesise the charged path from the plugin's
+    name, because a guessed path can be named by no baseline line. Deriving it
+    from `main`'s root is the same defect one level out: the root is the
+    caller's choice, so a subtree sweep made every declared error miss and the
+    gate charged the error and discharged it in one run. Inheriting
+    `SubjectSet`'s cases is the positive control — at the repo root the two
+    anchors coincide.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.addCleanup(setattr, c, "REPO", c.REPO)
+        c.REPO = self.root.resolve()
+
+    def _run_from(self, root):
+        import contextlib
+        import io
+
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            code = c.main(root)
+        return code, out.getvalue()
+
+    def _declare_the_error(self):
+        entry = next(
+            line[len("ERROR ") :]
+            for line in self._run()[1].splitlines()
+            if line.startswith("ERROR ")
+        )
+        c.BASELINE.write_text(entry + "\n", encoding="utf-8")
+
+    def test_a_declared_error_survives_a_subtree_sweep(self):
+        self._plant("plugins/extra")
+        self._declare_the_error()
+        code, report = self._run_from(self.root / "plugins")
+        self.assertEqual(code, 0)
+        self.assertIn("BASE ", report)
+
+    def test_the_same_sweep_does_not_call_the_live_waiver_fixed(self):
+        """The contradiction: one run cannot both charge and discharge an error."""
+        self._plant("plugins/extra")
+        self._declare_the_error()
+        self.assertNotIn("fixed, so delete", self._run_from(self.root / "plugins")[1])
+
+    def test_a_subject_outside_the_repo_keeps_the_root_spelling(self):
+        """No baseline line can name it, so the root is the only anchor left."""
+        self._plant("plugins/extra")
+        c.REPO = self.root / "elsewhere"
+        code, report = self._run_from(self.root)
+        self.assertEqual(code, 1)
+        self.assertIn("plugins/extra/.claude-plugin/plugin.json", report)
+
+
 if __name__ == "__main__":
     unittest.main()

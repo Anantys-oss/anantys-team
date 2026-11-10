@@ -5,6 +5,11 @@
 # owns the fix, and forces the two to land in one order. When a line's error is
 # gone the check prints "fixed, so delete from ..." — a warning, not a failure.
 #
+# `<path>` is relative to the repo root, always — not to whatever root the check
+# was pointed at. See `rel_to_repo`: the key used to follow the sweep root, so a
+# subtree sweep voided every line here and reported each one as both an error and
+# a fix.
+#
 # The fix for the line below is one field in one file, and it is already written:
 # `origin/koan/the-browser-is-a-manifest-field` adds `mcpServers` to the manifest
 # and rewrites the 24 affected grants into the loader's namespaced form. It has no
