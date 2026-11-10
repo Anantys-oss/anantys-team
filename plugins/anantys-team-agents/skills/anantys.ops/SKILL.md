@@ -98,7 +98,7 @@ Objective: <current> -> <target> daily visitors
 ## 8. Optimization Roadmap           (Quick wins / Medium-term / Long-term, checkboxes)
 ## 9. New Landing Page Ideas         (slug, target query, est. monthly searches, priority)
 ## 10. Technical SEO Checklist       (sitemap, robots, Core Web Vitals, mobile, canonical, hreflang, internal links)
-## 11. Standing Rulings Applied      (finding, ruling id, and any ruling that lapsed this audit)
+## 11. Standing Rulings Applied      (finding, ruling id, and any ruling that ended this audit — lapsed on its value or expired on its event)
 ```
 
 ## Phase 5b: Reconcile with standing rulings
@@ -114,7 +114,15 @@ the one whose re-litigation costs the most. Summarising the file defeats it — 
 For each finding you are about to report, find the rulings whose **Scope** names its URL, its query,
 or `site`:
 
-- **Live ruling** — the current observation matches the entry's **Observed then**. Drop the finding
+- **Expired ruling** — the entry's **Ruling** is `revisit after` and its **Revisit when** condition
+  has been met. Report the finding, and say in §11 that the event arrived. **Test this before the
+  two below**: a `revisit after` ruling is the one case **Observed then** cannot expire, because the
+  deadline can pass while the value sits still — a redesign that moves the layout and not the copy
+  leaves the pin matching and the ruling reading as live forever. If **Revisit when** is `ask the
+  operator`, or the entry predates the field, ask during the run; an unanswered question is a
+  reported finding, never a live ruling.
+- **Live ruling** — the current observation matches the entry's **Observed then**, and any
+  **Revisit when** condition has not been met. Drop the finding
   from the roadmap and list it in §11 with its ruling id. If the entry has a **Still covers**
   condition and the current observation meets it, report *that* narrowed finding, not the original.
 - **Lapsed ruling** — the observation differs from **Observed then**. Report the finding, and say in
@@ -127,11 +135,15 @@ that", "not until the redesign" — **append the entry to `rulings.md` before yo
 A ruling stated in conversation and never written down lasts exactly as long as the session, and the
 next audit spends a browser walk and a report section re-deriving it.
 
-Three rules keep these entries worth reading:
+Four rules keep these entries worth reading:
 
 - **Narrow the check, never drop it.** A ruling says which version of a finding is real. Record that
   as **Still covers**, so the audit keeps catching the part the operator did not rule out.
 - **Record the reason, not just the ruling.** "Won't fix" without a why gets re-argued next audit.
+- **Give a deadline an observable form.** "Not until the redesign" names an expiry that no later
+  audit can read. Write **Revisit when** as a condition this skill can check from a dashboard or a
+  page — or as `ask the operator`, which at least makes the question due. A `revisit after` with no
+  such condition is a permanent ruling the operator did not make.
 - **Never edit an entry in place.** Strike it and write a new one. What the operator decided last
   quarter is the evidence that this quarter's decision is a change.
 

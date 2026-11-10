@@ -24,6 +24,8 @@ place — supersede it with a new one and strike the old.
 - **Observed then**: <the exact value the ruling was made against — the title string, the
   position, the CTR, the absent tag>
 - **Ruling**: won't fix | by design | accepted cost | revisit after <named event>
+- **Revisit when**: <the condition that ends this ruling, in a form a later audit can observe> |
+  ask the operator — required when **Ruling** is `revisit after`, omitted otherwise
 - **Reason**: <why — the sentence that stops this being re-argued next audit>
 - **Still covers**: <the narrowed condition that is still a real finding, if any>
 
@@ -37,7 +39,14 @@ place — supersede it with a new one and strike the old.
 - **Observed then** is the pin. Re-raise the finding when the current observation differs from it,
   and say in the report that the ruling lapsed and on what. A ruling is a judgement about a value,
   not about a page — rewrite the page and the judgement has no subject.
+- **Revisit when** is the second pin, and `revisit after` is the one ruling the first pin cannot
+  expire. The operator ruled on a value *and* on a deadline; a redesign that leaves the word count
+  alone moves the event without moving the value, so the pin still matches and the entry reads as
+  live long after the deadline passed. Test both conditions — either one expires the ruling.
 - **Scope** is literal. A ruling on one URL says nothing about the same finding on another, and
   `site` is a claim the operator makes explicitly, never a default you widen it to.
 - An entry with no **Observed then** (written before this file had one) is scoped to its target and
   never lapses on its own. Re-confirm it with the operator instead of treating it as permanent.
+- A `revisit after` entry with no **Revisit when** (same reason) has an event only the operator can
+  read. Ask, and record the answer as a new entry. A temporary ruling the audit cannot expire is a
+  permanent one, which is the opposite of what the operator said.
