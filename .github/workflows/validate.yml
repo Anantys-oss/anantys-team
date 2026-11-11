@@ -15,22 +15,36 @@ name: validate
 # this file existed, and reddening every PR over it teaches people to ignore the
 # check. Errors fail the job; warnings are printed.
 #
-# One target is not enough. `claude plugin validate <path>` picks its mode from
-# what it finds, and each mode reads exactly one thing:
+# One target is not enough, and the target decides what is read. `claude plugin
+# validate <path>` picks its mode from what it finds. Measured on claude 2.1.278
+# against this tree, one mutation at a time, reading `--json`:
 #
-#   - a marketplace manifest -> that file. `"contents": []`.
-#   - a plugin manifest      -> that file. `"contents": []`.
-#   - a directory with no manifest in it -> the components under it.
+#   | target                             | manifest | skills/agents/commands/hooks |
+#   |------------------------------------|----------|------------------------------|
+#   | `.claude-plugin/marketplace.json`  | yes      | no — `"contents": []`        |
+#   | `<plugin>/.claude-plugin/plugin.json` | yes   | **yes, all four**            |
+#   | `<plugin>` (dir holding that file) | yes      | **yes, all four**            |
+#   | `<plugin>/skills`, `/agents`, `/commands` | no | that one kind              |
+#   | any other directory                | error: "No manifest found in directory" |
 #
-# So `validate .` resolves to `.claude-plugin/marketplace.json` and never opens a
-# skill, an agent, or even a `plugin.json`. Deleting the whole plugin tree leaves
-# it reporting success with *fewer* warnings than before, because the author
-# warning it used to print came from the `plugin.json` it can no longer read.
+# So `validate .` resolves to the marketplace manifest and never opens a skill, an
+# agent, or even a `plugin.json`. Deleting the whole plugin tree leaves it
+# reporting success with *fewer* warnings than before, because the author warning
+# it used to print came from the `plugin.json` it can no longer read.
 #
-# Hence the loop: the marketplace manifest, then for every local `source:` the
-# plugin manifest and each component directory. Manifests are named by file path,
-# never by their directory — a directory whose manifest is missing silently falls
-# through to component mode and passes.
+# The plugin-manifest line below is therefore the whole component sweep, not just
+# four keys: an unparseable agent frontmatter fails it with "At runtime this agent
+# loads with its name taken from the filename and every other frontmatter field
+# silently dropped". Iterating `skills agents commands` after it re-reads what it
+# already read — and cannot be extended to `hooks`, because `<plugin>/hooks` holds
+# no manifest and is no component root, so that target errors on a *healthy* tree.
+# Name the plugin manifest by file path, never by its directory: a directory whose
+# manifest is missing falls to the error row, which is the reading we want.
+#
+# What no target reaches is `.mcp.json`. The validator has no MCP arm: a truncated
+# one passes the marketplace manifest, the plugin manifest and the plugin
+# directory alike, green, with the manifest's own warnings unchanged. `jq` is the
+# only gate on it, which is why the loop ends with one.
 
 on:
   push:
@@ -51,9 +65,7 @@ jobs:
           for s in $(jq -r '.plugins[].source | select(type == "string")' .claude-plugin/marketplace.json); do
             [ -d "$s" ] || { echo "::error::marketplace source not found: $s"; exit 1; }
             claude plugin validate "$s/.claude-plugin/plugin.json"
-            for c in skills agents commands; do
-              if [ -d "$s/$c" ]; then claude plugin validate "$s/$c"; fi
-            done
+            if [ -f "$s/.mcp.json" ]; then jq empty "$s/.mcp.json"; fi
           done
 
       # `validate` answers whether a component parses. It never reports a
