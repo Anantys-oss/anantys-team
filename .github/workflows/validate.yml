@@ -1,0 +1,85 @@
+name: validate
+
+# The repo's first check. Eight checkers in `scripts/` were written to gate this
+# marketplace and every one of them lives on an unmerged branch, so `main` is
+# validated by nothing: a malformed `marketplace.json`, a plugin whose `source:`
+# points at a directory that was moved, or a role whose frontmatter no longer
+# parses all merge green today.
+#
+# This file deliberately runs no checker of ours. `claude plugin validate` is the
+# loader itself — the same code that decides whether a user's `/plugin install`
+# succeeds — so it is the one gate that cannot drift from the thing it checks.
+# It reads local files only: no auth, no network, no credential.
+#
+# Not --strict: the marketplace has carried a missing-author warning since before
+# this file existed, and reddening every PR over it teaches people to ignore the
+# check. Errors fail the job; warnings are printed.
+#
+# One target is not enough, and the target decides what is read. `claude plugin
+# validate <path>` picks its mode from what it finds. Measured on claude 2.1.278
+# against this tree, one mutation at a time, reading `--json`:
+#
+#   | target                             | manifest | skills/agents/commands/hooks |
+#   |------------------------------------|----------|------------------------------|
+#   | `.claude-plugin/marketplace.json`  | yes      | no — `"contents": []`        |
+#   | `<plugin>/.claude-plugin/plugin.json` | yes   | **yes, all four**            |
+#   | `<plugin>` (dir holding that file) | yes      | **yes, all four**            |
+#   | `<plugin>/skills`, `/agents`, `/commands` | no | that one kind              |
+#   | any other directory                | error: "No manifest found in directory" |
+#
+# So `validate .` resolves to the marketplace manifest and never opens a skill, an
+# agent, or even a `plugin.json`. Deleting the whole plugin tree leaves it
+# reporting success with *fewer* warnings than before, because the author warning
+# it used to print came from the `plugin.json` it can no longer read.
+#
+# The plugin-manifest line below is therefore the whole component sweep, not just
+# four keys: an unparseable agent frontmatter fails it with "At runtime this agent
+# loads with its name taken from the filename and every other frontmatter field
+# silently dropped". Iterating `skills agents commands` after it re-reads what it
+# already read — and cannot be extended to `hooks`, because `<plugin>/hooks` holds
+# no manifest and is no component root, so that target errors on a *healthy* tree.
+# Name the plugin manifest by file path, never by its directory: a directory whose
+# manifest is missing falls to the error row, which is the reading we want.
+#
+# What no target reaches is `.mcp.json`. The validator has no MCP arm: a truncated
+# one passes the marketplace manifest, the plugin manifest and the plugin
+# directory alike, green, with the manifest's own warnings unchanged. `jq` is the
+# only gate on it, which is why the loop ends with one.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: npm install -g @anthropic-ai/claude-code
+      - name: validate the marketplace, then every plugin it lists
+        run: |
+          set -euo pipefail
+          claude plugin validate .claude-plugin/marketplace.json
+          # Non-string sources are remote (github, git); they have no local tree here.
+          for s in $(jq -r '.plugins[].source | select(type == "string")' .claude-plugin/marketplace.json); do
+            [ -d "$s" ] || { echo "::error::marketplace source not found: $s"; exit 1; }
+            claude plugin validate "$s/.claude-plugin/plugin.json"
+            if [ -f "$s/.mcp.json" ]; then jq empty "$s/.mcp.json"; fi
+          done
+
+      # `validate` answers whether a component parses. It never reports a
+      # *name*, so the defect a user meets first — typing an advertised command
+      # and getting nothing — is outside its reach, on every target above.
+      #
+      # This step is not the hand-written checker the header rules out. It boots
+      # the same loader against this tree in a throwaway HOME and reads the
+      # names off the session's own init event, so it cannot drift from the
+      # thing it checks either. `apiKeySource` on that event is `none` with the
+      # credentials unset, which is why it belongs in CI next to `validate`
+      # rather than in a job holding a secret.
+      - name: hold the tree to the names the loader actually exposes
+        run: python3 scripts/check_exposed_names.py .
+
+      - name: run the tests behind that checker
+        run: python3 -m unittest discover -s scripts
