@@ -37,22 +37,34 @@ the row, and a 3-or-more is this tool's reason to exist.
     python3 scripts/prefix_gates.py --limit 25      # the first 25 merges, for a timing probe
     python3 scripts/prefix_gates.py --no-reduce     # skip the reduction, report first-red only
 
-**What the first full run found, and the number is not the one it was built for.** Over
-89 open heads and 9 usable gates: no gate needed three or more heads, one was red on the
-incoming head alone, and the walk reached **20 merges**. The other 69 heads stopped on a
-conflict and no verdict above covers any of them — which makes the headline a statement
-about the first fifth of the queue, and the *reach* the result worth reading. So the
-report prints the reach before the excuses, and the conflict histogram as its second
-output rather than a footnote:
+**What the run found, and the number is not the one it was built for.** Over 127 open
+heads offered and 6 of 14 gates excluded, run with `--no-reduce`: every gate that went
+red went red on the **incoming head alone** — `template_fields`, `tool_grants`,
+`tracked_ignored` — so the unreduced bucket is empty and there was no composition
+finding to reduce. The walk reached **34 merges**. The other 93 heads
+stopped on a conflict and no verdict above covers any of them — which makes the headline
+a statement about the first quarter of the queue, and the *reach* the result worth
+reading. So the report prints the reach before the excuses, and the conflict histogram as
+its second output rather than a footnote:
 
-  * `anantys.qa/SKILL.md` is in 41 of the 69 stops and is the *only* file in 26 of them.
-    Three fifths of the queue's hand-adjudication cost is one file, and most of that is
-    one reviewer reading one file.
-  * The two manifests appear in 4 stops and in none of them alone. Nine sessions priced
-    the version convention as the queue's landing cost; landed in sequence it is never
-    the decision a stop is waiting on.
-  * 7 stops are `check_plugins.py` + `check_tool_grants.py` + `test_check_plugins.py`
-    together — a tenth of the cost is the gates forking, not the product.
+  * `anantys.qa/SKILL.md` is in 45 of the 93 stops and is the *only* file in 29 of them.
+    Half of the queue's hand-adjudication cost is one file, and most of that is one
+    reviewer reading one file. This is the one row that held its shape as the queue grew
+    from 89 heads to 132.
+  * **The gates are not a tenth of the cost; they are most of what is left.** Of the 42
+    files in the histogram, 23 are under `scripts/` or `.github/`. Four of them —
+    `check_plugins.py`, `check_tool_grants.py`, `check_version_bump.py` and its test —
+    are in 13 stops each, `pr_landing_order.py` and its test in 11, and fifteen more in
+    6 apiece. All 18 `scripts/` rows have **0** in the alone column: the gates never
+    fork alone, they fork as a block, so a maintainer meeting one of these stops is
+    handed a dozen files at once and `.github/workflows/validate.yml` — alone in 3 — is
+    the only piece of the machinery that ever asks for one decision by itself.
+  * The two manifests appear in 7 and 5 stops and `marketplace.json` is alone in one of
+    them. Nine sessions priced the version convention as the queue's landing cost;
+    landed in sequence it is the decision a stop is waiting on exactly once in 93.
+
+That second row is new, and it is new because the sweep was not previously allowed to see
+it — see `landing_order` for the filter that hid it and the 32 heads it removed.
 
 **The order is chronological and that is a choice, not a result.** `pr_landing_order.py`
 computes an order optimised against conflicts; oldest-tip-first is the order the queue
@@ -66,8 +78,11 @@ questions. The cost is that two heads' copies of a gate pair can be mutually
 incompatible — `check_plugin_agents` imports a name from a `check_delegation_grants`
 that a different head wrote — and a gate that cannot import is not a gate that failed.
 Those land in the same bucket as the gates red on `main`: named, excluded, and counted
-in the report, because a sweep that silently drops five of fourteen gates reads as
-fourteen gates clearing the queue.
+in the report, because a sweep that silently drops six of fourteen gates reads as
+fourteen gates clearing the queue. Six is the measured number and it is growing — five
+red on `main` (`ci_coverage`, `doc_actions`, `md_fences`, `registry`, `template_paths`)
+and one that cannot import (`plugin_agents`). The walk therefore rules on eight gates,
+and the clean bill at the top of the report is a claim about those eight.
 """
 
 from __future__ import annotations
@@ -85,21 +100,74 @@ import pair_gates as pg
 BASE = pg.BASE
 
 
-def landing_order(share: str, fold_share: float) -> list[str]:
-    """Open heads that touch `share`, folds dropped, oldest tip first.
+def fold_cut(sets: dict[str, set[str]], fold_share: float) -> tuple[set[str], str]:
+    """The folds to drop, and the line that says whether the cut still separates.
+
+    `pair_gates.folds` marks a head a fold when its write set is wider than
+    `fold_share` of the universe, and its own docstring sets the condition for
+    believing the number: the default "sits in the gap between 18 and 8", and "if a
+    later queue closes that gap, this number is a guess again and the sweep should say
+    so rather than pick a side." Nothing was watching the gap. A width threshold is a
+    guess that reads as a measurement, and the only cheap defence is to print the two
+    numbers it sits between every time it is used.
+
+    The warning it appends is not another guess. `folds` drops a head when its width is
+    *strictly* greater than the threshold, so a threshold that is less than or equal to
+    the widest head it keeps is sitting exactly on an observed width rather than in a
+    gap, and one file in either direction moves a branch across it. Measured at 132 open
+    heads: universe 45 under `plugins`, threshold 18.0, five dropped at width 22, widest
+    kept **18** — and that head is the branch named `the-whole-queue-lands`. The gap the
+    default was calibrated in (18 to 8) has closed to a tie, which is the condition its
+    author wrote down and nothing was checking.
+    """
+    universe = len(set().union(*sets.values())) if sets else 0
+    skip = pg.folds(sets, fold_share)
+    widths = {h: len(s) for h, s in sets.items()}
+    low = min((widths[h] for h in skip), default=0)
+    high = max((w for h, w in widths.items() if h not in skip), default=0)
+    threshold = fold_share * universe
+    line = (
+        f"fold cut: {len(skip)} dropped above {threshold:.1f}"
+        f" (={fold_share} x {universe} files), narrowest dropped {low}, widest kept {high}"
+    )
+    if skip and high >= threshold:
+        line += " — the threshold sits on a kept head's width, so one file moves it"
+    return skip, line
+
+
+def landing_order(share: str, fold_share: float) -> tuple[list[str], str]:
+    """Every open head, folds dropped, oldest tip first — and the fold cut's margin.
 
     Open PRs rather than every ref, for `pair_gates.open_heads`'s reason: a merge order
     is a question about work that will land, and a closed PR is a ruling. Folds are
     dropped for its other one — a fold already contains its siblings, so landing it
     *and* them is not an order anyone performs, and it would charge the prefix with
     every line in the queue at whichever k it happens to sit at.
+
+    **Every open head, not only the ones that write under `share`.** The first version
+    of this reused `pair_gates`'s selection whole, which drops a head whose write set
+    under `--share` is empty. That is a *pair* criterion: two heads are worth assembling
+    only if they share a file. A landing order has no such excuse — a maintainer
+    draining the queue merges whatever is open, and a head that shares nothing still
+    changes the tree the next one is handed. Measured at 132 open heads, the filter
+    dropped **32**, and the dropped set is not a random quarter: it is every head that
+    edits only `scripts/`, `.github/` and `docs/` — the gates and the instruments. Two
+    of the three defect shapes this file exists for live there. `check_ci_coverage`
+    counting gates against workflow steps cannot be crossed by a head under `plugins/`
+    at all, and `check_plugins.py`'s role-load ratchet is a file under `scripts/`. So
+    the sweep was blind to the heads carrying its own motivating examples, and printed
+    "of 89 head(s) offered" where 89 was the surviving fraction and not the queue.
+
+    `share` still sizes the fold cut, which is where it was calibrated and the one place
+    a narrower universe is the right one: a fold of the role files is what makes a
+    prefix meaningless, and that width is measured against the role files.
     """
     heads = pg.open_heads()
     if not heads:
-        return []
+        return [], ""
     sets = {h: pg.writes(h, share) for h in heads}
-    skip = pg.folds(sets, fold_share)
-    return gm.by_tip_date([h for h, s in sets.items() if s and h not in skip])
+    skip, line = fold_cut({h: s for h, s in sets.items() if s}, fold_share)
+    return gm.by_tip_date([h for h in heads if h not in skip]), line
 
 
 def still_red(tree: Path, gate: str, refs: tuple[str, ...], overlay: Path) -> bool:
@@ -190,9 +258,11 @@ def walk(
 
     **A conflicting ref is not retried, because retrying was measured to be worth
     nothing.** The obvious objection to a single pass is that a head conflicting at k
-    may merge at some k' > k once the sibling it collided with has landed. Over the 89
-    open heads here, five retry passes over the skipped set gained **zero** heads on the
-    first pass and the loop stopped there. These are not order-sensitive collisions that
+    may merge at some k' > k once the sibling it collided with has landed. Measured at
+    89 open heads under the old selection, five retry passes over the skipped set gained
+    **zero** heads on the first pass and the loop stopped there — and that measurement
+    has not been re-run against the 127 heads now offered, so it is the one claim in
+    this file still resting on the pruned queue. These are not order-sensitive collisions that
     a later tree resolves; they are two authors writing different sentences on the same
     line, and no merge order makes them agree. That is why the conflict histogram below
     is the report's second output and not its footnote: the walk's reach is set by how
@@ -261,12 +331,23 @@ def report(
     stops: Counter,
     excluded: dict[str, str],
     order: int = 0,
+    fold_line: str = "",
 ) -> str:
-    """Rows ordered by subset size, descending — the unreachable cells first."""
+    """Rows ordered by subset size, descending — the unreachable cells first.
+
+    Every finding reaches exactly one bucket. It used to reach at most one: a
+    composition finding under `--no-reduce` has `alone` false and a one-element subset,
+    which matched none of the three buckets and was printed nowhere, while the clean
+    bill at the top still read "no gate needed three or more heads together". The one
+    flag whose documented purpose is "report first-red only" was the one that reported
+    nothing, and it failed *green*. The unreduced bucket exists so the arithmetic is
+    visible: four buckets, and the clean bill is only claimed when the reduction ran.
+    """
     out = []
     skipped = sum(stops.values())
     composite = [f for f in findings if not f["alone"] and len(f["subset"]) >= 3]
     pairs = [f for f in findings if not f["alone"] and len(f["subset"]) == 2]
+    unreduced = [f for f in findings if not f["alone"] and len(f["subset"]) < 2]
     solo = [f for f in findings if f["alone"]]
     if composite:
         out.append("gates needing three or more heads together — unreachable from any other sweep:")
@@ -274,8 +355,14 @@ def report(
             out.append(f"  {f['gate'].removeprefix('check_')} — first red at merge {f['k']}")
             out.append(f"    smallest subset shown ({len(f['subset'])} heads, a ceiling):")
             out.extend(f"      {r}" for r in f["subset"])
-    else:
+    elif not unreduced:
         out.append("no gate needed three or more heads together")
+    if unreduced:
+        out.append("red on a prefix but not on the incoming head — size unmeasured, the reduction was skipped:")
+        for f in unreduced:
+            out.append(
+                f"  {f['gate'].removeprefix('check_')} — first red at merge {f['k']}, on {f['ref']}"
+            )
     if pairs:
         out.append("\nreducible to a pair — `pair_gates.py` owns these rows:")
         for f in pairs:
@@ -292,6 +379,12 @@ def report(
         + (f" of {order} head(s) offered" if order else "")
         + f" — {skipped} stopped on a conflict, so no verdict covers them"
     )
+    # The cut that set the denominator, printed next to it. "of N offered" is a number
+    # the reader cannot check without it: the heads a filter removed before the walk are
+    # exactly as uncovered as the ones that stopped on a conflict, and only one of the
+    # two used to appear in the report.
+    if fold_line:
+        out.append(fold_line)
     if rows := by_file(stops):
         out.append("where the queue stops, by file — appearances (alone):")
         for path, n, alone in rows:
@@ -304,13 +397,13 @@ def report(
 
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--share", default="plugins", help="heads must touch a file under this path")
+    ap.add_argument("--share", default="plugins", help="the universe the fold cut is sized against")
     ap.add_argument("--limit", type=int, default=0, help="stop after this many heads")
     ap.add_argument("--fold-share", type=float, default=0.4, help="write-set width that marks a fold")
     ap.add_argument("--no-reduce", action="store_true", help="report first-red without reducing")
     args = ap.parse_args(argv)
 
-    order = landing_order(args.share, args.fold_share)
+    order, fold_line = landing_order(args.share, args.fold_share)
     if not order:
         print("no open heads to land (is `gh` authenticated?)", file=sys.stderr)
         return 1
@@ -341,7 +434,7 @@ def main(argv: list[str]) -> int:
         finally:
             gm.git("worktree", "remove", "--force", str(tree))
 
-    print(report(findings, landed, stops, excluded, len(order)))
+    print(report(findings, landed, stops, excluded, len(order), fold_line))
     return 0
 
 

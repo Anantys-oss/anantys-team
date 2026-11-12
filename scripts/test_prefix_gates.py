@@ -1,10 +1,15 @@
 #!/usr/bin/env python3
-"""The reduction and the ranking — where a prefix sweep claims more than it measured.
+"""The reduction, the ranking, and the denominator — where a prefix sweep over-claims.
 
 A prefix sweep's whole value is one number per row: how many heads the failure needs. Get
 that wrong upwards and the tool invents findings `pair_gates.py` already owns; get it
 wrong downwards and it reports a pair that does not reproduce. Both failures look like a
 confident table, which is why they are tested here and not read off a live run.
+
+The third over-claim is the denominator, and the first version of this file did not cover
+it: *which heads were offered at all*. The reduction and the ranking were exhaustively
+tested and `landing_order` was not, which is how a pair-selection filter survived inside
+a landing order and quietly removed a quarter of the queue before the walk began.
 """
 
 import unittest
@@ -121,6 +126,110 @@ class TheReportRanksByWhatNothingElseCanSee(unittest.TestCase):
         out = p.report([], ["a"], Counter(), {})
         self.assertNotIn("excluded", out)
         self.assertNotIn("where the queue stops", out)
+
+
+class TheOrderOffersTheWholeQueue(unittest.TestCase):
+    """`landing_order`, with the two shell calls it makes replaced.
+
+    Both substitutions are the functions whose *answers* the ordering depends on, not
+    the ordering itself, so what is under test is the selection rule and nothing else.
+    """
+
+    def order(self, writes: dict[str, set[str]], fold_share: float = 0.4):
+        saved = (p.pg.open_heads, p.pg.writes, p.gm.by_tip_date)
+        p.pg.open_heads = lambda: {h: i for i, h in enumerate(writes)}
+        p.pg.writes = lambda head, share: writes[head]
+        p.gm.by_tip_date = sorted
+        try:
+            return p.landing_order("plugins", fold_share)
+        finally:
+            p.pg.open_heads, p.pg.writes, p.gm.by_tip_date = saved
+
+    def test_a_head_writing_nothing_under_share_is_still_offered(self) -> None:
+        # The defect: 32 of 132 open heads write only under `scripts/`, `.github/` and
+        # `docs/`, and every one was dropped before the walk. They are the heads that
+        # carry the gates — including the two defect shapes this file exists for.
+        writes = {"gate-only": set(), "r1": {"a.md"}, "r2": {"b.md"}, "r3": {"c.md"}}
+        order, _ = self.order(writes)
+        self.assertEqual(order, ["gate-only", "r1", "r2", "r3"])
+
+    def test_a_fold_is_still_dropped(self) -> None:
+        # The one exclusion a landing order has an argument for: a fold contains its
+        # siblings, so landing it *and* them is not an order anyone performs.
+        wide = {f"f{i}" for i in range(9)}
+        order, _ = self.order({"fold": wide, "a": {"f0"}, "b": {"f1"}})
+        self.assertEqual(order, ["a", "b"])
+
+    def test_an_empty_write_set_cannot_be_called_a_fold(self) -> None:
+        # Width 0 against a universe of 0 is the degenerate case: with every head now
+        # offered, a share nobody writes under must not resolve to "everything is a
+        # fold" and hand the walk an empty order.
+        order, _ = self.order({"a": set(), "b": set()})
+        self.assertEqual(order, ["a", "b"])
+
+    def test_no_open_heads_yields_no_order_and_no_fold_line(self) -> None:
+        self.assertEqual(self.order({}), ([], ""))
+
+
+class TheFoldCutPrintsWhatTheThresholdSitsBetween(unittest.TestCase):
+    def test_the_margin_names_the_narrowest_dropped_and_the_widest_kept(self) -> None:
+        sets = {"fold": set(range(9)), "a": set(range(2)), "b": {9}}
+        skip, line = p.fold_cut(sets, 0.4)
+        self.assertEqual(skip, {"fold"})
+        self.assertIn("1 dropped above 4.0 (=0.4 x 10 files)", line)
+        self.assertIn("narrowest dropped 9, widest kept 2", line)
+
+    def test_a_threshold_on_a_kept_head_s_width_says_one_file_moves_it(self) -> None:
+        # Measured on the live queue: universe 45, threshold 18.0, widest kept 18 — and
+        # that head is the branch named `the-whole-queue-lands`. `folds` drops on a
+        # strict `>`, so a tie means one file decides whether the queue's own fold is
+        # treated as a fold.
+        sets = {"keep": set(range(4)), "fold": set(range(4, 10))}
+        _, line = p.fold_cut(sets, 0.4)
+        self.assertIn("above 4.0 (=0.4 x 10 files), narrowest dropped 6, widest kept 4", line)
+        self.assertIn("one file moves it", line)
+
+    def test_a_real_gap_appends_no_warning(self) -> None:
+        sets = {"fold": set(range(9)), "a": {0}, "b": {9}}
+        _, line = p.fold_cut(sets, 0.4)
+        self.assertNotIn("one file moves it", line)
+
+    def test_no_sets_is_a_cut_that_dropped_nothing(self) -> None:
+        self.assertEqual(p.fold_cut({}, 0.4)[0], set())
+        self.assertNotIn("one file moves it", p.fold_cut({}, 0.4)[1])
+
+
+class EveryFindingReachesABucket(unittest.TestCase):
+    def test_an_unreduced_composition_finding_is_printed(self) -> None:
+        # `--no-reduce` produces exactly this shape, and it used to appear nowhere: the
+        # documented flag for "report first-red only" reported nothing, and green.
+        f = {"gate": "check_plugins", "k": 7, "ref": "c", "alone": False, "subset": ["c"]}
+        out = p.report([f], ["a", "b", "c"], Counter(), {})
+        self.assertIn("size unmeasured, the reduction was skipped", out)
+        self.assertIn("plugins — first red at merge 7, on c", out)
+
+    def test_an_unreduced_finding_withholds_the_clean_bill(self) -> None:
+        f = {"gate": "check_plugins", "k": 7, "ref": "c", "alone": False, "subset": ["c"]}
+        self.assertNotIn(
+            "no gate needed three or more heads together",
+            p.report([f], ["a", "b", "c"], Counter(), {}),
+        )
+
+    def test_no_findings_at_all_still_states_the_clean_bill(self) -> None:
+        self.assertIn(
+            "no gate needed three or more heads together", p.report([], ["a"], Counter(), {})
+        )
+
+
+class TheReachPrintsTheCutThatSetItsDenominator(unittest.TestCase):
+    def test_the_fold_line_follows_the_reach(self) -> None:
+        out = p.report([], ["a"], Counter(), {}, 127, "fold cut: 5 dropped above 18.0")
+        lines = [l for l in out.splitlines() if l]
+        self.assertIn("of 127 head(s) offered", lines[-2])
+        self.assertEqual(lines[-1], "fold cut: 5 dropped above 18.0")
+
+    def test_no_cut_prints_no_line(self) -> None:
+        self.assertNotIn("fold cut", p.report([], ["a"], Counter(), {}, 1))
 
 
 if __name__ == "__main__":
